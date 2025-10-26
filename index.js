@@ -8,9 +8,10 @@ dotenv.config();
 const connectDB = require("./database");
 const authRoutes = require("./routes/authRoutes");
 const homeRoutes = require("./routes/homeRoutes");
+const employerRoutes = require("./routes/employerRoutes");
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 9000;
 
 app.use(
   cors({
@@ -37,6 +38,7 @@ app.use(
 
 app.use("/api/auth", authRoutes);
 app.use("/api", homeRoutes);
+app.use("/api/employer", employerRoutes);
 
 connectDB
   .then(() => {
