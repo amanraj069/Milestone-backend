@@ -43,7 +43,18 @@ exports.signup = async (req, res) => {
 
     await newUser.save();
     await roleEntity.save();
-    return res.status(201).json({ success: true });
+
+    // Automatically log in the user after successful signup
+    req.session.user = {
+      id: newUser.userId,
+      email: newUser.email,
+      role: newUser.role,
+      name: newUser.name,
+      roleId: newUser.roleId,
+      authenticated: true,
+    };
+
+    req.session.save(() => res.status(201).json({ success: true }));
   } catch (error) {
     console.error("Signup error:", error);
     return res.status(500).json({ error: "Error creating account" });
