@@ -14,6 +14,23 @@ exports.signup = async (req, res) => {
     if (existingUser) {
       return res.status(409).json({ error: "Email already exists" });
     }
+
+    // Normalize role to proper case
+    let normalizedRole;
+    switch ((role || "").toLowerCase()) {
+      case "employer":
+        normalizedRole = "Employer";
+        break;
+      case "freelancer":
+        normalizedRole = "Freelancer";
+        break;
+      case "admin":
+        normalizedRole = "Admin";
+        break;
+      default:
+        return res.status(400).json({ error: "Invalid role" });
+    }
+
     const roleId = uuidv4();
     const userId = uuidv4();
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -21,20 +38,20 @@ exports.signup = async (req, res) => {
       userId,
       email,
       password: hashedPassword,
-      role,
+      role: normalizedRole,
       roleId,
       name: name || "",
     });
 
     let roleEntity;
-    switch ((role || "").toLowerCase()) {
-      case "employer":
+    switch (normalizedRole) {
+      case "Employer":
         roleEntity = new Employer({ employerId: roleId, userId });
         break;
-      case "freelancer":
+      case "Freelancer":
         roleEntity = new Freelancer({ freelancerId: roleId, userId });
         break;
-      case "admin":
+      case "Admin":
         roleEntity = new Admin({ adminId: roleId, userId });
         break;
       default:
@@ -69,7 +86,24 @@ exports.login = async (req, res) => {
         .status(400)
         .json({ error: "Missing email, password, or role" });
     }
-    const user = await User.findOne({ email, role });
+
+    // Normalize role to proper case for consistent querying
+    let normalizedRole;
+    switch ((role || "").toLowerCase()) {
+      case "employer":
+        normalizedRole = "Employer";
+        break;
+      case "freelancer":
+        normalizedRole = "Freelancer";
+        break;
+      case "admin":
+        normalizedRole = "Admin";
+        break;
+      default:
+        return res.status(400).json({ error: "Invalid role" });
+    }
+
+    const user = await User.findOne({ email, role: normalizedRole });
     if (!user || !user.password) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
