@@ -9,13 +9,18 @@ const connectDB = require("./database");
 const authRoutes = require("./routes/authRoutes");
 const homeRoutes = require("./routes/homeRoutes");
 const employerRoutes = require("./routes/employerRoutes");
+const blogRoutes = require("./routes/blogRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 9000;
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_ORIGIN || "http://localhost:3000",
+    origin: [
+      process.env.FRONTEND_ORIGIN || "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3002"
+    ],
     credentials: true,
   })
 );
@@ -39,6 +44,7 @@ app.use(
 app.use("/api/auth", authRoutes);
 app.use("/api", homeRoutes);
 app.use("/api/employer", employerRoutes);
+app.use(blogRoutes);
 
 connectDB
   .then(() => {
