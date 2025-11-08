@@ -1,4 +1,6 @@
 const JobListing = require("../models/job_listing");
+const JobApplication = require("../models/job_application");
+const Employer = require("../models/employer");
 const { v4: uuidv4 } = require("uuid");
 
 // Get all job listings for the logged-in employer
@@ -243,6 +245,251 @@ exports.updateJobListing = async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Failed to update job listing",
+    });
+  }
+};
+
+exports.getJobApplications = async (req, res) => {
+  try {
+    const userData =
+      (await getUserData(req.session.user.id)) || req.session.user;
+
+    res.render("Abhishek/job_applications", {
+      user: userData,
+      activePage: "job_applications",
+    });
+  } catch (error) {
+    console.error("Error fetching job applications:", error.message);
+    res.status(500).send("Error fetching job applications: " + error.message);
+  }
+};
+
+exports.getJobApplicationsAPI = async (req, res) => {
+  try {
+    const employerId = req.session?.user?.roleId;
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Employer roleId not found in session"
+      });
+    }
+
+    const jobs = await JobListing.find({ employerId }).lean();
+    const jobIds = jobs.map((job) => job.jobId);
+
+    const applications = await JobApplication.find({
+      jobId: { $in: jobIds },
+    }).lean();
+
+    const freelancerIds = [
+      ...new Set(applications.map((app) => app.freelancerId)),
+    ];
+    const users = await User.find({ roleId: { $in: freelancerIds } })
+      .select("roleId name picture")
+      .lean();
+
+    const applicationsWithDetails = applications.map((application) => {
+      const job = jobs.find((job) => job.jobId === application.jobId);
+      const user = users.find(
+        (user) => user.roleId === application.freelancerId
+      );
+      return {
+        ...application,
+        jobTitle: job?.title || "Unknown Job",
+        freelancerName: user?.name || "Unknown Freelancer",
+        freelancerPicture: user?.picture || null,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        applications: applicationsWithDetails,
+        stats: {
+          total: applicationsWithDetails.length,
+          pending: applicationsWithDetails.filter(app => app.status === 'Pending').length,
+          accepted: applicationsWithDetails.filter(app => app.status === 'Accepted').length,
+          rejected: applicationsWithDetails.filter(app => app.status === 'Rejected').length
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Error fetching job applications API:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching job applications: " + error.message
+    });
+  }
+};
+
+exports.acceptJobApplication = async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const employerId = req.session.user.roleId;
+    if (!employerId) {
+      throw new Error("Employer roleId not found in session");
+    }
+
+    const application = await JobApplication.findOne({ applicationId });
+    if (!application) {
+      throw new Error("Application not found");
+    }
+
+    const job = await JobListing.findOne({ jobId: application.jobId });
+    if (!job || job.employerId !== employerId) {
+      throw new Error("Not authorized to modify this application");
+    }
+
+    await JobApplication.findOneAndUpdate(
+      { applicationId },
+      { $set: { status: "Accepted" } }
+    );
+
+    await JobListing.findOneAndUpdate(
+      { jobId: application.jobId },
+      {
+        $set: {
+          "assignedFreelancer.freelancerId": application.freelancerId,
+          "assignedFreelancer.startDate": new Date(),
+          "assignedFreelancer.status": "working",
+          status: "closed",
+        },
+      }
+    );
+
+    res.json({ success: true, message: "Application accepted successfully" });
+  } catch (error) {
+    console.error("Error accepting job application:", error.message);
+    res.status(500).send("Error accepting job application: " + error.message);
+  }
+};
+
+exports.rejectJobApplication = async (req, res) => {
+  try {
+    const { applicationId } = req.params;
+    const employerId = req.session?.user?.roleId;
+    if (!employerId) {
+      throw new Error("Employer roleId not found in session");
+    }
+
+    const application = await JobApplication.findOne({ applicationId });
+    if (!application) {
+      throw new Error("Application not found");
+    }
+
+    const job = await JobListing.findOne({ jobId: application.jobId });
+    if (!job || job.employerId !== employerId) {
+      throw new Error("Not authorized to modify this application");
+    }
+
+    await JobApplication.findOneAndUpdate(
+      { applicationId },
+      { $set: { status: "Rejected" } }
+    );
+
+    res.json({ success: true, message: "Application rejected successfully" });
+  } catch (error) {
+    console.error("Error rejecting job application:", error.message);
+    res.status(500).send("Error rejecting job application: " + error.message);
+  }
+};
+
+exports.getSubscription = async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    if (!userId) {
+      throw new Error("User ID not found in session");
+    }
+
+    const user = await User.findOne({ userId }).lean();
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    res.render("Abhishek/subscription", {
+      user: {
+        name: user.name,
+        picture: user.picture,
+        role: user.role,
+        subscription: user.subscription || "Basic",
+      },
+      activePage: "subscription",
+    });
+  } catch (error) {
+    console.error("Error fetching subscription:", error.message);
+    res.status(500).send("Error fetching subscription: " + error.message);
+  }
+};
+
+exports.upgradeSubscription = async (req, res) => {
+  try {
+    const user = req.session.user;
+    const userId = req.session.user.id;
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Not logged in" });
+    }
+    // Update the user's subscription to "Premium"
+    await User.updateOne({ userId }, { $set: { subscription: "Premium" } });
+    req.session.user.subscription = "Premium";
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.purchaseSubscription = async (req, res) => {
+  try {
+    const { planType, amount } = req.body;
+    const userId = req.session.user.id;
+
+    if (!planType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Plan type is required'
+      });
+    }
+
+    // Validate plan type
+    const validPlans = ['Basic', 'Premium', 'Free'];
+    if (!validPlans.includes(planType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid plan type'
+      });
+    }
+
+    // For Premium plans, redirect to payment
+    if (planType === 'Premium') {
+      return res.json({
+        success: true,
+        requiresPayment: true,
+        amount: amount || 868,
+        redirectUrl: `/employerD/payment?plan=${planType}&amount=${amount || 868}`
+      });
+    }
+
+    // For Basic/Free plans, update immediately
+    await Employer.findByIdAndUpdate(userId, {
+      subscription: planType
+    });
+
+    // Update session
+    req.session.user.subscription = planType;
+
+    res.json({
+      success: true,
+      message: `Successfully switched to ${planType} plan`,
+      requiresPayment: false
+    });
+
+  } catch (error) {
+    console.error('Error purchasing subscription:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error during subscription purchase',
+      error: error.message
     });
   }
 };
