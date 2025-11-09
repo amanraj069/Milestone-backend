@@ -1,7 +1,10 @@
 const JobListing = require("../models/job_listing");
 const JobApplication = require("../models/job_application");
+const User = require("../models/user");
 const Employer = require("../models/employer");
+const Freelancer = require("../models/freelancer");
 const { v4: uuidv4 } = require("uuid");
+const { uploadToCloudinary } = require("../middleware/pdfUpload");
 
 // Get all job listings for the logged-in employer
 exports.getJobListings = async (req, res) => {
