@@ -1,11 +1,10 @@
 const JobListing = require("../models/job_listing");
+const JobApplication = require("../models/job_application");
 const User = require("../models/user");
 const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
-const Skill = require("../models/skill");
-const Complaint = require("../models/complaint");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
-const { uploadToCloudinary } = require("../middleware/pdfUpload");
+const { uploadToCloudinary: uploadPdfToCloudinary } = require("../middleware/pdfUpload");
 
 exports.getFreelancerActiveJobs = async (req, res) => {
   try {
@@ -311,6 +310,232 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Server Error: Unable to load job history",
+    });
+  }
+};
+
+// Get freelancer profile data
+exports.getFreelancerProfile = async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const freelancerId = req.session.user.roleId;
+
+    const user = await User.findOne({ userId }).lean();
+    const freelancer = await Freelancer.findOne({ freelancerId }).lean();
+
+    if (!user || !freelancer) {
+      return res.status(404).json({
+        success: false,
+        error: "Profile not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        picture: user.picture,
+        resume: freelancer.resume,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching freelancer profile:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch profile",
+    });
+  }
+};
+
+// Update freelancer profile (email, phone)
+exports.updateFreelancerProfile = async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    const { email, phone } = req.body;
+
+    if (!email || !phone) {
+      return res.status(400).json({
+        success: false,
+        error: "Email and phone are required",
+      });
+    }
+
+    const updatedUser = await User.findOneAndUpdate(
+      { userId },
+      { email, phone },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        email: updatedUser.email,
+        phone: updatedUser.phone,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating profile:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update profile",
+    });
+  }
+};
+
+// Upload resume
+exports.uploadResume = async (req, res) => {
+  try {
+    const freelancerId = req.session.user.roleId;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No resume file provided",
+      });
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadPdfToCloudinary(
+      req.file.buffer,
+      req.file.originalname
+    );
+
+    // Update freelancer resume link
+    const updatedFreelancer = await Freelancer.findOneAndUpdate(
+      { freelancerId },
+      { resume: result.secure_url },
+      { new: true }
+    ).lean();
+
+    if (!updatedFreelancer) {
+      return res.status(404).json({
+        success: false,
+        error: "Freelancer not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        resume: updatedFreelancer.resume,
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading resume:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to upload resume",
+    });
+  }
+};
+
+// Apply for a job
+exports.applyForJob = async (req, res) => {
+  try {
+    const freelancerId = req.session.user.roleId;
+    const { jobId } = req.params;
+    const { coverMessage, skillRating, availability } = req.body;
+
+    // Validate input
+    if (!coverMessage || coverMessage.length < 50) {
+      return res.status(400).json({
+        success: false,
+        error: "Cover message must be at least 50 characters",
+      });
+    }
+
+    // Check if job exists
+    const job = await JobListing.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Check if already applied
+    const existingApplication = await JobApplication.findOne({
+      freelancerId,
+      jobId,
+    });
+
+    if (existingApplication) {
+      return res.status(400).json({
+        success: false,
+        error: "You have already applied for this job",
+      });
+    }
+
+    // Get freelancer's resume
+    const freelancer = await Freelancer.findOne({ freelancerId }).lean();
+    if (!freelancer) {
+      return res.status(404).json({
+        success: false,
+        error: "Freelancer profile not found",
+      });
+    }
+
+    // Create new application
+    const newApplication = new JobApplication({
+      freelancerId,
+      jobId,
+      coverMessage,
+      resumeLink: freelancer.resume,
+      appliedDate: new Date(),
+      status: "Pending",
+    });
+
+    await newApplication.save();
+
+    // Update user's last cover message for future use
+    await User.findOneAndUpdate(
+      { roleId: freelancerId },
+      { lastCoverMessage: coverMessage }
+    );
+
+    res.json({
+      success: true,
+      message: "Application submitted successfully",
+      data: {
+        applicationId: newApplication.applicationId,
+      },
+    });
+  } catch (error) {
+    console.error("Error applying for job:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to submit application",
+    });
+  }
+};
+
+// Get last used cover message
+exports.getLastCoverMessage = async (req, res) => {
+  try {
+    const freelancerId = req.session.user.roleId;
+
+    const user = await User.findOne({ roleId: freelancerId }).lean();
+
+    res.json({
+      success: true,
+      data: {
+        lastCoverMessage: user?.lastCoverMessage || "",
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching last cover message:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch last cover message",
     });
   }
 };

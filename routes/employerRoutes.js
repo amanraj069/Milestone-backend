@@ -74,4 +74,22 @@ router.post(
   requireEmployer,
   employerController.upgradeSubscription
 );
+
+// Current Freelancers and Work History
+router.get(
+  "/current-freelancers",
+  requireEmployer,
+  employerController.getCurrentFreelancers
+);
+router.get(
+  "/work-history",
+  requireEmployer,
+  employerController.getWorkHistory
+);
+router.post(
+  "/rate-freelancer/:jobId",
+  requireEmployer,
+  employerController.rateFreelancer
+);
+
 module.exports = router;

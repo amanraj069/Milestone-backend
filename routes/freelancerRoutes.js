@@ -1,7 +1,8 @@
 const express = require("express");
-const freelancerController = require("../controllers/freelancerController");
+const freelancerController = require("../controllers/feelancerController");
 const employerController = require("../controllers/employerController");
 const { upload } = require("../middleware/imageUpload");
+const { upload: pdfUpload } = require("../middleware/pdfUpload");
 const router = express.Router();
 
 // Middleware to check if user is authenticated and is a freelancer
@@ -45,15 +46,38 @@ router.get(
     requireFreelancer,  
     freelancerController.getSubscription
 );
-router.get(
-    "/payment_success", 
-    requireFreelancer, 
-    freelancerController.getPaymentAnimation
-);
 router.post(
     "/upgrade_subscription", 
     requireFreelancer,
     freelancerController.upgradeSubscription
+);
+
+// Profile and application routes
+router.get(
+    "/profile",
+    requireFreelancer,
+    freelancerController.getFreelancerProfile
+);
+router.put(
+    "/profile/update",
+    requireFreelancer,
+    freelancerController.updateFreelancerProfile
+);
+router.post(
+    "/resume/upload",
+    requireFreelancer,
+    pdfUpload.single("resume"),
+    freelancerController.uploadResume
+);
+router.post(
+    "/apply/:jobId",
+    requireFreelancer,
+    freelancerController.applyForJob
+);
+router.get(
+    "/cover-message/last",
+    requireFreelancer,
+    freelancerController.getLastCoverMessage
 );
 
 module.exports = router;
