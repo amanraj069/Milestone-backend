@@ -205,11 +205,11 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
         const paidAmount = job.milestones
           .filter((milestone) => milestone.status === "paid")
           .reduce(
-            (sum, milestone) => sum + parseFloat(milestone.payment) || 0,
+            (sum, milestone) => sum + (parseFloat(milestone.payment) || 0),
             0
           );
 
-        const totalBudget = parseFloat(job.budget.amount) || 0;
+        const totalBudget = parseFloat(job.budget) || 0;
         const progress =
           totalBudget > 0 ? Math.min((paidAmount / totalBudget) * 100, 100) : 0;
 
@@ -220,6 +220,12 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
 
         const user = users.find((u) => u.roleId === job.employerId);
 
+        // Calculate days since start
+        const startDate = job.assignedFreelancer?.startDate;
+        const daysSinceStart = startDate
+          ? Math.floor((Date.now() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
+
         return {
           id: job.jobId,
           title: job.title,
@@ -228,12 +234,16 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
           deadline: job.applicationDeadline
             ? job.applicationDeadline.toLocaleDateString()
             : "No deadline",
-          price: job.budget.amount
-            ? `Rs.${parseFloat(job.budget.amount).toFixed(2)}`
+          price: job.budget
+            ? `Rs.${parseFloat(job.budget).toFixed(2)}`
             : "Not specified",
           progress: Math.round(progress),
           tech: job.description.skills || [],
           employerUserId: user?.userId || "",
+          description: job.description?.text || job.description || "",
+          milestones: job.milestones || [],
+          daysSinceStart: daysSinceStart,
+          startDate: startDate ? new Date(startDate).toLocaleDateString() : "Not set",
         };
       })
     );
