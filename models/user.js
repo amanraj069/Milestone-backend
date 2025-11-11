@@ -34,6 +34,7 @@ const userSchema = new Schema(
     },
     roleId: { type: String, default: "" },
     rating: { type: Number, min: 1, max: 5, default: 4.5 },
+    lastCoverMessage: { type: String, default: "" },
   },
   { timestamps: true }
 );
