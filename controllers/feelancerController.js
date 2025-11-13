@@ -173,7 +173,22 @@ exports.upgradeSubscription = async (req, res) => {
     // Update the user's subscription to "Premium"
     await User.updateOne({ userId }, { $set: { subscription: "Premium" } });
     req.session.user.subscription = "Premium";
-    res.json({ success: true });
+    res.json({ success: true, message: "Successfully upgraded to Premium" });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.downgradeSubscription = async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Not logged in" });
+    }
+    // Update the user's subscription to "Basic"
+    await User.updateOne({ userId }, { $set: { subscription: "Basic" } });
+    req.session.user.subscription = "Basic";
+    res.json({ success: true, message: "Successfully downgraded to Basic" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

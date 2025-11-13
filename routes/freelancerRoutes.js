@@ -51,6 +51,11 @@ router.post(
     requireFreelancer,
     freelancerController.upgradeSubscription
 );
+router.post(
+    "/downgrade_subscription", 
+    requireFreelancer,
+    freelancerController.downgradeSubscription
+);
 
 // Profile and application routes
 router.get(
