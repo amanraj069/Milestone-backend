@@ -74,6 +74,11 @@ router.post(
   requireEmployer,
   employerController.upgradeSubscription
 );
+router.post(
+  "/downgrade_subscription",
+  requireEmployer,
+  employerController.downgradeSubscription
+);
 
 // Current Freelancers and Work History
 router.get(
