@@ -9,6 +9,7 @@ const connectDB = require("./database");
 const authRoutes = require("./routes/authRoutes");
 const homeRoutes = require("./routes/homeRoutes");
 const employerRoutes = require("./routes/employerRoutes");
+const freelancerRoutes = require("./routes/freelancerRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 
 const app = express();
@@ -44,6 +45,7 @@ app.use(
 app.use("/api/auth", authRoutes);
 app.use("/api", homeRoutes);
 app.use("/api/employer", employerRoutes);
+app.use("/api/freelancer", freelancerRoutes);
 app.use(blogRoutes);
 
 connectDB
