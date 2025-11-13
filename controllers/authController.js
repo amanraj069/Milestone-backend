@@ -68,6 +68,7 @@ exports.signup = async (req, res) => {
       role: newUser.role,
       name: newUser.name,
       roleId: newUser.roleId,
+      subscription: newUser.subscription || 'Basic',
       authenticated: true,
     };
 
@@ -117,6 +118,7 @@ exports.login = async (req, res) => {
       role: user.role,
       name: user.name,
       roleId: user.roleId,
+      subscription: user.subscription || 'Basic',
       authenticated: true,
     };
     req.session.save(() => res.json({ success: true }));

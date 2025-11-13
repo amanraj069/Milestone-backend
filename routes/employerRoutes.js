@@ -36,4 +36,65 @@ router.get(
   employerController.getJobById
 );
 
+// Job Applications
+router.get(
+  "/job_applications",
+  requireEmployer,
+  employerController.getJobApplications
+);
+router.get(
+  "/job_applications/api/data",
+  requireEmployer,
+  employerController.getJobApplicationsAPI
+);
+router.post(
+  "/job_applications/:applicationId/accept",
+  requireEmployer,
+  employerController.acceptJobApplication
+);
+router.post(
+  "/job_applications/:applicationId/reject",
+  requireEmployer,
+  employerController.rejectJobApplication
+);
+
+// Subscription
+router.get(
+  "/subscription",
+  requireEmployer,
+  employerController.getSubscription
+);
+router.post(
+  "/subscription/purchase",
+  requireEmployer,
+  employerController.purchaseSubscription
+);
+router.post(
+  "/upgrade_subscription",
+  requireEmployer,
+  employerController.upgradeSubscription
+);
+router.post(
+  "/downgrade_subscription",
+  requireEmployer,
+  employerController.downgradeSubscription
+);
+
+// Current Freelancers and Work History
+router.get(
+  "/current-freelancers",
+  requireEmployer,
+  employerController.getCurrentFreelancers
+);
+router.get(
+  "/work-history",
+  requireEmployer,
+  employerController.getWorkHistory
+);
+router.post(
+  "/rate-freelancer/:jobId",
+  requireEmployer,
+  employerController.rateFreelancer
+);
+
 module.exports = router;

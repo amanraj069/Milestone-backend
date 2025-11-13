@@ -110,6 +110,19 @@ const jobListingSchema = new Schema(
       enum: ["active", "open", "in-progress", "completed", "closed"],
       default: "open",
     },
+    assignedFreelancer: {
+      freelancerId: { type: String, ref: "Freelancer", default: null },
+      startDate: { type: Date, default: null },
+      endDate: { type: Date, default: null },
+      status: {
+        type: String,
+        enum: ["working", "finished", "left"],
+        default: null,
+      },
+      employerRating: { type: Number, min: 1, max: 5, default: null },
+      employerReview: { type: String, default: "" },
+      rated: { type: Boolean, default: false },
+    },
   },
   {
     timestamps: true,
