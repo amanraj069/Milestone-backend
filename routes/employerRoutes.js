@@ -97,4 +97,21 @@ router.post(
   employerController.rateFreelancer
 );
 
+// Complaint routes
+router.post(
+  "/complaints",
+  requireEmployer,
+  employerController.createComplaint
+);
+router.get(
+  "/complaints",
+  requireEmployer,
+  employerController.getEmployerComplaints
+);
+
+// Debug route to test if routing works
+router.get("/test-complaints", (req, res) => {
+  res.json({ message: "Employer complaints route is working!" });
+});
+
 module.exports = router;
