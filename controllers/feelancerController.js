@@ -569,6 +569,10 @@ exports.getLastCoverMessage = async (req, res) => {
 // Create a new complaint
 exports.createComplaint = async (req, res) => {
   try {
+    console.log("=== FREELANCER CREATE COMPLAINT CALLED ===");
+    console.log("Session user:", req.session.user);
+    console.log("Request body:", req.body);
+    
     const freelancerId = req.session.user.roleId;
     const userId = req.session.user.id;
     const { jobId, complaintType, priority, subject, description } = req.body;
