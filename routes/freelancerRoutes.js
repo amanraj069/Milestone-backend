@@ -97,9 +97,4 @@ router.get(
     freelancerController.getFreelancerComplaints
 );
 
-// Debug route to test if routing works
-router.get("/test-complaints", (req, res) => {
-  res.json({ message: "Freelancer complaints route is working!" });
-});
-
 module.exports = router;

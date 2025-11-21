@@ -751,10 +751,6 @@ exports.rateFreelancer = async (req, res) => {
 // Create a new complaint (Employer)
 exports.createComplaint = async (req, res) => {
   try {
-    console.log("=== CREATE COMPLAINT CALLED ===");
-    console.log("Session user:", req.session.user);
-    console.log("Request body:", req.body);
-    
     const employerId = req.session.user.roleId;
     const userId = req.session.user.id;
     const { jobId, freelancerId, complaintType, priority, subject, description } = req.body;
