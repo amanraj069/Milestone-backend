@@ -32,4 +32,17 @@ router.put(
   adminController.updateComplaintStatus
 );
 
+// Freelancer routes
+router.get(
+  "/freelancers",
+  requireAdmin,
+  adminController.getAllFreelancers
+);
+
+router.delete(
+  "/freelancers/:freelancerId",
+  requireAdmin,
+  adminController.deleteFreelancer
+);
+
 module.exports = router;
