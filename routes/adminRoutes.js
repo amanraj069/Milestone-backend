@@ -58,4 +58,17 @@ router.delete(
   adminController.deleteEmployer
 );
 
+// Job Listing routes
+router.get(
+  "/jobs",
+  requireAdmin,
+  adminController.getAllJobListings
+);
+
+router.delete(
+  "/jobs/:jobId",
+  requireAdmin,
+  adminController.deleteJobListing
+);
+
 module.exports = router;

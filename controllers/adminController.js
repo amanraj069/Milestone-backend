@@ -2,6 +2,7 @@ const Complaint = require("../models/complaint");
 const Freelancer = require("../models/freelancer");
 const Employer = require("../models/employer");
 const User = require("../models/user");
+const JobListing = require("../models/job_listing");
 
 // Get all complaints (Admin only)
 exports.getAllComplaints = async (req, res) => {
@@ -255,6 +256,85 @@ exports.deleteEmployer = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to delete employer",
+    });
+  }
+};
+
+// Get all job listings (Admin only)
+exports.getAllJobListings = async (req, res) => {
+  try {
+    const jobs = await JobListing.find({}).lean();
+
+    const employerIds = jobs.map((job) => job.employerId);
+    const employers = await Employer.find({ employerId: { $in: employerIds } })
+      .select("employerId companyName")
+      .lean();
+    const userIds = employers.map((e) => e.userId);
+    const users = await User.find({ userId: { $in: userIds } })
+      .select("userId name")
+      .lean();
+
+    const jobsWithDetails = jobs.map((job) => {
+      const employer = employers.find((e) => e.employerId === job.employerId);
+      const user = users.find((u) => u.userId === employer?.userId);
+      return {
+        jobId: job.jobId,
+        title: job.title,
+        employerName: user?.name || "Unknown",
+        companyName: employer?.companyName || "Unknown Company",
+        budget: job.budget,
+        jobType: job.jobType,
+        experienceLevel: job.experienceLevel,
+        status: job.status,
+        location: job.location || "Remote",
+        postedDate: job.postedDate,
+        applicationDeadline: job.applicationDeadline,
+        skills: job.description?.skills || [],
+        description: job.description,
+        assignedFreelancer: job.assignedFreelancer,
+      };
+    });
+
+    res.json({
+      success: true,
+      jobs: jobsWithDetails,
+      total: jobsWithDetails.length,
+    });
+  } catch (error) {
+    console.error("Error fetching job listings:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch job listings",
+    });
+  }
+};
+
+// Delete job listing (Admin only)
+exports.deleteJobListing = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    const job = await JobListing.findOne({ jobId }).lean();
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job listing not found",
+      });
+    }
+
+    // Delete job listing
+    await JobListing.deleteOne({ jobId });
+
+    res.json({
+      success: true,
+      message: "Job listing deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting job listing:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete job listing",
     });
   }
 };
