@@ -1,5 +1,6 @@
 const Complaint = require("../models/complaint");
 const Freelancer = require("../models/freelancer");
+const Employer = require("../models/employer");
 const User = require("../models/user");
 
 // Get all complaints (Admin only)
@@ -181,6 +182,79 @@ exports.deleteFreelancer = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to delete freelancer",
+    });
+  }
+};
+
+// Get all employers (Admin only)
+exports.getAllEmployers = async (req, res) => {
+  try {
+    const employers = await Employer.find({}).lean();
+
+    const employerIds = employers.map((e) => e.userId);
+    const users = await User.find({ userId: { $in: employerIds } })
+      .select("userId name email phone picture location rating createdAt")
+      .lean();
+
+    const employersWithDetails = employers.map((employer) => {
+      const user = users.find((u) => u.userId === employer.userId);
+      return {
+        employerId: employer.employerId,
+        userId: employer.userId,
+        name: user?.name || "N/A",
+        email: user?.email || "N/A",
+        phone: user?.phone || "N/A",
+        picture: user?.picture || "",
+        companyName: employer.companyName || "N/A",
+        jobsPosted: employer.jobsPosted?.length || 0,
+        currentFreelancers: employer.currentFreelancers?.length || 0,
+        joinedDate: user?.createdAt || employer.createdAt,
+      };
+    });
+
+    res.json({
+      success: true,
+      employers: employersWithDetails,
+      total: employersWithDetails.length,
+    });
+  } catch (error) {
+    console.error("Error fetching employers:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch employers",
+    });
+  }
+};
+
+// Delete employer (Admin only)
+exports.deleteEmployer = async (req, res) => {
+  try {
+    const { employerId } = req.params;
+
+    const employer = await Employer.findOne({ employerId }).lean();
+
+    if (!employer) {
+      return res.status(404).json({
+        success: false,
+        error: "Employer not found",
+      });
+    }
+
+    // Delete employer
+    await Employer.deleteOne({ employerId });
+
+    // Delete associated user account
+    await User.deleteOne({ userId: employer.userId });
+
+    res.json({
+      success: true,
+      message: "Employer deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting employer:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete employer",
     });
   }
 };

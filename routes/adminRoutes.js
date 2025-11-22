@@ -45,4 +45,17 @@ router.delete(
   adminController.deleteFreelancer
 );
 
+// Employer routes
+router.get(
+  "/employers",
+  requireAdmin,
+  adminController.getAllEmployers
+);
+
+router.delete(
+  "/employers/:employerId",
+  requireAdmin,
+  adminController.deleteEmployer
+);
+
 module.exports = router;
