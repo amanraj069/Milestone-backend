@@ -97,4 +97,16 @@ router.post(
   employerController.rateFreelancer
 );
 
+// Complaint routes
+router.post(
+  "/complaints",
+  requireEmployer,
+  employerController.createComplaint
+);
+router.get(
+  "/complaints",
+  requireEmployer,
+  employerController.getEmployerComplaints
+);
+
 module.exports = router;

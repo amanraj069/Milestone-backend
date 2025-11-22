@@ -3,6 +3,7 @@ const JobApplication = require("../models/job_application");
 const User = require("../models/user");
 const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
+const Complaint = require("../models/complaint");
 const { v4: uuidv4 } = require("uuid");
 const { uploadToCloudinary } = require("../middleware/pdfUpload");
 
@@ -743,6 +744,127 @@ exports.rateFreelancer = async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Failed to rate freelancer"
+    });
+  }
+};
+
+// Create a new complaint (Employer)
+exports.createComplaint = async (req, res) => {
+  try {
+    const employerId = req.session.user.roleId;
+    const userId = req.session.user.id;
+    const { jobId, freelancerId, complaintType, priority, subject, description } = req.body;
+
+    // Validate input
+    if (!jobId || !freelancerId || !complaintType || !subject || !description) {
+      return res.status(400).json({
+        success: false,
+        error: "All fields are required",
+      });
+    }
+
+    if (subject.length < 10 || subject.length > 200) {
+      return res.status(400).json({
+        success: false,
+        error: "Subject must be between 10 and 200 characters",
+      });
+    }
+
+    if (description.length < 50) {
+      return res.status(400).json({
+        success: false,
+        error: "Description must be at least 50 characters",
+      });
+    }
+
+    // Get job details
+    const job = await JobListing.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Verify that the employer owns this job
+    if (job.employerId !== employerId) {
+      return res.status(403).json({
+        success: false,
+        error: "You can only file complaints for your own jobs",
+      });
+    }
+
+    // Get employer details
+    const employerUser = await User.findOne({ userId }).lean();
+    const employer = await Employer.findOne({ employerId }).lean();
+    if (!employerUser) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    // Get freelancer details
+    const freelancerUser = await User.findOne({ roleId: freelancerId }).lean();
+    const freelancerName = freelancerUser?.name || "Unknown Freelancer";
+
+    const employerName = employer?.companyName || employerUser.name;
+
+    // Create new complaint
+    const newComplaint = new Complaint({
+      complainantType: "Employer",
+      complainantId: employerId,
+      complainantName: employerName,
+      freelancerId,
+      freelancerName,
+      jobId,
+      jobTitle: job.title,
+      employerId,
+      employerName,
+      complaintType,
+      priority: priority || "Medium",
+      subject,
+      description,
+      status: "Pending",
+    });
+
+    await newComplaint.save();
+
+    res.json({
+      success: true,
+      message: "Complaint submitted successfully",
+      data: {
+        complaintId: newComplaint.complaintId,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating employer complaint:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to submit complaint",
+    });
+  }
+};
+
+// Get employer's complaints
+exports.getEmployerComplaints = async (req, res) => {
+  try {
+    const employerId = req.session.user.roleId;
+
+    const complaints = await Complaint.find({ complainantId: employerId, complainantType: "Employer" })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      complaints,
+      total: complaints.length,
+    });
+  } catch (error) {
+    console.error("Error fetching employer complaints:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch complaints",
     });
   }
 };

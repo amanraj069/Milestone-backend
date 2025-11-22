@@ -10,6 +10,7 @@ const authRoutes = require("./routes/authRoutes");
 const homeRoutes = require("./routes/homeRoutes");
 const employerRoutes = require("./routes/employerRoutes");
 const freelancerRoutes = require("./routes/freelancerRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 
 const app = express();
@@ -46,6 +47,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api", homeRoutes);
 app.use("/api/employer", employerRoutes);
 app.use("/api/freelancer", freelancerRoutes);
+app.use("/api/admin", adminRoutes);
 app.use(blogRoutes);
 
 connectDB
