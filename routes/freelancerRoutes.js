@@ -97,4 +97,16 @@ router.get(
     freelancerController.getLastCoverMessage
 );
 
+// Complaint routes
+router.post(
+    "/complaints",
+    requireFreelancer,
+    freelancerController.createComplaint
+);
+router.get(
+    "/complaints",
+    requireFreelancer,
+    freelancerController.getFreelancerComplaints
+);
+
 module.exports = router;
