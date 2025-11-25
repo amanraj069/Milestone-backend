@@ -9,6 +9,9 @@ const connectDB = require("./database");
 const authRoutes = require("./routes/authRoutes");
 const homeRoutes = require("./routes/homeRoutes");
 const employerRoutes = require("./routes/employerRoutes");
+const freelancerRoutes = require("./routes/freelancerRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const blogRoutes = require("./routes/blogRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 9000;
@@ -16,7 +19,11 @@ const PORT = process.env.PORT || 9000;
 // Enhanced CORS configuration
 app.use(
   cors({
-    origin: process.env.FRONTEND_ORIGIN || "http://localhost:3000",
+    origin: [
+      process.env.FRONTEND_ORIGIN || "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3002"
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -53,6 +60,9 @@ app.use((req, res, next) => {
 app.use("/api/auth", authRoutes);
 app.use("/api", homeRoutes);
 app.use("/api/employer", employerRoutes);
+app.use("/api/freelancer", freelancerRoutes);
+app.use("/api/admin", adminRoutes);
+app.use(blogRoutes);
 
 connectDB
   .then(() => {
