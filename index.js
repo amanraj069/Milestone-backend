@@ -16,6 +16,7 @@ const blogRoutes = require("./routes/blogRoutes");
 const app = express();
 const PORT = process.env.PORT || 9000;
 
+// Enhanced CORS configuration
 app.use(
   cors({
     origin: [
@@ -24,6 +25,8 @@ app.use(
       "http://localhost:3002"
     ],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -43,6 +46,17 @@ app.use(
   })
 );
 
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", message: "Backend is running" });
+});
+
+// Logging middleware for debugging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api", homeRoutes);
 app.use("/api/employer", employerRoutes);
@@ -52,8 +66,13 @@ app.use(blogRoutes);
 
 connectDB
   .then(() => {
-    app.listen(PORT, () => {
+    app.listen(PORT, "0.0.0.0", () => {
       console.log(`Backend running at http://localhost:${PORT}`);
+      console.log(
+        `CORS enabled for: ${
+          process.env.FRONTEND_ORIGIN || "http://localhost:3000"
+        }`
+      );
     });
   })
   .catch((err) => {
