@@ -1,3 +1,6 @@
+const JobListing = require("../models/job_listing");
+const Employer = require("../models/employer");
+
 exports.getHome = (req, res) => {
   let dashboardRoute = "";
   if (req.session && req.session.user) {
@@ -14,4 +17,108 @@ exports.getHome = (req, res) => {
     }
   }
   return res.json({ user: req.session?.user || null, dashboardRoute });
+};
+
+exports.getPublicJobs = async (req, res) => {
+  try {
+    const jobs = await JobListing.find({ status: "open" })
+      .sort({ postedDate: -1 })
+      .lean();
+
+    const formattedJobs = jobs.map((job) => ({
+      jobId: job.jobId,
+      title: job.title,
+      imageUrl: job.imageUrl || "/assets/company_logo.jpg",
+      budget: {
+        amount: job.budget,
+        period: job.jobType === "contract" ? "fixed" : "monthly",
+      },
+      location: job.location || "Remote",
+      jobType: job.jobType,
+      experienceLevel: job.experienceLevel,
+      remote: job.remote,
+      postedDate: job.postedDate,
+      description: {
+        skills: job.description?.skills || [],
+      },
+      applicationCount: job.applications?.length || 0,
+    }));
+
+    return res.json({ success: true, jobs: formattedJobs });
+  } catch (error) {
+    console.error("Error fetching public jobs:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch jobs",
+      error: error.message,
+    });
+  }
+};
+
+exports.getJobDetail = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const job = await JobListing.findOne({ jobId }).lean();
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        message: "Job not found",
+      });
+    }
+
+    // Get employer details
+    const employer = await Employer.findOne({ employerId: job.employerId }).lean();
+    const companyName = employer?.companyName || "Company Name Not Available";
+
+    // Check if user has applied (only if user is logged in as freelancer)
+    let hasApplied = false;
+    if (req.session?.user && req.session.user.role === "Freelancer") {
+      const freelancerId = req.session.user.roleId;
+      hasApplied = job.applications?.some(
+        (app) => app.freelancerId === freelancerId
+      ) || false;
+    }
+
+    // Format the job data
+    const formattedJob = {
+      jobId: job.jobId,
+      employerId: job.employerId,
+      title: job.title,
+      imageUrl: job.imageUrl || "/assets/company_logo.jpg",
+      companyName,
+      budget: {
+        amount: job.budget,
+        period: job.jobType === "contract" ? "fixed" : "monthly",
+      },
+      location: job.location || "Remote",
+      jobType: job.jobType,
+      experienceLevel: job.experienceLevel,
+      remote: job.remote,
+      postedDate: job.postedDate,
+      applicationDeadline: job.applicationDeadline,
+      description: {
+        text: job.description?.text || "",
+        responsibilities: job.description?.responsibilities || [],
+        requirements: job.description?.requirements || [],
+        skills: job.description?.skills || [],
+      },
+      milestones: job.milestones || [],
+      applicationCount: job.applications?.length || 0,
+      hasApplied,
+    };
+
+    return res.json({
+      success: true,
+      job: formattedJob,
+      user: req.session?.user || null,
+    });
+  } catch (error) {
+    console.error("Error fetching job detail:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch job details",
+      error: error.message,
+    });
+  }
 };
