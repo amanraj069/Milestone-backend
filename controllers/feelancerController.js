@@ -363,7 +363,16 @@ exports.getFreelancerProfile = async (req, res) => {
         email: user.email,
         phone: user.phone,
         picture: user.picture,
+        location: user.location,
+        role: user.role,
+        aboutMe: user.aboutMe,
         resume: freelancer.resume,
+        skills: freelancer.skills || [],
+        experience: freelancer.experience || [],
+        education: freelancer.education || [],
+        portfolio: freelancer.portfolio || [],
+        rating: freelancer.rating || 0,
+        subscription: user.subscription || 'Basic',
       },
     });
   } catch (error) {
@@ -379,18 +388,33 @@ exports.getFreelancerProfile = async (req, res) => {
 exports.updateFreelancerProfile = async (req, res) => {
   try {
     const userId = req.session.user.id;
-    const { email, phone } = req.body;
+    const freelancerId = req.session.user.roleId;
+    const { 
+      name, 
+      email, 
+      phone, 
+      location, 
+      profileImageUrl, 
+      about, 
+      resumeLink,
+      skills,
+      experience,
+      education,
+      portfolio
+    } = req.body;
 
-    if (!email || !phone) {
-      return res.status(400).json({
-        success: false,
-        error: "Email and phone are required",
-      });
-    }
+    // Update User fields
+    const userUpdate = {};
+    if (name) userUpdate.name = name;
+    if (email) userUpdate.email = email;
+    if (phone) userUpdate.phone = phone;
+    if (location) userUpdate.location = location;
+    if (profileImageUrl) userUpdate.picture = profileImageUrl;
+    if (about) userUpdate.aboutMe = about;
 
     const updatedUser = await User.findOneAndUpdate(
       { userId },
-      { email, phone },
+      userUpdate,
       { new: true, runValidators: true }
     ).lean();
 
@@ -401,11 +425,48 @@ exports.updateFreelancerProfile = async (req, res) => {
       });
     }
 
+    // Update Freelancer fields
+    const freelancerUpdate = {};
+    if (resumeLink) freelancerUpdate.resume = resumeLink;
+    if (skills) freelancerUpdate.skills = skills;
+    if (experience) freelancerUpdate.experience = experience;
+    if (education) freelancerUpdate.education = education;
+    if (portfolio) freelancerUpdate.portfolio = portfolio;
+
+    const updatedFreelancer = await Freelancer.findOneAndUpdate(
+      { freelancerId },
+      freelancerUpdate,
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updatedFreelancer) {
+      return res.status(404).json({
+        success: false,
+        error: "Freelancer profile not found",
+      });
+    }
+
+    // Update session
+    if (name) req.session.user.name = name;
+    if (email) req.session.user.email = email;
+    if (phone) req.session.user.phone = phone;
+    if (profileImageUrl) req.session.user.picture = profileImageUrl;
+
     res.json({
       success: true,
+      message: "Profile updated successfully",
       data: {
+        name: updatedUser.name,
         email: updatedUser.email,
         phone: updatedUser.phone,
+        location: updatedUser.location,
+        picture: updatedUser.picture,
+        aboutMe: updatedUser.aboutMe,
+        resume: updatedFreelancer.resume,
+        skills: updatedFreelancer.skills,
+        experience: updatedFreelancer.experience,
+        education: updatedFreelancer.education,
+        portfolio: updatedFreelancer.portfolio,
       },
     });
   } catch (error) {
@@ -413,6 +474,83 @@ exports.updateFreelancerProfile = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to update profile",
+    });
+  }
+};
+
+// Upload profile picture
+exports.uploadProfilePicture = async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No image file provided",
+      });
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(req.file.buffer);
+
+    // Update user profile picture
+    const updatedUser = await User.findOneAndUpdate(
+      { userId },
+      { picture: result.secure_url },
+      { new: true }
+    ).lean();
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    // Update session
+    req.session.user.picture = result.secure_url;
+
+    res.json({
+      success: true,
+      message: "Profile picture uploaded successfully",
+      data: {
+        picture: updatedUser.picture,
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading profile picture:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to upload profile picture",
+    });
+  }
+};
+
+// Upload portfolio image
+exports.uploadPortfolioImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No image file provided",
+      });
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(req.file.buffer);
+
+    res.json({
+      success: true,
+      message: "Portfolio image uploaded successfully",
+      data: {
+        imageUrl: result.secure_url,
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading portfolio image:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to upload portfolio image",
     });
   }
 };
