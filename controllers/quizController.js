@@ -173,7 +173,7 @@ exports.publicListQuizzes = async (req, res) => {
   try {
     const q = {};
     if (req.query.skill) q.skillName = req.query.skill;
-    const quizzes = await Quiz.find(q).select('title skillName description timeLimitMinutes passingScore questions.createdAt');
+    const quizzes = await Quiz.find(q).select('title skillName description timeLimitMinutes passingScore questions');
     res.json({ success: true, data: quizzes });
   } catch (err) {
     console.error(err);
