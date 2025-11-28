@@ -21,6 +21,12 @@ exports.getConversations = async (req, res) => {
           .select("userId name picture role")
           .lean();
 
+        // Handle unreadCount properly - it's an object when using lean()
+        let unreadCount = 0;
+        if (conv.unreadCount && typeof conv.unreadCount === 'object') {
+          unreadCount = conv.unreadCount[userId] || 0;
+        }
+
         return {
           conversationId: conv.conversationId,
           participant: otherUser || {
@@ -31,7 +37,7 @@ exports.getConversations = async (req, res) => {
             role: "Unknown",
           },
           lastMessage: conv.lastMessage,
-          unreadCount: conv.unreadCount?.get(userId) || 0,
+          unreadCount: unreadCount,
           updatedAt: conv.updatedAt,
         };
       })
@@ -88,7 +94,10 @@ exports.getMessages = async (req, res) => {
       }
     );
 
-    // Reset unread count
+    // Reset unread count - use proper Map method
+    if (!conversation.unreadCount) {
+      conversation.unreadCount = new Map();
+    }
     conversation.unreadCount.set(currentUserId, 0);
     await conversation.save();
 
@@ -142,6 +151,7 @@ exports.sendMessage = async (req, res) => {
           [recipientId, 0],
         ]),
       });
+      await conversation.save(); // Save the new conversation
     }
 
     // Create message
@@ -176,6 +186,9 @@ exports.sendMessage = async (req, res) => {
     };
 
     // Increment unread count for recipient
+    if (!conversation.unreadCount) {
+      conversation.unreadCount = new Map();
+    }
     const currentUnread = conversation.unreadCount.get(recipientId) || 0;
     conversation.unreadCount.set(recipientId, currentUnread + 1);
 
@@ -213,6 +226,9 @@ exports.markAsRead = async (req, res) => {
 
     const conversation = await Conversation.findOne({ conversationId });
     if (conversation) {
+      if (!conversation.unreadCount) {
+        conversation.unreadCount = new Map();
+      }
       conversation.unreadCount.set(userId, 0);
       await conversation.save();
     }
@@ -262,6 +278,72 @@ exports.searchUsers = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to search users",
+    });
+  }
+};
+
+// Delete a message
+exports.deleteMessage = async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const userId = req.session.user.id;
+
+    // Find the message
+    const message = await Message.findOne({ messageId });
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        error: "Message not found",
+      });
+    }
+
+    // Check if user is the sender
+    if (message.from !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: "You can only delete your own messages",
+      });
+    }
+
+    // Delete the message
+    await Message.deleteOne({ messageId });
+
+    // Update conversation's last message if this was the last message
+    const conversation = await Conversation.findOne({
+      conversationId: message.conversationId,
+    });
+
+    if (conversation && conversation.lastMessage?.messageId === messageId) {
+      // Find the new last message
+      const lastMessage = await Message.findOne({
+        conversationId: message.conversationId,
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (lastMessage) {
+        conversation.lastMessage = {
+          messageId: lastMessage.messageId,
+          text: lastMessage.messageData,
+          sender: lastMessage.from,
+          timestamp: lastMessage.createdAt,
+        };
+      } else {
+        conversation.lastMessage = null;
+      }
+
+      await conversation.save();
+    }
+
+    res.json({
+      success: true,
+      message: "Message deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting message:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to delete message",
     });
   }
 };

@@ -145,6 +145,16 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Message deleted
+  socket.on("message:delete", ({ messageId, recipientId }) => {
+    const recipientSocketId = userSockets.get(recipientId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("message:deleted", {
+        messageId,
+      });
+    }
+  });
+
   // Disconnect
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
