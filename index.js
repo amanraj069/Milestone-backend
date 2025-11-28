@@ -12,6 +12,7 @@ const employerRoutes = require("./routes/employerRoutes");
 const freelancerRoutes = require("./routes/freelancerRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const blogRoutes = require("./routes/blogRoutes");
+const quizRoutes = require("./routes/quizRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 9000;
@@ -63,6 +64,8 @@ app.use("/api/employer", employerRoutes);
 app.use("/api/freelancer", freelancerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use(blogRoutes);
+// Public quiz routes
+app.use('/api/quizzes', quizRoutes);
 
 connectDB
   .then(() => {

@@ -66,4 +66,8 @@ router.get(
   adminController.getRecentActivities
 );
 
+// Admin quiz management (mounted at /api/admin/quizzes)
+const adminQuizRoutes = require('./adminQuizRoutes');
+router.use('/quizzes', requireAdmin, adminQuizRoutes);
+
 module.exports = router;
