@@ -6,6 +6,7 @@ const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
 const { v4: uuidv4 } = require("uuid");
 const { uploadToCloudinary } = require("../middleware/pdfUpload");
+const { uploadToCloudinary: uploadImageToCloudinary } = require("../middleware/imageUpload");
 
 // Get all job listings for the logged-in employer
 exports.getJobListings = async (req, res) => {
@@ -865,6 +866,223 @@ exports.getEmployerComplaints = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch complaints",
+    });
+  }
+};
+
+// Get employer profile
+exports.getEmployerProfile = async (req, res) => {
+  try {
+    const userId = req.session.user?.id;
+    const employerId = req.session.user?.roleId;
+
+    if (!userId || !employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized"
+      });
+    }
+
+    // Get user data
+    const user = await User.findOne({ userId }).lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found"
+      });
+    }
+
+    // Get employer data
+    const employer = await Employer.findOne({ employerId }).lean();
+
+    return res.json({
+      success: true,
+      data: {
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        location: user.location,
+        role: user.role,
+        picture: user.picture,
+        aboutMe: user.aboutMe,
+        socialMedia: user.socialMedia,
+        rating: user.rating,
+        subscription: user.subscription
+      },
+      employer: {
+        companyName: employer?.companyName || '',
+        websiteLink: employer?.websiteLink || ''
+      }
+    });
+  } catch (error) {
+    console.error("Get employer profile error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch profile"
+    });
+  }
+};
+
+// Update employer profile
+exports.updateEmployerProfile = async (req, res) => {
+  try {
+    const userId = req.session.user?.id;
+    const employerId = req.session.user?.roleId;
+
+    if (!userId || !employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized"
+      });
+    }
+
+    const {
+      name,
+      email,
+      phone,
+      location,
+      companyName,
+      websiteLink,
+      aboutMe,
+      picture,
+      socialMedia
+    } = req.body;
+
+    // Update user data
+    const updateUserData = {
+      name,
+      phone,
+      location,
+      aboutMe,
+      socialMedia
+    };
+
+    // Only update picture if provided
+    if (picture) {
+      updateUserData.picture = picture;
+    }
+
+    await User.findOneAndUpdate(
+      { userId },
+      updateUserData,
+      { new: true, runValidators: true }
+    );
+
+    // Update employer data
+    await Employer.findOneAndUpdate(
+      { employerId },
+      {
+        companyName,
+        websiteLink
+      },
+      { new: true, runValidators: true }
+    );
+
+    // Update session
+    req.session.user.name = name;
+    req.session.user.phone = phone;
+    req.session.user.location = location;
+    req.session.user.aboutMe = aboutMe;
+    if (picture) {
+      req.session.user.picture = picture;
+    }
+
+    return res.json({
+      success: true,
+      message: "Profile updated successfully"
+    });
+  } catch (error) {
+    console.error("Update employer profile error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to update profile"
+    });
+  }
+};
+
+// Upload employer profile image
+exports.uploadEmployerImage = async (req, res) => {
+  try {
+    const userId = req.session.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized"
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded"
+      });
+    }
+
+    // Upload to cloudinary
+    const result = await uploadImageToCloudinary(req.file.buffer);
+    const imageUrl = result.secure_url;
+
+    // Update user picture
+    await User.findOneAndUpdate(
+      { userId },
+      { picture: imageUrl },
+      { new: true }
+    );
+
+    // Update session
+    req.session.user.picture = imageUrl;
+
+    return res.json({
+      success: true,
+      imageUrl,
+      message: "Image uploaded successfully"
+    });
+  } catch (error) {
+    console.error("Upload employer image error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to upload image"
+    });
+  }
+};
+
+// Get employer dashboard stats
+exports.getEmployerDashboardStats = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized"
+      });
+    }
+
+    // Count active jobs (status: open)
+    const activeJobs = await JobListing.countDocuments({
+      employerId,
+      status: "open"
+    });
+
+    // Count current freelancers working
+    const currentFreelancers = await JobListing.countDocuments({
+      employerId,
+      "assignedFreelancer.status": "working"
+    });
+
+    return res.json({
+      success: true,
+      data: {
+        activeJobs,
+        currentFreelancers
+      }
+    });
+  } catch (error) {
+    console.error("Get employer dashboard stats error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch dashboard stats"
     });
   }
 };
