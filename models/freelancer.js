@@ -12,11 +12,7 @@ const freelancerSchema = new Schema(
     },
     userId: { type: String, ref: "User", required: true },
     resume: { type: String, default: "" },
-    skills: [
-      {
-        skillId: { type: String, ref: "Skill", required: true },
-      },
-    ],
+    skills: [String], // Array of skill names as strings
     experience: [
       {
         title: { type: String, default: "" },

@@ -3,6 +3,7 @@ const JobApplication = require("../models/job_application");
 const User = require("../models/user");
 const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
+const Complaint = require("../models/complaint");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 const { uploadToCloudinary: uploadPdfToCloudinary } = require("../middleware/pdfUpload");
 
@@ -231,7 +232,9 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
         const employer = await Employer.findOne({
           employerId: job.employerId,
         }).lean();
-        const companyName = employer ? employer.companyName : "Unknown Company";
+        const companyName = employer && employer.companyName && employer.companyName.trim() 
+          ? employer.companyName 
+          : "Unknown Company";
 
         const user = users.find((u) => u.roleId === job.employerId);
 
@@ -362,7 +365,16 @@ exports.getFreelancerProfile = async (req, res) => {
         email: user.email,
         phone: user.phone,
         picture: user.picture,
+        location: user.location,
+        role: user.role,
+        aboutMe: user.aboutMe,
         resume: freelancer.resume,
+        skills: freelancer.skills || [],
+        experience: freelancer.experience || [],
+        education: freelancer.education || [],
+        portfolio: freelancer.portfolio || [],
+        rating: freelancer.rating || 0,
+        subscription: user.subscription || 'Basic',
       },
     });
   } catch (error) {
@@ -378,18 +390,33 @@ exports.getFreelancerProfile = async (req, res) => {
 exports.updateFreelancerProfile = async (req, res) => {
   try {
     const userId = req.session.user.id;
-    const { email, phone } = req.body;
+    const freelancerId = req.session.user.roleId;
+    const { 
+      name, 
+      email, 
+      phone, 
+      location, 
+      profileImageUrl, 
+      about, 
+      resumeLink,
+      skills,
+      experience,
+      education,
+      portfolio
+    } = req.body;
 
-    if (!email || !phone) {
-      return res.status(400).json({
-        success: false,
-        error: "Email and phone are required",
-      });
-    }
+    // Update User fields
+    const userUpdate = {};
+    if (name) userUpdate.name = name;
+    if (email) userUpdate.email = email;
+    if (phone) userUpdate.phone = phone;
+    if (location) userUpdate.location = location;
+    if (profileImageUrl) userUpdate.picture = profileImageUrl;
+    if (about) userUpdate.aboutMe = about;
 
     const updatedUser = await User.findOneAndUpdate(
       { userId },
-      { email, phone },
+      userUpdate,
       { new: true, runValidators: true }
     ).lean();
 
@@ -400,11 +427,48 @@ exports.updateFreelancerProfile = async (req, res) => {
       });
     }
 
+    // Update Freelancer fields
+    const freelancerUpdate = {};
+    if (resumeLink) freelancerUpdate.resume = resumeLink;
+    if (skills) freelancerUpdate.skills = skills;
+    if (experience) freelancerUpdate.experience = experience;
+    if (education) freelancerUpdate.education = education;
+    if (portfolio) freelancerUpdate.portfolio = portfolio;
+
+    const updatedFreelancer = await Freelancer.findOneAndUpdate(
+      { freelancerId },
+      freelancerUpdate,
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updatedFreelancer) {
+      return res.status(404).json({
+        success: false,
+        error: "Freelancer profile not found",
+      });
+    }
+
+    // Update session
+    if (name) req.session.user.name = name;
+    if (email) req.session.user.email = email;
+    if (phone) req.session.user.phone = phone;
+    if (profileImageUrl) req.session.user.picture = profileImageUrl;
+
     res.json({
       success: true,
+      message: "Profile updated successfully",
       data: {
+        name: updatedUser.name,
         email: updatedUser.email,
         phone: updatedUser.phone,
+        location: updatedUser.location,
+        picture: updatedUser.picture,
+        aboutMe: updatedUser.aboutMe,
+        resume: updatedFreelancer.resume,
+        skills: updatedFreelancer.skills,
+        experience: updatedFreelancer.experience,
+        education: updatedFreelancer.education,
+        portfolio: updatedFreelancer.portfolio,
       },
     });
   } catch (error) {
@@ -412,6 +476,83 @@ exports.updateFreelancerProfile = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to update profile",
+    });
+  }
+};
+
+// Upload profile picture
+exports.uploadProfilePicture = async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No image file provided",
+      });
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(req.file.buffer);
+
+    // Update user profile picture
+    const updatedUser = await User.findOneAndUpdate(
+      { userId },
+      { picture: result.secure_url },
+      { new: true }
+    ).lean();
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    // Update session
+    req.session.user.picture = result.secure_url;
+
+    res.json({
+      success: true,
+      message: "Profile picture uploaded successfully",
+      data: {
+        picture: updatedUser.picture,
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading profile picture:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to upload profile picture",
+    });
+  }
+};
+
+// Upload portfolio image
+exports.uploadPortfolioImage = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No image file provided",
+      });
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(req.file.buffer);
+
+    res.json({
+      success: true,
+      message: "Portfolio image uploaded successfully",
+      data: {
+        imageUrl: result.secure_url,
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading portfolio image:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to upload portfolio image",
     });
   }
 };
@@ -561,6 +702,118 @@ exports.getLastCoverMessage = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch last cover message",
+    });
+  }
+};
+
+// Create a new complaint
+exports.createComplaint = async (req, res) => {
+  try {
+    const freelancerId = req.session.user.roleId;
+    const userId = req.session.user.id;
+    const { jobId, complaintType, priority, subject, description } = req.body;
+
+    // Validate input
+    if (!jobId || !complaintType || !subject || !description) {
+      return res.status(400).json({
+        success: false,
+        error: "All fields are required",
+      });
+    }
+
+    if (subject.length < 10 || subject.length > 200) {
+      return res.status(400).json({
+        success: false,
+        error: "Subject must be between 10 and 200 characters",
+      });
+    }
+
+    if (description.length < 50) {
+      return res.status(400).json({
+        success: false,
+        error: "Description must be at least 50 characters",
+      });
+    }
+
+    // Get job details
+    const job = await JobListing.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Get freelancer details
+    const user = await User.findOne({ userId }).lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    // Get employer details
+    const employer = await Employer.findOne({ employerId: job.employerId }).lean();
+    const employerUser = await User.findOne({ roleId: job.employerId }).lean();
+    
+    const employerName = employer?.companyName || employerUser?.name || "Unknown Employer";
+
+    // Create new complaint
+    const newComplaint = new Complaint({
+      complainantType: "Freelancer",
+      complainantId: freelancerId,
+      complainantName: user.name,
+      freelancerId,
+      freelancerName: user.name,
+      jobId,
+      jobTitle: job.title,
+      employerId: job.employerId,
+      employerName,
+      complaintType,
+      priority: priority || "Medium",
+      subject,
+      description,
+      status: "Pending",
+    });
+
+    await newComplaint.save();
+
+    res.json({
+      success: true,
+      message: "Complaint submitted successfully",
+      data: {
+        complaintId: newComplaint.complaintId,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating complaint:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to submit complaint",
+    });
+  }
+};
+
+// Get freelancer's complaints
+exports.getFreelancerComplaints = async (req, res) => {
+  try {
+    const freelancerId = req.session.user.roleId;
+
+    const complaints = await Complaint.find({ freelancerId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      complaints,
+      total: complaints.length,
+    });
+  } catch (error) {
+    console.error("Error fetching complaints:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch complaints",
     });
   }
 };
