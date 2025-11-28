@@ -23,6 +23,9 @@ router.get("/messages/:userId", requireAuth, chatController.getMessages);
 // Send a message
 router.post("/messages/:userId", requireAuth, chatController.sendMessage);
 
+// Delete a message
+router.delete("/messages/:messageId", requireAuth, chatController.deleteMessage);
+
 // Mark conversation as read
 router.put(
   "/conversations/:conversationId/read",
