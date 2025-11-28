@@ -2,6 +2,8 @@ const express = require("express");
 const session = require("express-session");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const http = require("http");
+const { Server } = require("socket.io");
 
 dotenv.config();
 
@@ -11,8 +13,22 @@ const homeRoutes = require("./routes/homeRoutes");
 const employerRoutes = require("./routes/employerRoutes");
 const freelancerRoutes = require("./routes/freelancerRoutes");
 const blogRoutes = require("./routes/blogRoutes");
+const chatRoutes = require("./routes/chatRoutes");
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: [
+      process.env.FRONTEND_ORIGIN || "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3002",
+      "http://localhost:5173",
+    ],
+    credentials: true,
+  },
+});
+
 const PORT = process.env.PORT || 9000;
 
 app.use(
@@ -46,12 +62,113 @@ app.use("/api/auth", authRoutes);
 app.use("/api", homeRoutes);
 app.use("/api/employer", employerRoutes);
 app.use("/api/freelancer", freelancerRoutes);
+app.use("/api/chat", chatRoutes);
 app.use(blogRoutes);
+
+// Socket.IO connection handling
+const userSockets = new Map(); // Map userId to socket.id
+const typingUsers = new Map(); // Map conversationId to Set of typing userIds
+
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+
+  // User joins with their userId
+  socket.on("user:join", (userId) => {
+    userSockets.set(userId, socket.id);
+    socket.userId = userId;
+    socket.join(`user:${userId}`);
+    
+    // Notify user's contacts that they're online
+    io.emit("user:status", { userId, status: "online" });
+  });
+
+  // User starts typing
+  socket.on("typing:start", ({ conversationId, userId, recipientId }) => {
+    if (!typingUsers.has(conversationId)) {
+      typingUsers.set(conversationId, new Set());
+    }
+    typingUsers.get(conversationId).add(userId);
+
+    // Notify the recipient
+    const recipientSocketId = userSockets.get(recipientId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("typing:update", {
+        conversationId,
+        userId,
+        isTyping: true,
+      });
+    }
+  });
+
+  // User stops typing
+  socket.on("typing:stop", ({ conversationId, userId, recipientId }) => {
+    if (typingUsers.has(conversationId)) {
+      typingUsers.get(conversationId).delete(userId);
+      if (typingUsers.get(conversationId).size === 0) {
+        typingUsers.delete(conversationId);
+      }
+    }
+
+    // Notify the recipient
+    const recipientSocketId = userSockets.get(recipientId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("typing:update", {
+        conversationId,
+        userId,
+        isTyping: false,
+      });
+    }
+  });
+
+  // New message sent
+  socket.on("message:send", (messageData) => {
+    const { recipientId, message } = messageData;
+    const recipientSocketId = userSockets.get(recipientId);
+
+    if (recipientSocketId) {
+      // Send to recipient
+      io.to(recipientSocketId).emit("message:new", message);
+    }
+
+    // Send back to sender for confirmation
+    socket.emit("message:sent", message);
+  });
+
+  // Message read
+  socket.on("message:read", ({ conversationId, userId, recipientId }) => {
+    const recipientSocketId = userSockets.get(recipientId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("message:read", {
+        conversationId,
+        readBy: userId,
+      });
+    }
+  });
+
+  // Disconnect
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+    
+    if (socket.userId) {
+      userSockets.delete(socket.userId);
+      
+      // Notify contacts that user is offline
+      io.emit("user:status", {
+        userId: socket.userId,
+        status: "offline",
+      });
+    }
+  });
+});
+
+// Make io accessible to routes
+app.set("io", io);
 
 connectDB
   .then(() => {
-    app.listen(PORT, () => {
+    server.listen(PORT, () => {
       console.log(`Backend running at http://localhost:${PORT}`);
+      console.log(`Socket.IO server ready`);
     });
   })
   .catch((err) => {
