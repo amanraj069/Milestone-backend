@@ -21,7 +21,7 @@
   "homepage": "https://github.com/amanraj069/m-backend#readme",
   "dependencies": {
     "bcrypt": "^6.0.0",
-    "cloudinary": "^1.41.3",
+    "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",

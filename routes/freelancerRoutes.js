@@ -63,10 +63,22 @@ router.get(
     requireFreelancer,
     freelancerController.getFreelancerProfile
 );
-router.put(
+router.post(
     "/profile/update",
     requireFreelancer,
     freelancerController.updateFreelancerProfile
+);
+router.post(
+    "/profile/picture/upload",
+    requireFreelancer,
+    upload.single("profilePicture"),
+    freelancerController.uploadProfilePicture
+);
+router.post(
+    "/portfolio/image/upload",
+    requireFreelancer,
+    upload.single("portfolioImage"),
+    freelancerController.uploadPortfolioImage
 );
 router.post(
     "/resume/upload",
@@ -83,6 +95,18 @@ router.get(
     "/cover-message/last",
     requireFreelancer,
     freelancerController.getLastCoverMessage
+);
+
+// Complaint routes
+router.post(
+    "/complaints",
+    requireFreelancer,
+    freelancerController.createComplaint
+);
+router.get(
+    "/complaints",
+    requireFreelancer,
+    freelancerController.getFreelancerComplaints
 );
 
 module.exports = router;
