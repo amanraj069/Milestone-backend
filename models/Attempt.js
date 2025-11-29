@@ -2,12 +2,12 @@ const mongoose = require('mongoose');
 
 const AnswerSchema = new mongoose.Schema({
   questionId: { type: mongoose.Schema.Types.ObjectId, required: true },
-  selectedOptionIndex: { type: Number, required: true },
+  selectedOptionIndex: { type: Number, default: null },
   awardedMarks: { type: Number, required: true }
 });
 
 const AttemptSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true, required: true },
+  userId: { type: String, ref: 'User', index: true, required: true },
   quizId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quiz', required: true },
   answers: { type: [AnswerSchema], default: [] },
   totalMarks: { type: Number, required: true },

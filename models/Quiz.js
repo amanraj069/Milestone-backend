@@ -9,7 +9,10 @@ const OptionSchema = new mongoose.Schema({
 const QuestionSchema = new mongoose.Schema({
   text: { type: String, required: true },
   marks: { type: Number, default: 1 },
-  options: { type: [OptionSchema], validate: v => Array.isArray(v) && v.length >= 2 && v.length <= 6 }
+  options: { type: [OptionSchema], validate: v => Array.isArray(v) && v.length >= 2 && v.length <= 6 },
+  hasCode: { type: Boolean, default: false },
+  codeSnippet: { type: String, default: '' },
+  codeLanguage: { type: String, default: 'javascript' }
 });
 
 const QuizSchema = new mongoose.Schema({
