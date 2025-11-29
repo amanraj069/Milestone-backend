@@ -26,7 +26,7 @@ exports.createQuiz = async (req, res) => {
           title: `${payload.skillName} Expert`,
           skillName: payload.skillName,
           description: `Earned by passing the ${payload.title} quiz with ${payload.passingScore || 50}% or higher`,
-          icon: '🏆',
+          // icon: '🏆',
           criteria: {
             type: 'pass_quiz',
             quizId: String(quiz._id),
