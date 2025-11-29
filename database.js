@@ -8,8 +8,8 @@ const connectionString =
 
 const connectDB = mongoose
   .connect(connectionString, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
+    // useNewUrlParser: true,
+    // useUnifiedTopology: true,
     serverSelectionTimeoutMS: 20000,
   })
   .then(() => {
