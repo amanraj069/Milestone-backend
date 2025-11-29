@@ -263,6 +263,7 @@ exports.searchUsers = async (req, res) => {
       $or: [
         { name: { $regex: query, $options: "i" } },
         { email: { $regex: query, $options: "i" } },
+        { userId: query }, // Exact match for userId
       ],
     })
       .select("userId name picture role")

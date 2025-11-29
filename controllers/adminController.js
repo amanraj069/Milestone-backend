@@ -7,14 +7,39 @@ const JobListing = require("../models/job_listing");
 // Get all complaints (Admin only)
 exports.getAllComplaints = async (req, res) => {
   try {
+    console.log("📋 Getting all complaints with complainant userIds...");
     const complaints = await Complaint.find({})
       .sort({ createdAt: -1 })
       .lean();
 
+    console.log(`📊 Found ${complaints.length} complaints`);
+
+    // Get complainant userIds for chat functionality
+    const complainantIds = [...new Set(complaints.map(c => c.complainantId))];
+    console.log("🔍 Looking for complainant IDs:", complainantIds);
+    
+    // Fetch users based on roleId (complainantId could be freelancerId or employerId)
+    const complainantUsers = await User.find({ roleId: { $in: complainantIds } })
+      .select('userId roleId')
+      .lean();
+    
+    console.log("👤 Found complainant users:", complainantUsers);
+    
+    // Add complainant userId to each complaint
+    const complaintsWithUserId = complaints.map(complaint => {
+      const complainantUser = complainantUsers.find(user => user.roleId === complaint.complainantId);
+      const result = {
+        ...complaint,
+        complainantUserId: complainantUser?.userId || null
+      };
+      console.log(`📝 Complaint ${complaint.complaintId}: complainantId=${complaint.complainantId}, complainantUserId=${result.complainantUserId}`);
+      return result;
+    });
+
     res.json({
       success: true,
-      complaints,
-      total: complaints.length,
+      complaints: complaintsWithUserId,
+      total: complaintsWithUserId.length,
     });
   } catch (error) {
     console.error("Error fetching all complaints:", error.message);
@@ -72,9 +97,19 @@ exports.updateComplaintStatus = async (req, res) => {
       });
     }
 
+    // Add complainantUserId for chat functionality
+    const complainantUser = await User.findOne({ roleId: complaint.complainantId })
+      .select('userId')
+      .lean();
+    
+    const complaintWithUserId = {
+      ...complaint,
+      complainantUserId: complainantUser?.userId || null
+    };
+
     res.json({
       success: true,
-      complaint,
+      complaint: complaintWithUserId,
       message: "Complaint updated successfully",
     });
   } catch (error) {
