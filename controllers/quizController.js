@@ -139,10 +139,24 @@ exports.getQuizAttempts = async (req, res) => {
     const quiz = await Quiz.findById(quizId);
     if (!quiz) return res.status(404).json({ success: false, error: { message: 'Quiz not found' } });
     
-    // Find all attempts with user details populated
+    // Find all attempts (userId is a String UUID, not ObjectId reference)
     const attempts = await Attempt.find({ quizId })
-      .populate('userId', 'firstName lastName email')
       .sort({ createdAt: -1 });
+    
+    // Get all unique user IDs
+    const userIds = [...new Set(attempts.map(a => a.userId))];
+    
+    // Fetch user details separately
+    const User = require('../models/user');
+    const users = await User.find({ userId: { $in: userIds } })
+      .select('userId name email')
+      .lean();
+    
+    // Create a map for quick user lookup
+    const userMap = {};
+    users.forEach(u => {
+      userMap[u.userId] = u;
+    });
     
     // Get badge info for this quiz
     const Badge = require('../models/Badge');
@@ -151,10 +165,11 @@ exports.getQuizAttempts = async (req, res) => {
     
     // Build detailed attempt data
     const attemptDetails = await Promise.all(attempts.map(async (attempt) => {
+      const user = userMap[attempt.userId];
       let badgeAwarded = false;
       if (badge && attempt.passed) {
         const userBadge = await UserBadge.findOne({ 
-          userId: attempt.userId._id, 
+          userId: attempt.userId, 
           badgeId: badge._id 
         });
         badgeAwarded = !!userBadge;
@@ -162,8 +177,8 @@ exports.getQuizAttempts = async (req, res) => {
       
       return {
         attemptId: attempt._id,
-        freelancerName: `${attempt.userId.firstName} ${attempt.userId.lastName}`,
-        email: attempt.userId.email,
+        freelancerName: user?.name || 'Unknown User',
+        email: user?.email || 'N/A',
         marksObtained: attempt.userMarks,
         totalMarks: attempt.totalMarks,
         percentage: attempt.percentage,

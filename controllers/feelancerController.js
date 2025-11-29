@@ -232,7 +232,9 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
         const employer = await Employer.findOne({
           employerId: job.employerId,
         }).lean();
-        const companyName = employer ? employer.companyName : "Unknown Company";
+        const companyName = employer && employer.companyName && employer.companyName.trim() 
+          ? employer.companyName 
+          : "Unknown Company";
 
         const user = users.find((u) => u.roleId === job.employerId);
 

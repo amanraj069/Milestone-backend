@@ -70,4 +70,43 @@ router.get(
 const adminQuizRoutes = require('./adminQuizRoutes');
 router.use('/quizzes', requireAdmin, adminQuizRoutes);
 
+// Freelancer routes
+router.get(
+  "/freelancers",
+  requireAdmin,
+  adminController.getAllFreelancers
+);
+
+router.delete(
+  "/freelancers/:freelancerId",
+  requireAdmin,
+  adminController.deleteFreelancer
+);
+
+// Employer routes
+router.get(
+  "/employers",
+  requireAdmin,
+  adminController.getAllEmployers
+);
+
+router.delete(
+  "/employers/:employerId",
+  requireAdmin,
+  adminController.deleteEmployer
+);
+
+// Job Listing routes
+router.get(
+  "/jobs",
+  requireAdmin,
+  adminController.getAllJobListings
+);
+
+router.delete(
+  "/jobs/:jobId",
+  requireAdmin,
+  adminController.deleteJobListing
+);
+
 module.exports = router;
