@@ -17,6 +17,30 @@ exports.createQuiz = async (req, res) => {
     if (!Array.isArray(payload.questions) || payload.questions.length < 1) return res.status(400).json({ success: false, error: { message: 'At least one question required' } });
     const quiz = new Quiz({ ...payload, createdBy: req.session.user?._id });
     await quiz.save();
+    
+    // Auto-create badge for this quiz
+    try {
+      const existingBadge = await Badge.findOne({ 'criteria.quizId': String(quiz._id) });
+      if (!existingBadge) {
+        const badge = new Badge({
+          title: `${payload.skillName} Expert`,
+          skillName: payload.skillName,
+          description: `Earned by passing the ${payload.title} quiz with ${payload.passingScore || 50}% or higher`,
+          icon: '🏆',
+          criteria: {
+            type: 'pass_quiz',
+            quizId: String(quiz._id),
+            minPercentage: payload.passingScore || 50
+          }
+        });
+        await badge.save();
+        console.log('Auto-created badge for quiz:', badge.title);
+      }
+    } catch (badgeErr) {
+      console.error('Failed to create badge:', badgeErr);
+      // Don't fail quiz creation if badge creation fails
+    }
+    
     res.json({ success: true, data: quiz });
   } catch (err) {
     console.error(err);
@@ -189,11 +213,14 @@ exports.getQuizForUser = async (req, res) => {
     const quiz = await Quiz.findById(req.params.id);
     if (!quiz) return res.status(404).json({ success: false, error: { message: 'Quiz not found' } });
     const sanitized = quiz.toObject();
-    // Remove isCorrect flags
+    // Remove isCorrect flags but keep code snippet fields
     sanitized.questions = sanitized.questions.map(q => ({
       _id: q._id,
       text: q.text,
       marks: q.marks,
+      hasCode: q.hasCode,
+      codeSnippet: q.codeSnippet,
+      codeLanguage: q.codeLanguage,
       options: q.options.map(o => ({ text: o.text }))
     }));
     res.json({ success: true, data: sanitized });
@@ -208,11 +235,35 @@ exports.getQuizForUser = async (req, res) => {
  */
 exports.submitAttempt = async (req, res) => {
   try {
-    if (!req.session.user) return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
+    console.log('Submit attempt request received');
+    console.log('Session user:', req.session.user);
+    console.log('Request body:', req.body);
+    
+    if (!req.session.user) {
+      console.log('Authentication failed - no session user');
+      return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
+    }
+    
     const quizId = req.params.id;
     const { answers } = req.body; // [{questionId, selectedOptionIndex}]
+    
+    console.log('Quiz ID:', quizId);
+    console.log('Answers received:', answers);
+    
     const quiz = await Quiz.findById(quizId);
-    if (!quiz) return res.status(404).json({ success: false, error: { message: 'Quiz not found' } });
+    if (!quiz) {
+      console.log('Quiz not found:', quizId);
+      return res.status(404).json({ success: false, error: { message: 'Quiz not found' } });
+    }
+
+    // Check attempt limit (max 3 attempts per quiz per user)
+    const previousAttempts = await Attempt.countDocuments({ userId: req.session.user.id, quizId });
+    console.log('Previous attempts:', previousAttempts);
+    
+    if (previousAttempts >= 3) {
+      console.log('Max attempts reached');
+      return res.status(400).json({ success: false, error: { message: 'Maximum 3 attempts allowed per quiz. You have already completed 3 attempts.' } });
+    }
 
     let totalMarks = 0;
     let userMarks = 0;
@@ -232,11 +283,21 @@ exports.submitAttempt = async (req, res) => {
       answerRecords.push({ questionId: question._id, selectedOptionIndex: selectedIndex, awardedMarks: awarded });
     });
 
+    console.log('Score calculation:', { totalMarks, userMarks, answerRecords });
+
     const percentage = totalMarks ? (userMarks / totalMarks) * 100 : 0;
     const passed = percentage >= (quiz.passingScore || 50);
 
-    const attempt = new Attempt({ userId: req.session.user._id, quizId, answers: answerRecords, totalMarks, userMarks, percentage, passed });
-    await attempt.save();
+    console.log('Creating attempt document...');
+    const attempt = new Attempt({ userId: req.session.user.id, quizId, answers: answerRecords, totalMarks, userMarks, percentage, passed });
+    
+    try {
+      await attempt.save();
+      console.log('Attempt saved successfully');
+    } catch (saveError) {
+      console.error('Error saving attempt:', saveError);
+      throw saveError;
+    }
 
     // Check badges and award if applicable
     const badges = await Badge.find({ 'criteria.type': 'pass_quiz', 'criteria.quizId': String(quiz._id) });
@@ -245,18 +306,21 @@ exports.submitAttempt = async (req, res) => {
       const min = badge.criteria.minPercentage || 0;
       if (passed && percentage >= min) {
         try {
-          const ub = await UserBadge.findOneAndUpdate({ userId: req.session.user._id, badgeId: badge._id }, { $setOnInsert: { awardedAt: new Date() } }, { upsert: true, new: true });
+          const ub = await UserBadge.findOneAndUpdate({ userId: req.session.user.id, badgeId: badge._id }, { $setOnInsert: { awardedAt: new Date() } }, { upsert: true, new: true });
           awardedBadges.push(badge);
         } catch (e) {
           // ignore duplicate key errors
+          console.log('Badge already awarded or error:', e.message);
         }
       }
     }
 
+    console.log('Attempt submission successful');
     res.json({ success: true, data: { attempt, awardedBadges } });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: { message: 'Server error' } });
+    console.error('Submit attempt error:', err);
+    console.error('Error stack:', err.stack);
+    res.status(500).json({ success: false, error: { message: 'Server error: ' + err.message } });
   }
 };
 
@@ -266,7 +330,7 @@ exports.submitAttempt = async (req, res) => {
 exports.listUserAttempts = async (req, res) => {
   try {
     const userId = req.params.userId;
-    if (!req.session.user || String(req.session.user._id) !== String(userId)) return res.status(403).json({ success: false, error: { message: 'Forbidden' } });
+    if (!req.session.user || String(req.session.user.id) !== String(userId)) return res.status(403).json({ success: false, error: { message: 'Forbidden' } });
     const attempts = await Attempt.find({ userId }).sort({ createdAt: -1 }).limit(50);
     res.json({ success: true, data: attempts });
   } catch (err) {
@@ -281,7 +345,7 @@ exports.listUserAttempts = async (req, res) => {
 exports.listUserBadges = async (req, res) => {
   try {
     const userId = req.params.userId;
-    if (!req.session.user || String(req.session.user._id) !== String(userId)) return res.status(403).json({ success: false, error: { message: 'Forbidden' } });
+    if (!req.session.user || String(req.session.user.id) !== String(userId)) return res.status(403).json({ success: false, error: { message: 'Forbidden' } });
     const userBadges = await UserBadge.find({ userId }).populate('badgeId');
     res.json({ success: true, data: userBadges.map(ub => ({ badge: ub.badgeId, awardedAt: ub.awardedAt })) });
   } catch (err) {
