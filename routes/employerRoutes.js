@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const employerController = require("../controllers/employerController");
+const { upload } = require("../middleware/imageUpload");
 
 // Middleware to check if user is authenticated and is an employer
 const requireEmployer = (req, res, next) => {
@@ -107,6 +108,31 @@ router.get(
   "/complaints",
   requireEmployer,
   employerController.getEmployerComplaints
+);
+
+// Profile routes
+router.get(
+  "/profile",
+  requireEmployer,
+  employerController.getEmployerProfile
+);
+router.put(
+  "/profile",
+  requireEmployer,
+  employerController.updateEmployerProfile
+);
+router.post(
+  "/upload-image",
+  requireEmployer,
+  upload.single('picture'),
+  employerController.uploadEmployerImage
+);
+
+// Dashboard stats
+router.get(
+  "/dashboard/stats",
+  requireEmployer,
+  employerController.getEmployerDashboardStats
 );
 
 module.exports = router;
