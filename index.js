@@ -15,6 +15,7 @@ const freelancerRoutes = require("./routes/freelancerRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const chatRoutes = require("./routes/chatRoutes");
+const quizRoutes = require("./routes/quizRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -189,6 +190,8 @@ io.on("connection", (socket) => {
 
 // Make io accessible to routes
 app.set("io", io);
+// Public quiz routes
+app.use('/api/quizzes', quizRoutes);
 
 connectDB
   .then(() => {
