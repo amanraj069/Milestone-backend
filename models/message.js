@@ -10,6 +10,11 @@ const messageSchema = new Schema(
       unique: true,
       default: uuidv4,
     },
+    conversationId: {
+      type: String,
+      ref: "Conversation",
+      required: true,
+    },
     from: {
       type: String,
       ref: "User",
@@ -24,11 +29,27 @@ const messageSchema = new Schema(
       type: String,
       required: true,
     },
+    replyTo: {
+      messageId: { type: String, ref: "Message" },
+      text: { type: String },
+      sender: { type: String, ref: "User" },
+    },
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
+    readAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+// Indexes for faster queries
+messageSchema.index({ conversationId: 1, createdAt: -1 });
+messageSchema.index({ from: 1, to: 1 });
 
 const Message = mongoose.model("Message", messageSchema);
 

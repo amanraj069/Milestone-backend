@@ -555,7 +555,7 @@ exports.getCurrentFreelancers = async (req, res) => {
 
     // Get user data for freelancers
     const users = await User.find({ roleId: { $in: freelancerIds } })
-      .select("roleId name email phone picture rating")
+      .select("userId roleId name email phone picture rating")
       .lean();
 
     // Build response with job details
@@ -567,6 +567,7 @@ exports.getCurrentFreelancers = async (req, res) => {
 
       return {
         freelancerId: job.assignedFreelancer.freelancerId,
+        userId: user?.userId || null, // Add userId for chat functionality
         name: user?.name || "Unknown",
         email: user?.email || "",
         phone: user?.phone || "",
