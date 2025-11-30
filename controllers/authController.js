@@ -135,7 +135,38 @@ exports.logout = (req, res) => {
   });
 };
 
-exports.me = (req, res) => {
-  if (!req.session.user) return res.json({ user: null });
-  return res.json({ user: req.session.user });
+exports.me = async (req, res) => {
+  try {
+    if (!req.session.user) {
+      return res.json({ user: null });
+    }
+
+    // Fetch fresh user data from database
+    const User = require('../models/user');
+    
+    const user = await User.findOne({ userId: req.session.user.id })
+      .select('userId name email role picture subscription')
+      .lean();
+    
+    if (!user) {
+      req.session.destroy();
+      return res.json({ user: null });
+    }
+
+    // DON'T modify req.session.user - just return fresh data
+    // This way other endpoints that depend on session structure won't break
+    return res.json({ 
+      user: {
+        id: user.userId,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        picture: user.picture, // Fresh from database
+        subscription: user.subscription
+      }
+    });
+  } catch (error) {
+    console.error('Error in /me endpoint:', error);
+    return res.status(500).json({ error: 'Failed to fetch user data' });
+  }
 };
