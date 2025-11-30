@@ -14,7 +14,11 @@ const AttemptSchema = new mongoose.Schema({
   userMarks: { type: Number, required: true },
   percentage: { type: Number, required: true },
   passed: { type: Boolean, required: true },
+  attemptNumber: { type: Number, default: 1 }, // Track which attempt this is (1, 2, 3, etc.)
   createdAt: { type: Date, default: Date.now }
 });
+
+// Compound index to ensure proper attempt counting per user per quiz
+AttemptSchema.index({ userId: 1, quizId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Attempt', AttemptSchema);

@@ -271,13 +271,40 @@ exports.submitAttempt = async (req, res) => {
       return res.status(404).json({ success: false, error: { message: 'Quiz not found' } });
     }
 
-    // Check attempt limit (max 3 attempts per quiz per user)
-    const previousAttempts = await Attempt.countDocuments({ userId: req.session.user.id, quizId });
-    console.log('Previous attempts:', previousAttempts);
+    // FIX: Get attempts for THIS USER only (not all users)
+    const userAttempts = await Attempt.find({ userId: req.session.user.id, quizId }).sort({ createdAt: -1 });
+    const attemptCount = userAttempts.length;
+    console.log('Previous attempts for this user:', attemptCount);
     
-    if (previousAttempts >= 3) {
-      console.log('Max attempts reached');
-      return res.status(400).json({ success: false, error: { message: 'Maximum 3 attempts allowed per quiz. You have already completed 3 attempts.' } });
+    // Check if user has premium subscription (you'll implement this check)
+    // For now, assume all users are free tier
+    const isPremium = false; // TODO: Check user's subscription status
+    
+    const maxAttempts = isPremium ? 3 : 2; // Premium: 3 attempts, Free: 2 attempts
+    const cooldownDays = isPremium ? 4 : 7; // Premium: 4 days, Free: 7 days
+    
+    // Check if max consecutive attempts reached
+    if (attemptCount >= maxAttempts) {
+      // Check cooldown period from last attempt
+      const lastAttempt = userAttempts[0];
+      const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+      const timeSinceLastAttempt = Date.now() - new Date(lastAttempt.createdAt).getTime();
+      
+      if (timeSinceLastAttempt < cooldownMs) {
+        const daysRemaining = Math.ceil((cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000));
+        console.log('Cooldown period active. Days remaining:', daysRemaining);
+        return res.status(400).json({ 
+          success: false, 
+          error: { 
+            message: `You can take your next attempt after ${cooldownDays} days. Please wait ${daysRemaining} more day(s).`,
+            cooldownDays,
+            daysRemaining,
+            nextAttemptDate: new Date(new Date(lastAttempt.createdAt).getTime() + cooldownMs)
+          } 
+        });
+      }
+      // Cooldown expired - reset attempt counter for this cooldown period
+      console.log('Cooldown expired, allowing new attempt');
     }
 
     let totalMarks = 0;
@@ -289,9 +316,25 @@ exports.submitAttempt = async (req, res) => {
       totalMarks += qMarks;
       const provided = answers.find(a => String(a.questionId) === String(question._id));
       const selectedIndex = provided ? provided.selectedOptionIndex : null;
+      
+      console.log(`Question ${qIndex + 1}:`, {
+        questionId: question._id,
+        selectedIndex,
+        totalOptions: question.options.length,
+        options: question.options.map((opt, idx) => ({
+          index: idx,
+          text: opt.text.substring(0, 30),
+          isCorrect: opt.isCorrect
+        }))
+      });
+      
       let awarded = 0;
       if (selectedIndex !== null && typeof selectedIndex === 'number') {
         const opt = question.options[selectedIndex];
+        console.log(`Selected option at index ${selectedIndex}:`, {
+          text: opt?.text?.substring(0, 30),
+          isCorrect: opt?.isCorrect
+        });
         if (opt && opt.isCorrect) awarded = qMarks;
       }
       userMarks += awarded;
@@ -304,11 +347,27 @@ exports.submitAttempt = async (req, res) => {
     const passed = percentage >= (quiz.passingScore || 50);
 
     console.log('Creating attempt document...');
-    const attempt = new Attempt({ userId: req.session.user.id, quizId, answers: answerRecords, totalMarks, userMarks, percentage, passed });
+    // Calculate current attempt number (considering cooldown resets)
+    let attemptNumber = attemptCount + 1;
+    if (attemptCount >= maxAttempts) {
+      // This is after cooldown, so reset to 1
+      attemptNumber = 1;
+    }
+    
+    const attempt = new Attempt({ 
+      userId: req.session.user.id, 
+      quizId, 
+      answers: answerRecords, 
+      totalMarks, 
+      userMarks, 
+      percentage, 
+      passed,
+      attemptNumber
+    });
     
     try {
       await attempt.save();
-      console.log('Attempt saved successfully');
+      console.log('Attempt saved successfully with attemptNumber:', attemptNumber);
     } catch (saveError) {
       console.error('Error saving attempt:', saveError);
       throw saveError;
@@ -336,6 +395,90 @@ exports.submitAttempt = async (req, res) => {
     console.error('Submit attempt error:', err);
     console.error('Error stack:', err.stack);
     res.status(500).json({ success: false, error: { message: 'Server error: ' + err.message } });
+  }
+};
+
+/**
+ * Check if user can attempt quiz (check cooldown)
+ */
+exports.checkAttemptEligibility = async (req, res) => {
+  try {
+    if (!req.session.user) {
+      return res.status(401).json({ success: false, error: { message: 'Authentication required' } });
+    }
+    
+    const quizId = req.params.id;
+    const userId = req.session.user.id;
+    
+    // Get user's attempts for this quiz
+    const userAttempts = await Attempt.find({ userId, quizId }).sort({ createdAt: -1 });
+    const attemptCount = userAttempts.length;
+    
+    // Check premium status (you'll implement this)
+    const isPremium = false; // TODO: Check user's subscription
+    
+    const maxAttempts = isPremium ? 3 : 2;
+    const cooldownDays = isPremium ? 4 : 7;
+    
+    // If no attempts yet, user can take quiz
+    if (attemptCount === 0) {
+      return res.json({ 
+        success: true, 
+        canAttempt: true,
+        attemptsUsed: 0,
+        maxAttempts,
+        isPremium
+      });
+    }
+    
+    // If under max attempts, user can take quiz
+    if (attemptCount < maxAttempts) {
+      return res.json({ 
+        success: true, 
+        canAttempt: true,
+        attemptsUsed: attemptCount,
+        maxAttempts,
+        isPremium
+      });
+    }
+    
+    // Max attempts reached - check cooldown
+    const lastAttempt = userAttempts[0];
+    const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+    const timeSinceLastAttempt = Date.now() - new Date(lastAttempt.createdAt).getTime();
+    
+    if (timeSinceLastAttempt < cooldownMs) {
+      const daysRemaining = Math.ceil((cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000));
+      const hoursRemaining = Math.ceil((cooldownMs - timeSinceLastAttempt) / (60 * 60 * 1000));
+      const nextAttemptDate = new Date(new Date(lastAttempt.createdAt).getTime() + cooldownMs);
+      
+      return res.json({ 
+        success: true, 
+        canAttempt: false,
+        attemptsUsed: attemptCount,
+        maxAttempts,
+        cooldownActive: true,
+        cooldownDays,
+        daysRemaining,
+        hoursRemaining,
+        nextAttemptDate,
+        lastAttemptDate: lastAttempt.createdAt,
+        isPremium
+      });
+    }
+    
+    // Cooldown expired - user can attempt again
+    return res.json({ 
+      success: true, 
+      canAttempt: true,
+      attemptsUsed: attemptCount,
+      maxAttempts,
+      cooldownExpired: true,
+      isPremium
+    });
+  } catch (err) {
+    console.error('Check attempt eligibility error:', err);
+    res.status(500).json({ success: false, error: { message: 'Server error' } });
   }
 };
 

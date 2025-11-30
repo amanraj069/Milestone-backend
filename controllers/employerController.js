@@ -299,6 +299,7 @@ exports.getJobApplicationsAPI = async (req, res) => {
       
       return {
         ...application,
+        freelancerUserId: user?.userId || null,
         freelancerName: user?.name || "Unknown Freelancer",
         freelancerPicture: user?.picture || null,
         freelancerEmail: user?.email || null,
@@ -619,10 +620,10 @@ exports.getWorkHistory = async (req, res) => {
       });
     }
 
-    // Find all jobs with freelancers that finished work
+    // Find all jobs with freelancers that finished work or left
     const jobs = await JobListing.find({
       employerId,
-      "assignedFreelancer.status": "finished"
+      "assignedFreelancer.status": { $in: ["finished", "left"] }
     }).lean();
 
     const freelancerIds = jobs
@@ -666,7 +667,7 @@ exports.getWorkHistory = async (req, res) => {
         startDate: job.assignedFreelancer.startDate,
         endDate: job.assignedFreelancer.endDate,
         completedDate: job.assignedFreelancer.endDate,
-        employerRating: job.assignedFreelancer.employerRating || null
+        status: job.assignedFreelancer.status, // Add status field
       };
     });
 
@@ -702,6 +703,10 @@ exports.rateFreelancer = async (req, res) => {
     const { jobId } = req.params;
     const { rating, review } = req.body;
 
+    console.log('Rate freelancer - employerId:', employerId);
+    console.log('Rate freelancer - jobId:', jobId);
+    console.log('Rate freelancer - rating:', rating);
+
     if (!employerId) {
       return res.status(401).json({
         success: false,
@@ -720,13 +725,19 @@ exports.rateFreelancer = async (req, res) => {
     const job = await JobListing.findOne({ 
       jobId, 
       employerId,
-      "assignedFreelancer.status": "working"
+      "assignedFreelancer.status": { $in: ["working", "finished", "left"] }
     });
+
+    console.log('Found job:', job ? 'yes' : 'no');
+    if (job) {
+      console.log('Job status:', job.assignedFreelancer.status);
+      console.log('Job employerId:', job.employerId);
+    }
 
     if (!job) {
       return res.status(404).json({
         success: false,
-        error: "Job not found or not in progress"
+        error: "Job not found or freelancer not assigned"
       });
     }
 
@@ -735,6 +746,110 @@ exports.rateFreelancer = async (req, res) => {
     job.assignedFreelancer.employerReview = review || "";
     job.assignedFreelancer.rated = true;
     await job.save();
+
+    // Calculate and update freelancer's overall rating
+    const freelancerId = job.assignedFreelancer.freelancerId;
+    const allRatedJobs = await JobListing.find({
+      "assignedFreelancer.freelancerId": freelancerId,
+      "assignedFreelancer.status": { $in: ["finished", "left"] },
+      "assignedFreelancer.employerRating": { $exists: true, $ne: null }
+    }).select("assignedFreelancer.employerRating");
+
+    if (allRatedJobs.length > 0) {
+      const totalRating = allRatedJobs.reduce((sum, job) => sum + job.assignedFreelancer.employerRating, 0);
+      const averageRating = totalRating / allRatedJobs.length;
+      
+      // Update freelancer's rating in User model
+      await User.findOneAndUpdate(
+        { roleId: freelancerId },
+        { rating: parseFloat(averageRating.toFixed(1)) },
+        { new: true }
+      );
+    }
+
+    return res.json({
+      success: true,
+      message: "Freelancer rated successfully"
+    });
+  } catch (error) {
+    console.error("Rate freelancer error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to rate freelancer"
+    });
+  }
+};
+
+// Rate a freelancer
+exports.rateFreelancer = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+    const { jobId } = req.params;
+    const { rating, review } = req.body;
+
+    console.log('Rate freelancer - employerId:', employerId);
+    console.log('Rate freelancer - jobId:', jobId);
+    console.log('Rate freelancer - rating:', rating);
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized"
+      });
+    }
+
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        error: "Rating must be between 1 and 5"
+      });
+    }
+
+    // Find the job
+    const job = await JobListing.findOne({ 
+      jobId, 
+      employerId,
+      "assignedFreelancer.status": { $in: ["working", "finished", "left"] }
+    });
+
+    console.log('Found job:', job ? 'yes' : 'no');
+    if (job) {
+      console.log('Job status:', job.assignedFreelancer.status);
+      console.log('Job employerId:', job.employerId);
+    }
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found or freelancer not assigned"
+      });
+    }
+
+    // Update the job with rating
+    job.assignedFreelancer.employerRating = rating;
+    job.assignedFreelancer.employerReview = review || "";
+    job.assignedFreelancer.rated = true;
+    await job.save();
+
+    // Calculate and update freelancer's overall rating
+    const freelancerId = job.assignedFreelancer.freelancerId;
+    const allRatedJobs = await JobListing.find({
+      "assignedFreelancer.freelancerId": freelancerId,
+      "assignedFreelancer.status": { $in: ["finished", "left"] },
+      "assignedFreelancer.employerRating": { $exists: true, $ne: null }
+    }).select("assignedFreelancer.employerRating");
+
+    if (allRatedJobs.length > 0) {
+      const totalRating = allRatedJobs.reduce((sum, job) => sum + job.assignedFreelancer.employerRating, 0);
+      const averageRating = totalRating / allRatedJobs.length;
+      
+      // Update freelancer's rating in User model
+      await User.findOneAndUpdate(
+        { roleId: freelancerId },
+        { rating: parseFloat(averageRating.toFixed(1)) },
+        { new: true }
+      );
+    }
 
     return res.json({
       success: true,
