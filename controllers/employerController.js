@@ -292,7 +292,7 @@ exports.getJobApplicationsAPI = async (req, res) => {
       ...new Set(applications.map((app) => app.freelancerId)),
     ];
     const users = await User.find({ roleId: { $in: freelancerIds } })
-      .select("roleId name picture email phone rating")
+      .select("roleId name picture email phone rating subscription")
       .lean();
 
     const applicationsWithDetails = applications.map((application) => {
@@ -308,7 +308,18 @@ exports.getJobApplicationsAPI = async (req, res) => {
         freelancerPhone: user?.phone || null,
         skillRating: user?.rating || 0,
         jobTitle: job?.title || "Unknown Job",
+        isPremium: user?.subscription === "Premium" || false,
       };
+    });
+
+    // Sort applications: Premium users first (oldest to newest), then non-premium (oldest to newest)
+    applicationsWithDetails.sort((a, b) => {
+      // First separate by premium status
+      if (a.isPremium && !b.isPremium) return -1;
+      if (!a.isPremium && b.isPremium) return 1;
+      
+      // Within same tier, oldest first (ascending order)
+      return new Date(a.appliedDate) - new Date(b.appliedDate);
     });
 
     res.json({
@@ -441,13 +452,38 @@ exports.upgradeSubscription = async (req, res) => {
   try {
     const user = req.session.user;
     const userId = req.session.user.id;
+    const { duration, paymentDetails } = req.body;
+    
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    // Update the user's subscription to "Premium"
-    await User.updateOne({ userId }, { $set: { subscription: "Premium" } });
+    
+    // Calculate expiry date
+    const expiryDate = new Date();
+    expiryDate.setMonth(expiryDate.getMonth() + (duration || 1));
+    
+    // Update the user's subscription to "Premium" with duration
+    await User.updateOne(
+      { userId }, 
+      { 
+        $set: { 
+          subscription: "Premium",
+          subscriptionDuration: duration || null,
+          subscriptionExpiryDate: expiryDate
+        } 
+      }
+    );
+    
     req.session.user.subscription = "Premium";
-    res.json({ success: true, message: "Successfully upgraded to Premium" });
+    req.session.user.subscriptionDuration = duration || null;
+    req.session.user.subscriptionExpiryDate = expiryDate;
+    
+    res.json({ 
+      success: true, 
+      message: "Successfully upgraded to Premium",
+      duration: duration,
+      expiryDate: expiryDate
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -459,9 +495,19 @@ exports.downgradeSubscription = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    // Update the user's subscription to "Basic"
-    await User.updateOne({ userId }, { $set: { subscription: "Basic" } });
+    // Update the user's subscription to "Basic" and clear duration
+    await User.updateOne(
+      { userId }, 
+      { 
+        $set: { subscription: "Basic" },
+        $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" }
+      }
+    );
+    
     req.session.user.subscription = "Basic";
+    delete req.session.user.subscriptionDuration;
+    delete req.session.user.subscriptionExpiryDate;
+    
     res.json({ success: true, message: "Successfully downgraded to Basic" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
