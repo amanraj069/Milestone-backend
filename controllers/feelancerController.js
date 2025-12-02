@@ -576,11 +576,9 @@ exports.uploadResume = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
-    const result = await uploadPdfToCloudinary(
-      req.file.buffer,
-      req.file.originalname
-    );
+    // File is already saved to local storage by multer
+    // Get the file URL
+    const result = await uploadPdfToCloudinary(req.file);
 
     // Update freelancer resume link
     const updatedFreelancer = await Freelancer.findOneAndUpdate(
