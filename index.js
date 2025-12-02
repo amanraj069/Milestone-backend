@@ -71,6 +71,7 @@ app.use(
       maxAge: 24 * 60 * 60 * 1000,
       secure: false,
       httpOnly: true,
+      sameSite: "lax",
     },
   })
 );
@@ -94,9 +95,9 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
 app.use(blogRoutes);
 // Public quiz routes
-app.use('/api/quizzes', quizRoutes);
+app.use("/api/quizzes", quizRoutes);
 // Feedback routes
-app.use('/api/feedback', feedbackRoutes);
+app.use("/api/feedback", feedbackRoutes);
 
 // Socket.IO connection handling
 const userSockets = new Map(); // Map userId to socket.id
@@ -110,7 +111,7 @@ io.on("connection", (socket) => {
     userSockets.set(userId, socket.id);
     socket.userId = userId;
     socket.join(`user:${userId}`);
-    
+
     // Notify user's contacts that they're online
     io.emit("user:status", { userId, status: "online" });
   });
@@ -191,10 +192,10 @@ io.on("connection", (socket) => {
   // Disconnect
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
-    
+
     if (socket.userId) {
       userSockets.delete(socket.userId);
-      
+
       // Notify contacts that user is offline
       io.emit("user:status", {
         userId: socket.userId,
