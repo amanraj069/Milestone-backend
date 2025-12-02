@@ -170,13 +170,38 @@ exports.upgradeSubscription = async (req, res) => {
   try {
     const user = req.session.user;
     const userId = req.session.user.id;
+    const { duration, paymentDetails } = req.body;
+    
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    // Update the user's subscription to "Premium"
-    await User.updateOne({ userId }, { $set: { subscription: "Premium" } });
+    
+    // Calculate expiry date
+    const expiryDate = new Date();
+    expiryDate.setMonth(expiryDate.getMonth() + (duration || 1));
+    
+    // Update the user's subscription to "Premium" with duration
+    await User.updateOne(
+      { userId }, 
+      { 
+        $set: { 
+          subscription: "Premium",
+          subscriptionDuration: duration || null,
+          subscriptionExpiryDate: expiryDate
+        } 
+      }
+    );
+    
     req.session.user.subscription = "Premium";
-    res.json({ success: true, message: "Successfully upgraded to Premium" });
+    req.session.user.subscriptionDuration = duration || null;
+    req.session.user.subscriptionExpiryDate = expiryDate;
+    
+    res.json({ 
+      success: true, 
+      message: "Successfully upgraded to Premium",
+      duration: duration,
+      expiryDate: expiryDate
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -188,9 +213,19 @@ exports.downgradeSubscription = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    // Update the user's subscription to "Basic"
-    await User.updateOne({ userId }, { $set: { subscription: "Basic" } });
+    // Update the user's subscription to "Basic" and clear duration
+    await User.updateOne(
+      { userId }, 
+      { 
+        $set: { subscription: "Basic" },
+        $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" }
+      }
+    );
+    
     req.session.user.subscription = "Basic";
+    delete req.session.user.subscriptionDuration;
+    delete req.session.user.subscriptionExpiryDate;
+    
     res.json({ success: true, message: "Successfully downgraded to Basic" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -585,11 +620,9 @@ exports.uploadResume = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
-    const result = await uploadPdfToCloudinary(
-      req.file.buffer,
-      req.file.originalname
-    );
+    // File is already saved to local storage by multer
+    // Get the file URL
+    const result = await uploadPdfToCloudinary(req.file);
 
     // Update freelancer resume link
     const updatedFreelancer = await Freelancer.findOneAndUpdate(

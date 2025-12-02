@@ -31,6 +31,14 @@ const userSchema = new Schema(
       enum: ["Basic", "Premium"],
       default: "Basic",
     },
+    subscriptionDuration: {
+      type: Number,
+      default: null,
+    },
+    subscriptionExpiryDate: {
+      type: Date,
+      default: null,
+    },
     role: {
       type: String,
       enum: ["Employer", "Freelancer", "Admin", ""],
