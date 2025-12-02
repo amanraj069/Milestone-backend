@@ -61,11 +61,10 @@ exports.updateAdminProfile = async (req, res) => {
     if (profileImageUrl) userUpdate.picture = profileImageUrl;
     if (about) userUpdate.aboutMe = about;
 
-    const updatedUser = await User.findOneAndUpdate(
-      { userId },
-      userUpdate,
-      { new: true, runValidators: true }
-    ).lean();
+    const updatedUser = await User.findOneAndUpdate({ userId }, userUpdate, {
+      new: true,
+      runValidators: true,
+    }).lean();
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -152,32 +151,27 @@ exports.uploadProfilePicture = async (req, res) => {
 // Get all complaints (Admin only)
 exports.getAllComplaints = async (req, res) => {
   try {
-    console.log("📋 Getting all complaints with complainant userIds...");
-    const complaints = await Complaint.find({})
-      .sort({ createdAt: -1 })
-      .lean();
-
-    console.log(`📊 Found ${complaints.length} complaints`);
+    const complaints = await Complaint.find({}).sort({ createdAt: -1 }).lean();
 
     // Get complainant userIds for chat functionality
-    const complainantIds = [...new Set(complaints.map(c => c.complainantId))];
-    console.log("🔍 Looking for complainant IDs:", complainantIds);
-    
+    const complainantIds = [...new Set(complaints.map((c) => c.complainantId))];
+
     // Fetch users based on roleId (complainantId could be freelancerId or employerId)
-    const complainantUsers = await User.find({ roleId: { $in: complainantIds } })
-      .select('userId roleId')
+    const complainantUsers = await User.find({
+      roleId: { $in: complainantIds },
+    })
+      .select("userId roleId")
       .lean();
-    
-    console.log("👤 Found complainant users:", complainantUsers);
-    
+
     // Add complainant userId to each complaint
-    const complaintsWithUserId = complaints.map(complaint => {
-      const complainantUser = complainantUsers.find(user => user.roleId === complaint.complainantId);
+    const complaintsWithUserId = complaints.map((complaint) => {
+      const complainantUser = complainantUsers.find(
+        (user) => user.roleId === complaint.complainantId
+      );
       const result = {
         ...complaint,
-        complainantUserId: complainantUser?.userId || null
+        complainantUserId: complainantUser?.userId || null,
       };
-      console.log(`📝 Complaint ${complaint.complaintId}: complainantId=${complaint.complainantId}, complainantUserId=${result.complainantUserId}`);
       return result;
     });
 
@@ -243,13 +237,15 @@ exports.updateComplaintStatus = async (req, res) => {
     }
 
     // Add complainantUserId for chat functionality
-    const complainantUser = await User.findOne({ roleId: complaint.complainantId })
-      .select('userId')
+    const complainantUser = await User.findOne({
+      roleId: complaint.complainantId,
+    })
+      .select("userId")
       .lean();
-    
+
     const complaintWithUserId = {
       ...complaint,
-      complainantUserId: complainantUser?.userId || null
+      complainantUserId: complainantUser?.userId || null,
     };
 
     res.json({
@@ -317,12 +313,12 @@ exports.getAdminProfile = async (req, res) => {
         location: user.location,
         role: user.role,
         aboutMe: user.aboutMe,
-        subscription: user.subscription || 'Premium Admin',
+        subscription: user.subscription || "Premium Admin",
         socialMedia: user.socialMedia || {
-          linkedin: '',
-          twitter: '',
-          facebook: '',
-          instagram: ''
+          linkedin: "",
+          twitter: "",
+          facebook: "",
+          instagram: "",
         },
       },
     });
@@ -339,14 +335,8 @@ exports.getAdminProfile = async (req, res) => {
 exports.updateAdminProfile = async (req, res) => {
   try {
     const userId = req.session.user.id;
-    const {
-      name,
-      phone,
-      location,
-      profileImageUrl,
-      about,
-      socialMedia
-    } = req.body;
+    const { name, phone, location, profileImageUrl, about, socialMedia } =
+      req.body;
 
     const updateData = {};
 
@@ -357,11 +347,9 @@ exports.updateAdminProfile = async (req, res) => {
     if (about !== undefined) updateData.aboutMe = about;
     if (socialMedia !== undefined) updateData.socialMedia = socialMedia;
 
-    const updatedUser = await User.findOneAndUpdate(
-      { userId },
-      updateData,
-      { new: true }
-    ).lean();
+    const updatedUser = await User.findOneAndUpdate({ userId }, updateData, {
+      new: true,
+    }).lean();
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -448,18 +436,19 @@ exports.uploadProfilePicture = async (req, res) => {
   }
 };
 
-
 // Get admin dashboard statistics
 exports.getDashboardStats = async (req, res) => {
   try {
     // Get total users count (excluding admins)
-    const totalUsers = await User.countDocuments({ role: { $ne: 'Admin' } });
+    const totalUsers = await User.countDocuments({ role: { $ne: "Admin" } });
 
     // Get active jobs count (status: open)
-    const activeJobs = await JobListing.countDocuments({ status: 'open' });
+    const activeJobs = await JobListing.countDocuments({ status: "open" });
 
     // Get completed tasks/applications count
-    const completedTasks = await JobApplication.countDocuments({ status: 'completed' });
+    const completedTasks = await JobApplication.countDocuments({
+      status: "completed",
+    });
 
     // Calculate uptime percentage (mock calculation)
     const uptime = 98;
@@ -474,10 +463,10 @@ exports.getDashboardStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching dashboard stats:', error.message);
+    console.error("Error fetching dashboard stats:", error.message);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch dashboard statistics',
+      error: "Failed to fetch dashboard statistics",
     });
   }
 };
@@ -489,20 +478,20 @@ exports.getRecentActivities = async (req, res) => {
 
     // Get recently resolved complaints (using resolvedAt timestamp)
     const resolvedComplaints = await Complaint.find({
-      status: 'Resolved',
-      resolvedAt: { $exists: true, $ne: null }
+      status: "Resolved",
+      resolvedAt: { $exists: true, $ne: null },
     })
       .sort({ resolvedAt: -1 })
       .limit(5)
       .lean();
 
-    resolvedComplaints.forEach(complaint => {
+    resolvedComplaints.forEach((complaint) => {
       activities.push({
-        type: 'complaint',
+        type: "complaint",
         title: `Resolved complaint: ${complaint.subject}`,
         time: getTimeAgo(complaint.resolvedAt),
         timestamp: complaint.resolvedAt,
-        icon: 'complaint',
+        icon: "complaint",
       });
     });
 
@@ -511,26 +500,28 @@ exports.getRecentActivities = async (req, res) => {
     // Also track jobs where a freelancer was assigned (job approved and freelancer accepted)
     const recentJobs = await JobListing.find({
       $or: [
-        { status: { $in: ['open', 'active', 'in-progress'] } },
-        { 'assignedFreelancer.freelancerId': { $exists: true, $ne: null } }
-      ]
+        { status: { $in: ["open", "active", "in-progress"] } },
+        { "assignedFreelancer.freelancerId": { $exists: true, $ne: null } },
+      ],
     })
       .sort({ updatedAt: -1 })
       .limit(5)
       .lean();
 
-    recentJobs.forEach(job => {
+    recentJobs.forEach((job) => {
       // Use assignedFreelancer.startDate if available (when freelancer was accepted)
       // Otherwise use updatedAt (when job was approved/updated)
       const timestamp = job.assignedFreelancer?.startDate || job.updatedAt;
-      const activityTitle = job.assignedFreelancer?.freelancerId ? `Job approved & freelancer assigned: ${job.title}` : `Job approved: ${job.title}`;
-      
+      const activityTitle = job.assignedFreelancer?.freelancerId
+        ? `Job approved & freelancer assigned: ${job.title}`
+        : `Job approved: ${job.title}`;
+
       activities.push({
-        type: 'job',
+        type: "job",
         title: activityTitle,
         time: getTimeAgo(timestamp),
         timestamp: timestamp,
-        icon: 'job',
+        icon: "job",
       });
     });
 
@@ -538,7 +529,7 @@ exports.getRecentActivities = async (req, res) => {
     activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
     // Return only the 4 most recent activities
-    const sortedActivities = activities.slice(0, 4).map(activity => ({
+    const sortedActivities = activities.slice(0, 4).map((activity) => ({
       type: activity.type,
       title: activity.title,
       time: activity.time,
@@ -550,10 +541,10 @@ exports.getRecentActivities = async (req, res) => {
       data: sortedActivities,
     });
   } catch (error) {
-    console.error('Error fetching recent activities:', error.message);
+    console.error("Error fetching recent activities:", error.message);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch recent activities',
+      error: "Failed to fetch recent activities",
     });
   }
 };
@@ -565,11 +556,11 @@ function getTimeAgo(date) {
   const diffInDays = Math.floor(diffInHours / 24);
 
   if (diffInHours < 1) {
-    return 'Just now';
+    return "Just now";
   } else if (diffInHours < 24) {
     return `${diffInHours} hours ago`;
   } else if (diffInDays === 1) {
-    return 'Yesterday';
+    return "Yesterday";
   } else if (diffInDays < 7) {
     return `${diffInDays} days ago`;
   } else {
