@@ -55,7 +55,9 @@ const sendOTPEmail = async (email, otp, name = "", type = "signup") => {
               ${message}
             </p>
             
-            <div style="background: linear-gradient(135deg, ${isReset ? '#dc2626 0%, #b91c1c' : '#2563eb 0%, #1d4ed8'} 100%); padding: 20px 40px; border-radius: 10px; margin: 30px 0; display: inline-block;">
+            <div style="background: linear-gradient(135deg, ${
+              isReset ? "#dc2626 0%, #b91c1c" : "#2563eb 0%, #1d4ed8"
+            } 100%); padding: 20px 40px; border-radius: 10px; margin: 30px 0; display: inline-block;">
               <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #ffffff;">${otp}</span>
             </div>
             
@@ -66,7 +68,9 @@ const sendOTPEmail = async (email, otp, name = "", type = "signup") => {
           
           <div style="border-top: 1px solid #eee; margin-top: 30px; padding-top: 20px; text-align: center;">
             <p style="color: #999; font-size: 12px; margin: 0;">
-              If you didn't request this ${isReset ? 'password reset' : 'verification'}, please ignore this email.
+              If you didn't request this ${
+                isReset ? "password reset" : "verification"
+              }, please ignore this email.
             </p>
             <p style="color: #999; font-size: 12px; margin-top: 10px;">
               © ${new Date().getFullYear()} Milestone. All rights reserved.
