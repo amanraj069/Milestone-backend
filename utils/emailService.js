@@ -17,13 +17,22 @@ const generateOTP = () => {
 };
 
 // Send OTP email
-const sendOTPEmail = async (email, otp, name = "") => {
+const sendOTPEmail = async (email, otp, name = "", type = "signup") => {
   const transporter = createTransporter();
+
+  const isReset = type === "reset";
+  const subject = isReset
+    ? "Reset Your Password - Milestone OTP"
+    : "Verify Your Email - Milestone OTP";
+  const heading = isReset ? "Password Reset" : "Email Verification";
+  const message = isReset
+    ? "You requested to reset your password. Please use the following OTP to proceed:"
+    : "Thank you for signing up with Milestone. Please use the following OTP to verify your email address:";
 
   const mailOptions = {
     from: `"Milestone" <${process.env.EMAIL_USER}>`,
     to: email,
-    subject: "Verify Your Email - Milestone OTP",
+    subject: subject,
     html: `
       <!DOCTYPE html>
       <html>
@@ -35,7 +44,7 @@ const sendOTPEmail = async (email, otp, name = "") => {
         <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; padding: 40px; border-radius: 10px; margin-top: 20px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
           <div style="text-align: center; margin-bottom: 30px;">
             <h1 style="color: #2563eb; margin: 0; font-size: 28px;">Milestone</h1>
-            <p style="color: #666; margin-top: 5px;">Email Verification</p>
+            <p style="color: #666; margin-top: 5px;">${heading}</p>
           </div>
           
           <div style="text-align: center;">
@@ -43,10 +52,10 @@ const sendOTPEmail = async (email, otp, name = "") => {
               name ? ` ${name}` : ""
             }!</h2>
             <p style="color: #666; font-size: 16px; line-height: 1.6;">
-              Thank you for signing up with Milestone. Please use the following OTP to verify your email address:
+              ${message}
             </p>
             
-            <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); padding: 20px 40px; border-radius: 10px; margin: 30px 0; display: inline-block;">
+            <div style="background: linear-gradient(135deg, ${isReset ? '#dc2626 0%, #b91c1c' : '#2563eb 0%, #1d4ed8'} 100%); padding: 20px 40px; border-radius: 10px; margin: 30px 0; display: inline-block;">
               <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #ffffff;">${otp}</span>
             </div>
             
@@ -57,7 +66,7 @@ const sendOTPEmail = async (email, otp, name = "") => {
           
           <div style="border-top: 1px solid #eee; margin-top: 30px; padding-top: 20px; text-align: center;">
             <p style="color: #999; font-size: 12px; margin: 0;">
-              If you didn't request this verification, please ignore this email.
+              If you didn't request this ${isReset ? 'password reset' : 'verification'}, please ignore this email.
             </p>
             <p style="color: #999; font-size: 12px; margin-top: 10px;">
               © ${new Date().getFullYear()} Milestone. All rights reserved.
