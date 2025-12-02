@@ -276,12 +276,21 @@ exports.submitAttempt = async (req, res) => {
     const attemptCount = userAttempts.length;
     console.log('Previous attempts for this user:', attemptCount);
     
-    // Check if user has premium subscription (you'll implement this check)
-    // For now, assume all users are free tier
-    const isPremium = false; // TODO: Check user's subscription status
+    // Check user's actual subscription status
+    const User = require('../models/user');
+    const user = await User.findOne({ userId: req.session.user.id });
+    const isPremium = user?.subscription === 'Premium' && 
+                      user?.subscriptionExpiryDate && 
+                      new Date(user.subscriptionExpiryDate) > new Date();
+    
+    console.log('User subscription check:', { 
+      subscription: user?.subscription, 
+      expiryDate: user?.subscriptionExpiryDate,
+      isPremium 
+    });
     
     const maxAttempts = isPremium ? 3 : 2; // Premium: 3 attempts, Free: 2 attempts
-    const cooldownDays = isPremium ? 4 : 7; // Premium: 4 days, Free: 7 days
+    const cooldownDays = isPremium ? 5 : 10; // Premium: 5 days, Free: 10 days
     
     // Check if max consecutive attempts reached
     if (attemptCount >= maxAttempts) {
@@ -414,11 +423,15 @@ exports.checkAttemptEligibility = async (req, res) => {
     const userAttempts = await Attempt.find({ userId, quizId }).sort({ createdAt: -1 });
     const attemptCount = userAttempts.length;
     
-    // Check premium status (you'll implement this)
-    const isPremium = false; // TODO: Check user's subscription
+    // Check user's actual subscription status
+    const User = require('../models/user');
+    const user = await User.findOne({ userId });
+    const isPremium = user?.subscription === 'Premium' && 
+                      user?.subscriptionExpiryDate && 
+                      new Date(user.subscriptionExpiryDate) > new Date();
     
     const maxAttempts = isPremium ? 3 : 2;
-    const cooldownDays = isPremium ? 4 : 7;
+    const cooldownDays = isPremium ? 5 : 10;
     
     // If no attempts yet, user can take quiz
     if (attemptCount === 0) {
