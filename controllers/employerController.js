@@ -1347,6 +1347,11 @@ exports.getTransactions = async (req, res) => {
           ? Math.round((completedMilestones / milestones.length) * 100)
           : 0;
 
+      // Count pending requests
+      const pendingRequests = milestones.filter(
+        (m) => m.requested && m.status !== "paid"
+      ).length;
+
       return {
         jobId: job.jobId,
         jobTitle: job.title,
@@ -1363,6 +1368,7 @@ exports.getTransactions = async (req, res) => {
         projectCompletion,
         milestonesCount: milestones.length,
         completedMilestones,
+        pendingRequests,
       };
     });
 
@@ -1510,9 +1516,21 @@ exports.payMilestone = async (req, res) => {
       });
     }
 
-    // Update milestone status to paid
+    // Update milestone status to paid and reset requested
     job.milestones[milestoneIndex].status = "paid";
     job.milestones[milestoneIndex].completionPercentage = 100;
+    job.milestones[milestoneIndex].requested = false;
+
+    // Check if all milestones are paid
+    const allMilestonesPaid = job.milestones.every((m) => m.status === "paid");
+
+    // If all milestones are paid, mark job as completed
+    if (allMilestonesPaid && job.milestones.length > 0) {
+      job.status = "completed";
+      job.assignedFreelancer.status = "finished";
+      job.assignedFreelancer.endDate = new Date();
+    }
+
     await job.save();
 
     // Calculate updated stats
@@ -1533,13 +1551,16 @@ exports.payMilestone = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Milestone paid successfully",
+      message: allMilestonesPaid
+        ? "Milestone paid and job marked as completed"
+        : "Milestone paid successfully",
       data: {
         paidAmount,
         paymentPercentage,
         projectCompletion,
         completedMilestones,
         milestonesCount: milestones.length,
+        jobCompleted: allMilestonesPaid,
       },
     });
   } catch (error) {
