@@ -184,6 +184,8 @@ yarn.lock
 pnpm-lock.yaml
 
 # Local development files
-uploads/
+uploads/*
+!uploads/.gitkeep
+!uploads/resumes/.gitkeep
 public/uploads/
 storage/
