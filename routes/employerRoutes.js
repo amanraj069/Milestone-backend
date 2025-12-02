@@ -5,10 +5,10 @@ const { upload } = require("../middleware/imageUpload");
 
 // Middleware to check if user is authenticated and is an employer
 const requireEmployer = (req, res, next) => {
-  console.log('Session user:', req.session.user);
-  console.log('Session role:', req.session.user?.role);
+  console.log("Session user:", req.session.user);
+  console.log("Session role:", req.session.user?.role);
   if (!req.session.user || req.session.user.role !== "Employer") {
-    console.log('Access denied for employer route');
+    console.log("Access denied for employer route");
     return res.status(403).json({
       success: false,
       error: "Access denied. Employer access required.",
@@ -90,18 +90,10 @@ router.get(
   requireEmployer,
   employerController.getCurrentFreelancers
 );
-router.get(
-  "/work-history",
-  requireEmployer,
-  employerController.getWorkHistory
-);
+router.get("/work-history", requireEmployer, employerController.getWorkHistory);
 
 // Complaint routes
-router.post(
-  "/complaints",
-  requireEmployer,
-  employerController.createComplaint
-);
+router.post("/complaints", requireEmployer, employerController.createComplaint);
 router.get(
   "/complaints",
   requireEmployer,
@@ -109,11 +101,7 @@ router.get(
 );
 
 // Profile routes
-router.get(
-  "/profile",
-  requireEmployer,
-  employerController.getEmployerProfile
-);
+router.get("/profile", requireEmployer, employerController.getEmployerProfile);
 router.put(
   "/profile",
   requireEmployer,
@@ -122,7 +110,7 @@ router.put(
 router.post(
   "/upload-image",
   requireEmployer,
-  upload.single('picture'),
+  upload.single("picture"),
   employerController.uploadEmployerImage
 );
 
@@ -131,6 +119,23 @@ router.get(
   "/dashboard/stats",
   requireEmployer,
   employerController.getEmployerDashboardStats
+);
+
+// Transactions routes
+router.get(
+  "/transactions",
+  requireEmployer,
+  employerController.getTransactions
+);
+router.get(
+  "/transactions/:jobId",
+  requireEmployer,
+  employerController.getTransactionDetails
+);
+router.post(
+  "/transactions/:jobId/milestones/:milestoneId/pay",
+  requireEmployer,
+  employerController.payMilestone
 );
 
 module.exports = router;

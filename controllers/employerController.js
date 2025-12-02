@@ -6,7 +6,9 @@ const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
 const { v4: uuidv4 } = require("uuid");
 const { uploadToCloudinary } = require("../middleware/pdfUpload");
-const { uploadToCloudinary: uploadImageToCloudinary } = require("../middleware/imageUpload");
+const {
+  uploadToCloudinary: uploadImageToCloudinary,
+} = require("../middleware/imageUpload");
 
 // Get all job listings for the logged-in employer
 exports.getJobListings = async (req, res) => {
@@ -275,7 +277,7 @@ exports.getJobApplicationsAPI = async (req, res) => {
     if (!employerId) {
       return res.status(401).json({
         success: false,
-        message: "Employer roleId not found in session"
+        message: "Employer roleId not found in session",
       });
     }
 
@@ -296,7 +298,7 @@ exports.getJobApplicationsAPI = async (req, res) => {
     const applicationsWithDetails = applications.map((application) => {
       const user = users.find((u) => u.roleId === application.freelancerId);
       const job = jobs.find((j) => j.jobId === application.jobId);
-      
+
       return {
         ...application,
         freelancerUserId: user?.userId || null,
@@ -315,17 +317,23 @@ exports.getJobApplicationsAPI = async (req, res) => {
         applications: applicationsWithDetails,
         stats: {
           total: applicationsWithDetails.length,
-          pending: applicationsWithDetails.filter(app => app.status === 'Pending').length,
-          accepted: applicationsWithDetails.filter(app => app.status === 'Accepted').length,
-          rejected: applicationsWithDetails.filter(app => app.status === 'Rejected').length
-        }
-      }
+          pending: applicationsWithDetails.filter(
+            (app) => app.status === "Pending"
+          ).length,
+          accepted: applicationsWithDetails.filter(
+            (app) => app.status === "Accepted"
+          ).length,
+          rejected: applicationsWithDetails.filter(
+            (app) => app.status === "Rejected"
+          ).length,
+        },
+      },
     });
   } catch (error) {
     console.error("Error fetching job applications API:", error.message);
     res.status(500).json({
       success: false,
-      message: "Error fetching job applications: " + error.message
+      message: "Error fetching job applications: " + error.message,
     });
   }
 };
@@ -434,9 +442,7 @@ exports.upgradeSubscription = async (req, res) => {
     const user = req.session.user;
     const userId = req.session.user.id;
     if (!userId) {
-      return res
-        .status(401)
-        .json({ success: false, message: "Not logged in" });
+      return res.status(401).json({ success: false, message: "Not logged in" });
     }
     // Update the user's subscription to "Premium"
     await User.updateOne({ userId }, { $set: { subscription: "Premium" } });
@@ -470,32 +476,34 @@ exports.purchaseSubscription = async (req, res) => {
     if (!planType) {
       return res.status(400).json({
         success: false,
-        message: 'Plan type is required'
+        message: "Plan type is required",
       });
     }
 
     // Validate plan type
-    const validPlans = ['Basic', 'Premium', 'Free'];
+    const validPlans = ["Basic", "Premium", "Free"];
     if (!validPlans.includes(planType)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid plan type'
+        message: "Invalid plan type",
       });
     }
 
     // For Premium plans, redirect to payment
-    if (planType === 'Premium') {
+    if (planType === "Premium") {
       return res.json({
         success: true,
         requiresPayment: true,
         amount: amount || 868,
-        redirectUrl: `/employerD/payment?plan=${planType}&amount=${amount || 868}`
+        redirectUrl: `/employerD/payment?plan=${planType}&amount=${
+          amount || 868
+        }`,
       });
     }
 
     // For Basic/Free plans, update immediately
     await Employer.findByIdAndUpdate(userId, {
-      subscription: planType
+      subscription: planType,
     });
 
     // Update session
@@ -504,15 +512,14 @@ exports.purchaseSubscription = async (req, res) => {
     res.json({
       success: true,
       message: `Successfully switched to ${planType} plan`,
-      requiresPayment: false
+      requiresPayment: false,
     });
-
   } catch (error) {
-    console.error('Error purchasing subscription:', error);
+    console.error("Error purchasing subscription:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error during subscription purchase',
-      error: error.message
+      message: "Internal server error during subscription purchase",
+      error: error.message,
     });
   }
 };
@@ -521,23 +528,25 @@ exports.purchaseSubscription = async (req, res) => {
 exports.getCurrentFreelancers = async (req, res) => {
   try {
     const employerId = req.session.user?.roleId;
-    
+
     if (!employerId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
     // Find all jobs with assigned freelancers that are currently working
     const jobs = await JobListing.find({
       employerId,
-      "assignedFreelancer.status": "working"
+      "assignedFreelancer.status": "working",
     }).lean();
 
     const freelancerIds = jobs
-      .filter(job => job.assignedFreelancer && job.assignedFreelancer.freelancerId)
-      .map(job => job.assignedFreelancer.freelancerId);
+      .filter(
+        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId
+      )
+      .map((job) => job.assignedFreelancer.freelancerId);
 
     if (freelancerIds.length === 0) {
       return res.json({
@@ -548,9 +557,9 @@ exports.getCurrentFreelancers = async (req, res) => {
             total: 0,
             avgRating: 0,
             avgDays: 0,
-            successRate: 0
-          }
-        }
+            successRate: 0,
+          },
+        },
       });
     }
 
@@ -560,10 +569,16 @@ exports.getCurrentFreelancers = async (req, res) => {
       .lean();
 
     // Build response with job details
-    const freelancersData = jobs.map(job => {
-      const user = users.find(u => u.roleId === job.assignedFreelancer.freelancerId);
-      const daysSinceStart = job.assignedFreelancer.startDate 
-        ? Math.floor((Date.now() - new Date(job.assignedFreelancer.startDate).getTime()) / (1000 * 60 * 60 * 24))
+    const freelancersData = jobs.map((job) => {
+      const user = users.find(
+        (u) => u.roleId === job.assignedFreelancer.freelancerId
+      );
+      const daysSinceStart = job.assignedFreelancer.startDate
+        ? Math.floor(
+            (Date.now() -
+              new Date(job.assignedFreelancer.startDate).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
         : 0;
 
       return {
@@ -580,13 +595,17 @@ exports.getCurrentFreelancers = async (req, res) => {
         startDate: job.assignedFreelancer.startDate,
         daysSinceStart,
         hasRated: job.assignedFreelancer.rated || false,
-        employerRating: job.assignedFreelancer.employerRating || null
+        employerRating: job.assignedFreelancer.employerRating || null,
       };
     });
 
     // Calculate stats
-    const avgRating = freelancersData.reduce((sum, f) => sum + f.rating, 0) / freelancersData.length;
-    const avgDays = freelancersData.reduce((sum, f) => sum + f.daysSinceStart, 0) / freelancersData.length;
+    const avgRating =
+      freelancersData.reduce((sum, f) => sum + f.rating, 0) /
+      freelancersData.length;
+    const avgDays =
+      freelancersData.reduce((sum, f) => sum + f.daysSinceStart, 0) /
+      freelancersData.length;
 
     return res.json({
       success: true,
@@ -596,15 +615,15 @@ exports.getCurrentFreelancers = async (req, res) => {
           total: freelancersData.length,
           avgRating: parseFloat(avgRating.toFixed(1)),
           avgDays: Math.round(avgDays),
-          successRate: 92
-        }
-      }
+          successRate: 92,
+        },
+      },
     });
   } catch (error) {
     console.error("Get current freelancers error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to fetch current freelancers"
+      error: "Failed to fetch current freelancers",
     });
   }
 };
@@ -613,23 +632,25 @@ exports.getCurrentFreelancers = async (req, res) => {
 exports.getWorkHistory = async (req, res) => {
   try {
     const employerId = req.session.user?.roleId;
-    
+
     if (!employerId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
     // Find all jobs with freelancers that finished work or left
     const jobs = await JobListing.find({
       employerId,
-      "assignedFreelancer.status": { $in: ["finished", "left"] }
+      "assignedFreelancer.status": { $in: ["finished", "left"] },
     }).lean();
 
     const freelancerIds = jobs
-      .filter(job => job.assignedFreelancer && job.assignedFreelancer.freelancerId)
-      .map(job => job.assignedFreelancer.freelancerId);
+      .filter(
+        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId
+      )
+      .map((job) => job.assignedFreelancer.freelancerId);
 
     if (freelancerIds.length === 0) {
       return res.json({
@@ -640,9 +661,9 @@ exports.getWorkHistory = async (req, res) => {
             total: 0,
             avgRating: 0,
             avgDays: 0,
-            successRate: 0
-          }
-        }
+            successRate: 0,
+          },
+        },
       });
     }
 
@@ -652,9 +673,11 @@ exports.getWorkHistory = async (req, res) => {
       .lean();
 
     // Build response with job details
-    const freelancersData = jobs.map(job => {
-      const user = users.find(u => u.roleId === job.assignedFreelancer.freelancerId);
-      
+    const freelancersData = jobs.map((job) => {
+      const user = users.find(
+        (u) => u.roleId === job.assignedFreelancer.freelancerId
+      );
+
       return {
         freelancerId: job.assignedFreelancer.freelancerId,
         name: user?.name || "Unknown",
@@ -673,7 +696,9 @@ exports.getWorkHistory = async (req, res) => {
     });
 
     // Calculate stats
-    const avgRating = freelancersData.reduce((sum, f) => sum + f.rating, 0) / freelancersData.length;
+    const avgRating =
+      freelancersData.reduce((sum, f) => sum + f.rating, 0) /
+      freelancersData.length;
     const completedProjects = freelancersData.length;
 
     return res.json({
@@ -684,15 +709,15 @@ exports.getWorkHistory = async (req, res) => {
           total: completedProjects,
           avgRating: parseFloat(avgRating.toFixed(1)),
           avgDays: 15,
-          successRate: 98
-        }
-      }
+          successRate: 98,
+        },
+      },
     });
   } catch (error) {
     console.error("Get work history error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to fetch work history"
+      error: "Failed to fetch work history",
     });
   }
 };
@@ -704,41 +729,41 @@ exports.rateFreelancer = async (req, res) => {
     const { jobId } = req.params;
     const { rating, review } = req.body;
 
-    console.log('Rate freelancer - employerId:', employerId);
-    console.log('Rate freelancer - jobId:', jobId);
-    console.log('Rate freelancer - rating:', rating);
+    console.log("Rate freelancer - employerId:", employerId);
+    console.log("Rate freelancer - jobId:", jobId);
+    console.log("Rate freelancer - rating:", rating);
 
     if (!employerId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
     if (!rating || rating < 1 || rating > 5) {
       return res.status(400).json({
         success: false,
-        error: "Rating must be between 1 and 5"
+        error: "Rating must be between 1 and 5",
       });
     }
 
     // Find the job
-    const job = await JobListing.findOne({ 
-      jobId, 
+    const job = await JobListing.findOne({
+      jobId,
       employerId,
-      "assignedFreelancer.status": { $in: ["working", "finished", "left"] }
+      "assignedFreelancer.status": { $in: ["working", "finished", "left"] },
     });
 
-    console.log('Found job:', job ? 'yes' : 'no');
+    console.log("Found job:", job ? "yes" : "no");
     if (job) {
-      console.log('Job status:', job.assignedFreelancer.status);
-      console.log('Job employerId:', job.employerId);
+      console.log("Job status:", job.assignedFreelancer.status);
+      console.log("Job employerId:", job.employerId);
     }
 
     if (!job) {
       return res.status(404).json({
         success: false,
-        error: "Job not found or freelancer not assigned"
+        error: "Job not found or freelancer not assigned",
       });
     }
 
@@ -753,13 +778,16 @@ exports.rateFreelancer = async (req, res) => {
     const allRatedJobs = await JobListing.find({
       "assignedFreelancer.freelancerId": freelancerId,
       "assignedFreelancer.status": { $in: ["finished", "left"] },
-      "assignedFreelancer.employerRating": { $exists: true, $ne: null }
+      "assignedFreelancer.employerRating": { $exists: true, $ne: null },
     }).select("assignedFreelancer.employerRating");
 
     if (allRatedJobs.length > 0) {
-      const totalRating = allRatedJobs.reduce((sum, job) => sum + job.assignedFreelancer.employerRating, 0);
+      const totalRating = allRatedJobs.reduce(
+        (sum, job) => sum + job.assignedFreelancer.employerRating,
+        0
+      );
       const averageRating = totalRating / allRatedJobs.length;
-      
+
       // Update freelancer's rating in User model
       await User.findOneAndUpdate(
         { roleId: freelancerId },
@@ -770,13 +798,13 @@ exports.rateFreelancer = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Freelancer rated successfully"
+      message: "Freelancer rated successfully",
     });
   } catch (error) {
     console.error("Rate freelancer error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to rate freelancer"
+      error: "Failed to rate freelancer",
     });
   }
 };
@@ -788,41 +816,41 @@ exports.rateFreelancer = async (req, res) => {
     const { jobId } = req.params;
     const { rating, review } = req.body;
 
-    console.log('Rate freelancer - employerId:', employerId);
-    console.log('Rate freelancer - jobId:', jobId);
-    console.log('Rate freelancer - rating:', rating);
+    console.log("Rate freelancer - employerId:", employerId);
+    console.log("Rate freelancer - jobId:", jobId);
+    console.log("Rate freelancer - rating:", rating);
 
     if (!employerId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
     if (!rating || rating < 1 || rating > 5) {
       return res.status(400).json({
         success: false,
-        error: "Rating must be between 1 and 5"
+        error: "Rating must be between 1 and 5",
       });
     }
 
     // Find the job
-    const job = await JobListing.findOne({ 
-      jobId, 
+    const job = await JobListing.findOne({
+      jobId,
       employerId,
-      "assignedFreelancer.status": { $in: ["working", "finished", "left"] }
+      "assignedFreelancer.status": { $in: ["working", "finished", "left"] },
     });
 
-    console.log('Found job:', job ? 'yes' : 'no');
+    console.log("Found job:", job ? "yes" : "no");
     if (job) {
-      console.log('Job status:', job.assignedFreelancer.status);
-      console.log('Job employerId:', job.employerId);
+      console.log("Job status:", job.assignedFreelancer.status);
+      console.log("Job employerId:", job.employerId);
     }
 
     if (!job) {
       return res.status(404).json({
         success: false,
-        error: "Job not found or freelancer not assigned"
+        error: "Job not found or freelancer not assigned",
       });
     }
 
@@ -837,13 +865,16 @@ exports.rateFreelancer = async (req, res) => {
     const allRatedJobs = await JobListing.find({
       "assignedFreelancer.freelancerId": freelancerId,
       "assignedFreelancer.status": { $in: ["finished", "left"] },
-      "assignedFreelancer.employerRating": { $exists: true, $ne: null }
+      "assignedFreelancer.employerRating": { $exists: true, $ne: null },
     }).select("assignedFreelancer.employerRating");
 
     if (allRatedJobs.length > 0) {
-      const totalRating = allRatedJobs.reduce((sum, job) => sum + job.assignedFreelancer.employerRating, 0);
+      const totalRating = allRatedJobs.reduce(
+        (sum, job) => sum + job.assignedFreelancer.employerRating,
+        0
+      );
       const averageRating = totalRating / allRatedJobs.length;
-      
+
       // Update freelancer's rating in User model
       await User.findOneAndUpdate(
         { roleId: freelancerId },
@@ -854,13 +885,13 @@ exports.rateFreelancer = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Freelancer rated successfully"
+      message: "Freelancer rated successfully",
     });
   } catch (error) {
     console.error("Rate freelancer error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to rate freelancer"
+      error: "Failed to rate freelancer",
     });
   }
 };
@@ -870,7 +901,14 @@ exports.createComplaint = async (req, res) => {
   try {
     const employerId = req.session.user.roleId;
     const userId = req.session.user.id;
-    const { jobId, freelancerId, complaintType, priority, subject, description } = req.body;
+    const {
+      jobId,
+      freelancerId,
+      complaintType,
+      priority,
+      subject,
+      description,
+    } = req.body;
 
     // Validate input
     if (!jobId || !freelancerId || !complaintType || !subject || !description) {
@@ -968,7 +1006,10 @@ exports.getEmployerComplaints = async (req, res) => {
   try {
     const employerId = req.session.user.roleId;
 
-    const complaints = await Complaint.find({ complainantId: employerId, complainantType: "Employer" })
+    const complaints = await Complaint.find({
+      complainantId: employerId,
+      complainantType: "Employer",
+    })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -995,7 +1036,7 @@ exports.getEmployerProfile = async (req, res) => {
     if (!userId || !employerId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
@@ -1004,7 +1045,7 @@ exports.getEmployerProfile = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: "User not found"
+        error: "User not found",
       });
     }
 
@@ -1023,18 +1064,18 @@ exports.getEmployerProfile = async (req, res) => {
         aboutMe: user.aboutMe,
         socialMedia: user.socialMedia,
         rating: user.rating,
-        subscription: user.subscription
+        subscription: user.subscription,
       },
       employer: {
-        companyName: employer?.companyName || '',
-        websiteLink: employer?.websiteLink || ''
-      }
+        companyName: employer?.companyName || "",
+        websiteLink: employer?.websiteLink || "",
+      },
     });
   } catch (error) {
     console.error("Get employer profile error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to fetch profile"
+      error: "Failed to fetch profile",
     });
   }
 };
@@ -1048,7 +1089,7 @@ exports.updateEmployerProfile = async (req, res) => {
     if (!userId || !employerId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
@@ -1061,7 +1102,7 @@ exports.updateEmployerProfile = async (req, res) => {
       websiteLink,
       aboutMe,
       picture,
-      socialMedia
+      socialMedia,
     } = req.body;
 
     // Update user data
@@ -1070,7 +1111,7 @@ exports.updateEmployerProfile = async (req, res) => {
       phone,
       location,
       aboutMe,
-      socialMedia
+      socialMedia,
     };
 
     // Only update picture if provided
@@ -1078,18 +1119,17 @@ exports.updateEmployerProfile = async (req, res) => {
       updateUserData.picture = picture;
     }
 
-    await User.findOneAndUpdate(
-      { userId },
-      updateUserData,
-      { new: true, runValidators: true }
-    );
+    await User.findOneAndUpdate({ userId }, updateUserData, {
+      new: true,
+      runValidators: true,
+    });
 
     // Update employer data
     await Employer.findOneAndUpdate(
       { employerId },
       {
         companyName,
-        websiteLink
+        websiteLink,
       },
       { new: true, runValidators: true }
     );
@@ -1105,13 +1145,13 @@ exports.updateEmployerProfile = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "Profile updated successfully"
+      message: "Profile updated successfully",
     });
   } catch (error) {
     console.error("Update employer profile error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to update profile"
+      error: "Failed to update profile",
     });
   }
 };
@@ -1124,14 +1164,14 @@ exports.uploadEmployerImage = async (req, res) => {
     if (!userId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        error: "No file uploaded"
+        error: "No file uploaded",
       });
     }
 
@@ -1152,13 +1192,13 @@ exports.uploadEmployerImage = async (req, res) => {
     return res.json({
       success: true,
       imageUrl,
-      message: "Image uploaded successfully"
+      message: "Image uploaded successfully",
     });
   } catch (error) {
     console.error("Upload employer image error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to upload image"
+      error: "Failed to upload image",
     });
   }
 };
@@ -1171,34 +1211,296 @@ exports.getEmployerDashboardStats = async (req, res) => {
     if (!employerId) {
       return res.status(401).json({
         success: false,
-        error: "Unauthorized"
+        error: "Unauthorized",
       });
     }
 
     // Count active jobs (status: open)
     const activeJobs = await JobListing.countDocuments({
       employerId,
-      status: "open"
+      status: "open",
     });
 
     // Count current freelancers working
     const currentFreelancers = await JobListing.countDocuments({
       employerId,
-      "assignedFreelancer.status": "working"
+      "assignedFreelancer.status": "working",
     });
 
     return res.json({
       success: true,
       data: {
         activeJobs,
-        currentFreelancers
-      }
+        currentFreelancers,
+      },
     });
   } catch (error) {
     console.error("Get employer dashboard stats error:", error);
     return res.status(500).json({
       success: false,
-      error: "Failed to fetch dashboard stats"
+      error: "Failed to fetch dashboard stats",
+    });
+  }
+};
+
+// Get all transactions (jobs with assigned freelancers - working or finished)
+exports.getTransactions = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    // Find all jobs with assigned freelancers (working or finished)
+    const jobs = await JobListing.find({
+      employerId,
+      "assignedFreelancer.freelancerId": { $ne: null },
+      "assignedFreelancer.status": { $in: ["working", "finished"] },
+    }).lean();
+
+    if (jobs.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // Get freelancer details
+    const freelancerIds = jobs.map(
+      (job) => job.assignedFreelancer.freelancerId
+    );
+    const users = await User.find({ roleId: { $in: freelancerIds } })
+      .select("roleId name email picture")
+      .lean();
+
+    // Build transaction data
+    const transactions = jobs.map((job) => {
+      const user = users.find(
+        (u) => u.roleId === job.assignedFreelancer.freelancerId
+      );
+
+      // Calculate payment progress
+      const totalBudget = job.budget || 0;
+      const milestones = job.milestones || [];
+      const paidAmount = milestones
+        .filter((m) => m.status === "paid")
+        .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
+      const paymentPercentage =
+        totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
+
+      // Calculate project completion
+      const completedMilestones = milestones.filter(
+        (m) => m.status === "paid"
+      ).length;
+      const projectCompletion =
+        milestones.length > 0
+          ? Math.round((completedMilestones / milestones.length) * 100)
+          : 0;
+
+      return {
+        jobId: job.jobId,
+        jobTitle: job.title,
+        freelancerId: job.assignedFreelancer.freelancerId,
+        freelancerName: user?.name || "Unknown",
+        freelancerPicture: user?.picture || "",
+        freelancerEmail: user?.email || "",
+        status: job.assignedFreelancer.status,
+        startDate: job.assignedFreelancer.startDate,
+        endDate: job.assignedFreelancer.endDate,
+        totalBudget,
+        paidAmount,
+        paymentPercentage,
+        projectCompletion,
+        milestonesCount: milestones.length,
+        completedMilestones,
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: transactions,
+    });
+  } catch (error) {
+    console.error("Get transactions error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch transactions",
+    });
+  }
+};
+
+// Get transaction details for a specific job
+exports.getTransactionDetails = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+    const { jobId } = req.params;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    // Find the job
+    const job = await JobListing.findOne({
+      jobId,
+      employerId,
+    }).lean();
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    if (!job.assignedFreelancer || !job.assignedFreelancer.freelancerId) {
+      return res.status(404).json({
+        success: false,
+        error: "No freelancer assigned to this job",
+      });
+    }
+
+    // Get freelancer details
+    const user = await User.findOne({
+      roleId: job.assignedFreelancer.freelancerId,
+    })
+      .select("roleId name email picture")
+      .lean();
+
+    // Calculate payment progress
+    const totalBudget = job.budget || 0;
+    const milestones = job.milestones || [];
+    const paidAmount = milestones
+      .filter((m) => m.status === "paid")
+      .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
+    const paymentPercentage =
+      totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
+
+    // Calculate project completion
+    const completedMilestones = milestones.filter(
+      (m) => m.status === "paid"
+    ).length;
+    const projectCompletion =
+      milestones.length > 0
+        ? Math.round((completedMilestones / milestones.length) * 100)
+        : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        jobId: job.jobId,
+        jobTitle: job.title,
+        freelancerId: job.assignedFreelancer.freelancerId,
+        freelancerName: user?.name || "Unknown",
+        freelancerPicture: user?.picture || "",
+        freelancerEmail: user?.email || "",
+        status: job.assignedFreelancer.status,
+        startDate: job.assignedFreelancer.startDate,
+        endDate: job.assignedFreelancer.endDate,
+        totalBudget,
+        paidAmount,
+        paymentPercentage,
+        projectCompletion,
+        milestones: milestones.map((m, index) => ({
+          milestoneId: m.milestoneId,
+          sno: index + 1,
+          description: m.description,
+          payment: parseFloat(m.payment) || 0,
+          deadline: m.deadline,
+          status: m.status,
+          requested: m.requested || false,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Get transaction details error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch transaction details",
+    });
+  }
+};
+
+// Pay a milestone
+exports.payMilestone = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+    const { jobId, milestoneId } = req.params;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    // Find and update the job
+    const job = await JobListing.findOne({
+      jobId,
+      employerId,
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Find the milestone
+    const milestoneIndex = job.milestones.findIndex(
+      (m) => m.milestoneId === milestoneId
+    );
+    if (milestoneIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: "Milestone not found",
+      });
+    }
+
+    // Update milestone status to paid
+    job.milestones[milestoneIndex].status = "paid";
+    job.milestones[milestoneIndex].completionPercentage = 100;
+    await job.save();
+
+    // Calculate updated stats
+    const milestones = job.milestones;
+    const totalBudget = job.budget || 0;
+    const paidAmount = milestones
+      .filter((m) => m.status === "paid")
+      .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
+    const paymentPercentage =
+      totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
+    const completedMilestones = milestones.filter(
+      (m) => m.status === "paid"
+    ).length;
+    const projectCompletion =
+      milestones.length > 0
+        ? Math.round((completedMilestones / milestones.length) * 100)
+        : 0;
+
+    return res.json({
+      success: true,
+      message: "Milestone paid successfully",
+      data: {
+        paidAmount,
+        paymentPercentage,
+        projectCompletion,
+        completedMilestones,
+        milestonesCount: milestones.length,
+      },
+    });
+  } catch (error) {
+    console.error("Pay milestone error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to pay milestone",
     });
   }
 };
