@@ -283,16 +283,23 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
 // API endpoint for job history (JSON response)
 exports.getFreelancerJobHistoryAPI = async (req, res) => {
   try {
+    console.log('getFreelancerJobHistoryAPI called');
+    console.log('Session user:', req.session.user);
+    
     if (!req.session.user) {
-      return res.status(401).json({ error: "Unauthorized: Please log in" });
+      console.log('No session user - unauthorized');
+      return res.status(401).json({ success: false, error: "Unauthorized: Please log in" });
     }
 
     const freelancerId = req.session.user.roleId;
+    console.log('Fetching job history for freelancer:', freelancerId);
 
     const historyJobs = await JobListing.find({
       "assignedFreelancer.freelancerId": freelancerId,
       "assignedFreelancer.status": { $in: ["finished", "left"] },
     }).lean();
+
+    console.log('Found history jobs:', historyJobs.length);
 
     const formattedJobs = await Promise.all(
       historyJobs.map(async (job) => {
@@ -323,7 +330,7 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
             job.updatedAt ? job.updatedAt.toLocaleDateString() : "Unknown"
           }`,
           price: paidAmount ? `Rs.${paidAmount.toFixed(2)}` : "Not paid",
-          rating: job.rating || 0,
+          rating: job.assignedFreelancer.employerRating || null,
         };
       })
     );
@@ -373,7 +380,7 @@ exports.getFreelancerProfile = async (req, res) => {
         experience: freelancer.experience || [],
         education: freelancer.education || [],
         portfolio: freelancer.portfolio || [],
-        rating: freelancer.rating || 0,
+        rating: user.rating || 0,
         subscription: user.subscription || 'Basic',
       },
     });

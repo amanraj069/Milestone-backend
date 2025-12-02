@@ -16,6 +16,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const blogRoutes = require("./routes/blogRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const quizRoutes = require("./routes/quizRoutes");
+const feedbackRoutes = require("./routes/feedbackRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -81,6 +82,10 @@ app.use("/api/freelancer", freelancerRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
 app.use(blogRoutes);
+// Public quiz routes
+app.use('/api/quizzes', quizRoutes);
+// Feedback routes
+app.use('/api/feedback', feedbackRoutes);
 
 // Socket.IO connection handling
 const userSockets = new Map(); // Map userId to socket.id

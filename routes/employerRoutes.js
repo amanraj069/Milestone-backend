@@ -5,7 +5,10 @@ const { upload } = require("../middleware/imageUpload");
 
 // Middleware to check if user is authenticated and is an employer
 const requireEmployer = (req, res, next) => {
+  console.log('Session user:', req.session.user);
+  console.log('Session role:', req.session.user?.role);
   if (!req.session.user || req.session.user.role !== "Employer") {
+    console.log('Access denied for employer route');
     return res.status(403).json({
       success: false,
       error: "Access denied. Employer access required.",
@@ -91,11 +94,6 @@ router.get(
   "/work-history",
   requireEmployer,
   employerController.getWorkHistory
-);
-router.post(
-  "/rate-freelancer/:jobId",
-  requireEmployer,
-  employerController.rateFreelancer
 );
 
 // Complaint routes
