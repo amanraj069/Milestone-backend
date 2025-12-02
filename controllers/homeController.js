@@ -25,6 +25,22 @@ exports.getPublicJobs = async (req, res) => {
       .sort({ postedDate: -1 })
       .lean();
 
+    // Get all employer IDs
+    const employerIds = [...new Set(jobs.map(job => job.employerId))];
+    
+    // Get employers with their user data to check subscription
+    const employers = await Employer.find({ employerId: { $in: employerIds } }).lean();
+    const User = require("../models/user");
+    const employerUserIds = employers.map(emp => emp.userId);
+    const users = await User.find({ userId: { $in: employerUserIds } }).lean();
+    
+    // Create a map of employerId to subscription status
+    const subscriptionMap = {};
+    employers.forEach(emp => {
+      const user = users.find(u => u.userId === emp.userId);
+      subscriptionMap[emp.employerId] = user?.subscription === "Premium";
+    });
+
     const formattedJobs = jobs.map((job) => ({
       jobId: job.jobId,
       title: job.title,
@@ -42,6 +58,7 @@ exports.getPublicJobs = async (req, res) => {
         skills: job.description?.skills || [],
       },
       applicationCount: job.applications?.length || 0,
+      isSponsored: subscriptionMap[job.employerId] || false,
     }));
 
     return res.json({ success: true, jobs: formattedJobs });
