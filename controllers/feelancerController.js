@@ -5,7 +5,9 @@ const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
-const { uploadToCloudinary: uploadPdfToCloudinary } = require("../middleware/pdfUpload");
+const {
+  uploadToCloudinary: uploadPdfToCloudinary,
+} = require("../middleware/pdfUpload");
 
 exports.getFreelancerActiveJobs = async (req, res) => {
   try {
@@ -232,16 +234,20 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
         const employer = await Employer.findOne({
           employerId: job.employerId,
         }).lean();
-        const companyName = employer && employer.companyName && employer.companyName.trim() 
-          ? employer.companyName 
-          : "Unknown Company";
+        const companyName =
+          employer && employer.companyName && employer.companyName.trim()
+            ? employer.companyName
+            : "Unknown Company";
 
         const user = users.find((u) => u.roleId === job.employerId);
 
         // Calculate days since start
         const startDate = job.assignedFreelancer?.startDate;
         const daysSinceStart = startDate
-          ? Math.floor((Date.now() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))
+          ? Math.floor(
+              (Date.now() - new Date(startDate).getTime()) /
+                (1000 * 60 * 60 * 24)
+            )
           : 0;
 
         return {
@@ -261,7 +267,9 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
           description: job.description?.text || job.description || "",
           milestones: job.milestones || [],
           daysSinceStart: daysSinceStart,
-          startDate: startDate ? new Date(startDate).toLocaleDateString() : "Not set",
+          startDate: startDate
+            ? new Date(startDate).toLocaleDateString()
+            : "Not set",
         };
       })
     );
@@ -283,23 +291,25 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
 // API endpoint for job history (JSON response)
 exports.getFreelancerJobHistoryAPI = async (req, res) => {
   try {
-    console.log('getFreelancerJobHistoryAPI called');
-    console.log('Session user:', req.session.user);
-    
+    console.log("getFreelancerJobHistoryAPI called");
+    console.log("Session user:", req.session.user);
+
     if (!req.session.user) {
-      console.log('No session user - unauthorized');
-      return res.status(401).json({ success: false, error: "Unauthorized: Please log in" });
+      console.log("No session user - unauthorized");
+      return res
+        .status(401)
+        .json({ success: false, error: "Unauthorized: Please log in" });
     }
 
     const freelancerId = req.session.user.roleId;
-    console.log('Fetching job history for freelancer:', freelancerId);
+    console.log("Fetching job history for freelancer:", freelancerId);
 
     const historyJobs = await JobListing.find({
       "assignedFreelancer.freelancerId": freelancerId,
       "assignedFreelancer.status": { $in: ["finished", "left"] },
     }).lean();
 
-    console.log('Found history jobs:', historyJobs.length);
+    console.log("Found history jobs:", historyJobs.length);
 
     const formattedJobs = await Promise.all(
       historyJobs.map(async (job) => {
@@ -381,7 +391,7 @@ exports.getFreelancerProfile = async (req, res) => {
         education: freelancer.education || [],
         portfolio: freelancer.portfolio || [],
         rating: user.rating || 0,
-        subscription: user.subscription || 'Basic',
+        subscription: user.subscription || "Basic",
       },
     });
   } catch (error) {
@@ -398,18 +408,18 @@ exports.updateFreelancerProfile = async (req, res) => {
   try {
     const userId = req.session.user.id;
     const freelancerId = req.session.user.roleId;
-    const { 
-      name, 
-      email, 
-      phone, 
-      location, 
-      profileImageUrl, 
-      about, 
+    const {
+      name,
+      email,
+      phone,
+      location,
+      profileImageUrl,
+      about,
       resumeLink,
       skills,
       experience,
       education,
-      portfolio
+      portfolio,
     } = req.body;
 
     // Update User fields
@@ -421,11 +431,10 @@ exports.updateFreelancerProfile = async (req, res) => {
     if (profileImageUrl) userUpdate.picture = profileImageUrl;
     if (about) userUpdate.aboutMe = about;
 
-    const updatedUser = await User.findOneAndUpdate(
-      { userId },
-      userUpdate,
-      { new: true, runValidators: true }
-    ).lean();
+    const updatedUser = await User.findOneAndUpdate({ userId }, userUpdate, {
+      new: true,
+      runValidators: true,
+    }).lean();
 
     if (!updatedUser) {
       return res.status(404).json({
@@ -761,10 +770,13 @@ exports.createComplaint = async (req, res) => {
     }
 
     // Get employer details
-    const employer = await Employer.findOne({ employerId: job.employerId }).lean();
+    const employer = await Employer.findOne({
+      employerId: job.employerId,
+    }).lean();
     const employerUser = await User.findOne({ roleId: job.employerId }).lean();
-    
-    const employerName = employer?.companyName || employerUser?.name || "Unknown Employer";
+
+    const employerName =
+      employer?.companyName || employerUser?.name || "Unknown Employer";
 
     // Create new complaint
     const newComplaint = new Complaint({
@@ -821,6 +833,255 @@ exports.getFreelancerComplaints = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch complaints",
+    });
+  }
+};
+
+// Get all payments (jobs with freelancer assigned - working or finished)
+exports.getFreelancerPayments = async (req, res) => {
+  try {
+    const freelancerId = req.session.user?.roleId;
+
+    if (!freelancerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    // Find all jobs where this freelancer is assigned (working or finished)
+    const jobs = await JobListing.find({
+      "assignedFreelancer.freelancerId": freelancerId,
+      "assignedFreelancer.status": { $in: ["working", "finished"] },
+    }).lean();
+
+    if (jobs.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+      });
+    }
+
+    // Get employer details
+    const employerIds = jobs.map((job) => job.employerId);
+    const users = await User.find({ roleId: { $in: employerIds } })
+      .select("roleId name email picture")
+      .lean();
+    const employers = await Employer.find({ employerId: { $in: employerIds } })
+      .select("employerId companyName")
+      .lean();
+
+    // Build payment data
+    const payments = jobs.map((job) => {
+      const user = users.find((u) => u.roleId === job.employerId);
+      const employer = employers.find((e) => e.employerId === job.employerId);
+
+      // Calculate payment progress
+      const totalBudget = job.budget || 0;
+      const milestones = job.milestones || [];
+      const paidAmount = milestones
+        .filter((m) => m.status === "paid")
+        .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
+      const paymentPercentage =
+        totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
+
+      // Calculate project completion
+      const completedMilestones = milestones.filter(
+        (m) => m.status === "paid"
+      ).length;
+      const projectCompletion =
+        milestones.length > 0
+          ? Math.round((completedMilestones / milestones.length) * 100)
+          : 0;
+
+      return {
+        jobId: job.jobId,
+        jobTitle: job.title,
+        employerId: job.employerId,
+        employerName: user?.name || "Unknown",
+        employerPicture: user?.picture || "",
+        employerEmail: user?.email || "",
+        companyName: employer?.companyName || "",
+        status: job.assignedFreelancer.status,
+        startDate: job.assignedFreelancer.startDate,
+        endDate: job.assignedFreelancer.endDate,
+        totalBudget,
+        paidAmount,
+        paymentPercentage,
+        projectCompletion,
+        milestonesCount: milestones.length,
+        completedMilestones,
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: payments,
+    });
+  } catch (error) {
+    console.error("Get freelancer payments error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch payments",
+    });
+  }
+};
+
+// Get payment details for a specific job
+exports.getFreelancerPaymentDetails = async (req, res) => {
+  try {
+    const freelancerId = req.session.user?.roleId;
+    const { jobId } = req.params;
+
+    if (!freelancerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    // Find the job
+    const job = await JobListing.findOne({
+      jobId,
+      "assignedFreelancer.freelancerId": freelancerId,
+    }).lean();
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Get employer details
+    const user = await User.findOne({ roleId: job.employerId })
+      .select("roleId name email picture")
+      .lean();
+    const employer = await Employer.findOne({ employerId: job.employerId })
+      .select("employerId companyName")
+      .lean();
+
+    // Calculate payment progress
+    const totalBudget = job.budget || 0;
+    const milestones = job.milestones || [];
+    const paidAmount = milestones
+      .filter((m) => m.status === "paid")
+      .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
+    const paymentPercentage =
+      totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
+
+    // Calculate project completion
+    const completedMilestones = milestones.filter(
+      (m) => m.status === "paid"
+    ).length;
+    const projectCompletion =
+      milestones.length > 0
+        ? Math.round((completedMilestones / milestones.length) * 100)
+        : 0;
+
+    return res.json({
+      success: true,
+      data: {
+        jobId: job.jobId,
+        jobTitle: job.title,
+        employerId: job.employerId,
+        employerName: user?.name || "Unknown",
+        employerPicture: user?.picture || "",
+        employerEmail: user?.email || "",
+        companyName: employer?.companyName || "",
+        status: job.assignedFreelancer.status,
+        startDate: job.assignedFreelancer.startDate,
+        endDate: job.assignedFreelancer.endDate,
+        totalBudget,
+        paidAmount,
+        paymentPercentage,
+        projectCompletion,
+        milestones: milestones.map((m, index) => ({
+          milestoneId: m.milestoneId,
+          sno: index + 1,
+          description: m.description,
+          payment: parseFloat(m.payment) || 0,
+          deadline: m.deadline,
+          status: m.status,
+          requested: m.requested || false,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Get freelancer payment details error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch payment details",
+    });
+  }
+};
+
+// Request payment for a milestone
+exports.requestMilestonePayment = async (req, res) => {
+  try {
+    const freelancerId = req.session.user?.roleId;
+    const { jobId, milestoneId } = req.params;
+
+    if (!freelancerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    // Find the job
+    const job = await JobListing.findOne({
+      jobId,
+      "assignedFreelancer.freelancerId": freelancerId,
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+
+    // Find the milestone
+    const milestoneIndex = job.milestones.findIndex(
+      (m) => m.milestoneId === milestoneId
+    );
+    if (milestoneIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: "Milestone not found",
+      });
+    }
+
+    // Check if already paid
+    if (job.milestones[milestoneIndex].status === "paid") {
+      return res.status(400).json({
+        success: false,
+        error: "Milestone already paid",
+      });
+    }
+
+    // Check if already requested
+    if (job.milestones[milestoneIndex].requested) {
+      return res.status(400).json({
+        success: false,
+        error: "Payment already requested",
+      });
+    }
+
+    // Update milestone requested status
+    job.milestones[milestoneIndex].requested = true;
+    await job.save();
+
+    return res.json({
+      success: true,
+      message: "Payment requested successfully",
+    });
+  } catch (error) {
+    console.error("Request milestone payment error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to request payment",
     });
   }
 };
