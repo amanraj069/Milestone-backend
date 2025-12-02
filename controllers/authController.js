@@ -293,11 +293,15 @@ exports.forgotPasswordSendOtp = async (req, res) => {
     // Check if user exists and is verified
     const user = await User.findOne({ email });
     if (!user) {
-      return res.status(404).json({ error: "No account found with this email" });
+      return res
+        .status(404)
+        .json({ error: "No account found with this email" });
     }
 
     if (!user.isVerified || !user.roleId) {
-      return res.status(400).json({ error: "Account not fully registered. Please sign up again." });
+      return res
+        .status(400)
+        .json({ error: "Account not fully registered. Please sign up again." });
     }
 
     // Generate OTP and expiry (10 minutes)
@@ -310,7 +314,7 @@ exports.forgotPasswordSendOtp = async (req, res) => {
     await user.save();
 
     // Send OTP email
-    const emailResult = await sendOTPEmail(email, otp, user.name, 'reset');
+    const emailResult = await sendOTPEmail(email, otp, user.name, "reset");
     if (!emailResult.success) {
       return res.status(500).json({ error: "Failed to send OTP email" });
     }
@@ -345,7 +349,9 @@ exports.forgotPasswordVerifyOtp = async (req, res) => {
 
     // Check if OTP is expired
     if (new Date() > new Date(user.otpExpiry)) {
-      return res.status(400).json({ error: "OTP has expired. Please request a new one." });
+      return res
+        .status(400)
+        .json({ error: "OTP has expired. Please request a new one." });
     }
 
     // Don't clear OTP yet - we'll clear it after password reset
@@ -368,7 +374,9 @@ exports.resetPassword = async (req, res) => {
   const { email, otp, newPassword } = req.body;
   try {
     if (!email || !otp || !newPassword) {
-      return res.status(400).json({ error: "Email, OTP, and new password are required" });
+      return res
+        .status(400)
+        .json({ error: "Email, OTP, and new password are required" });
     }
 
     const user = await User.findOne({ email });
@@ -382,7 +390,9 @@ exports.resetPassword = async (req, res) => {
     }
 
     if (new Date() > new Date(user.otpExpiry)) {
-      return res.status(400).json({ error: "OTP has expired. Please request a new one." });
+      return res
+        .status(400)
+        .json({ error: "OTP has expired. Please request a new one." });
     }
 
     // Hash new password and save
