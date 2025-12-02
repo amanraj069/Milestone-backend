@@ -9,6 +9,9 @@ const userSchema = new Schema(
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
     phone: { type: String, default: "" },
+    otp: { type: String, default: null },
+    otpExpiry: { type: Date, default: null },
+    isVerified: { type: Boolean, default: false },
     picture: {
       type: String,
       default:
@@ -29,7 +32,7 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      enum: ["Employer", "Freelancer", "Admin"],
+      enum: ["Employer", "Freelancer", "Admin", ""],
       default: "",
     },
     roleId: { type: String, default: "" },
