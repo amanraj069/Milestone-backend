@@ -8,6 +8,9 @@ router.get('/', quizController.publicListQuizzes);
 // Get quiz for taking (no correct answers)
 router.get('/:id', quizController.getQuizForUser);
 
+// Check attempt eligibility
+router.get('/:id/eligibility', quizController.checkAttemptEligibility);
+
 // Submit attempt
 router.post('/:id/attempt', quizController.submitAttempt);
 
