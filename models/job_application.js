@@ -37,6 +37,19 @@ const jobApplicationSchema = new Schema(
       enum: ["Pending", "Accepted", "Rejected"],
       default: "Pending",
     },
+    contactEmail: {
+      type: String,
+      default: "",
+    },
+    skillRating: {
+      type: String,
+      default: "",
+    },
+    availability: {
+      type: String,
+      enum: ["immediate", "notice", "serve-notice", "other"],
+      default: "immediate",
+    },
   },
   {
     timestamps: true,
