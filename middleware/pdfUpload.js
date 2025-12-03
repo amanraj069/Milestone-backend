@@ -1,16 +1,25 @@
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
-const { Readable } = require('stream');
+const path = require('path');
+const fs = require('fs');
 
-// Configure Cloudinary (same as before)
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+// Create uploads directory if it doesn't exist
+const uploadDir = path.join(__dirname, '..', 'uploads', 'resumes');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Configure disk storage for multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    // Create unique filename: timestamp-randomstring-originalname
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, uniqueSuffix + '-' + sanitizedName);
+  }
 });
-
-// Use memory storage for multer (same as before)
-const storage = multer.memoryStorage();
 
 // Create multer upload middleware for PDF files
 const upload = multer({
@@ -28,35 +37,32 @@ const upload = multer({
   },
 });
 
-// Function to upload PDF to Cloudinary or an alternative storage solution
-const uploadToCloudinary = (buffer, originalName) => {
+// Function to save PDF to local file system (replaces uploadToCloudinary)
+const uploadToLocalStorage = (file) => {
   return new Promise((resolve, reject) => {
-    // Cloudinary doesn't support PDF transformations like images,
-    // but we can upload the PDF as a resource
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder: 'freelancer-resume', // Store PDF files in a specific folder
-        resource_type: 'raw', // Cloudinary treats PDF as raw files
-        public_id: originalName.replace(/\.[^/.]+$/, ''), // Remove extension for a clean public ID
-      },
-      (error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result);
-        }
-      }
-    );
+    if (!file) {
+      reject(new Error('No file provided'));
+      return;
+    }
 
-    const readableStream = new Readable();
-    readableStream.push(buffer);
-    readableStream.push(null);
-    readableStream.pipe(uploadStream);
+    // The file is already saved by multer, just return the URL path
+    // Use absolute URL with localhost for proper access
+    const fileUrl = `/uploads/resumes/${file.filename}`;
+    
+    resolve({
+      secure_url: fileUrl,
+      url: fileUrl,
+      public_id: file.filename,
+      original_filename: file.originalname,
+      bytes: file.size,
+      format: 'pdf',
+      resource_type: 'raw'
+    });
   });
 };
 
 module.exports = {
   upload,
-  cloudinary,
-  uploadToCloudinary,
+  uploadToCloudinary: uploadToLocalStorage, // Keep same export name for compatibility
+  uploadToLocalStorage,
 };
