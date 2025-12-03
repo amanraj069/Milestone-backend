@@ -260,10 +260,11 @@ exports.submitAttempt = async (req, res) => {
     }
     
     const quizId = req.params.id;
-    const { answers } = req.body; // [{questionId, selectedOptionIndex}]
+    const { answers, violationsCount = 0 } = req.body; // [{questionId, selectedOptionIndex}], violationsCount
     
     console.log('Quiz ID:', quizId);
     console.log('Answers received:', answers);
+    console.log('Violations detected:', violationsCount);
     
     const quiz = await Quiz.findById(quizId);
     if (!quiz) {
@@ -352,8 +353,23 @@ exports.submitAttempt = async (req, res) => {
 
     console.log('Score calculation:', { totalMarks, userMarks, answerRecords });
 
-    const percentage = totalMarks ? (userMarks / totalMarks) * 100 : 0;
-    const passed = percentage >= (quiz.passingScore || 50);
+    // Calculate penalty: deduct passing percentage marks per violation
+    const passingScore = quiz.passingScore || 50;
+    const penaltyPerViolation = totalMarks; // Each violation = passing% of total marks
+    const totalPenalty = violationsCount * penaltyPerViolation;
+    const finalMarks = Math.max(0, userMarks - totalPenalty); // Can't go below 0
+    
+    console.log('Violation penalty:', { 
+      violationsCount, 
+      passingScore: passingScore + '%', 
+      penaltyPerViolation, 
+      totalPenalty, 
+      originalMarks: userMarks, 
+      finalMarks 
+    });
+
+    const percentage = totalMarks ? (finalMarks / totalMarks) * 100 : 0;
+    const passed = percentage >= passingScore;
 
     console.log('Creating attempt document...');
     // Calculate current attempt number (considering cooldown resets)
@@ -368,10 +384,11 @@ exports.submitAttempt = async (req, res) => {
       quizId, 
       answers: answerRecords, 
       totalMarks, 
-      userMarks, 
+      userMarks: finalMarks, // Use final marks after penalty
       percentage, 
       passed,
-      attemptNumber
+      attemptNumber,
+      violationsCount // Store violations count for records
     });
     
     try {
