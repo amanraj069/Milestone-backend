@@ -360,6 +360,15 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
         }).lean();
         const companyName = employer ? employer.companyName : "Unknown Company";
 
+        // Calculate days since start
+        const startDate = job.assignedFreelancer?.startDate;
+        const daysSinceStart = startDate
+          ? Math.floor(
+              (Date.now() - new Date(startDate).getTime()) /
+                (1000 * 60 * 60 * 24)
+            )
+          : 0;
+
         return {
           id: job.jobId,
           title: job.title,
@@ -376,6 +385,20 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
           }`,
           price: paidAmount ? `Rs.${paidAmount.toFixed(2)}` : "Not paid",
           rating: job.assignedFreelancer.employerRating || null,
+          startDate: startDate
+            ? new Date(startDate).toLocaleDateString()
+            : "Not set",
+          daysSinceStart: daysSinceStart,
+          description: job.description?.text || job.description || "",
+          milestones: job.milestones || [],
+          progress: Math.round(
+            job.milestones.length > 0
+              ? (job.milestones.filter((m) => m.status === "paid").length /
+                  job.milestones.length) *
+                  100
+              : 0
+          ),
+          cancelReason: job.assignedFreelancer.cancelReason || null,
         };
       })
     );

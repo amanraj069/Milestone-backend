@@ -15,6 +15,7 @@ const AttemptSchema = new mongoose.Schema({
   percentage: { type: Number, required: true },
   passed: { type: Boolean, required: true },
   attemptNumber: { type: Number, default: 1 }, // Track which attempt this is (1, 2, 3, etc.)
+  violationsCount: { type: Number, default: 0 }, // Track quiz violations (tab switch, fullscreen exit, etc.)
   createdAt: { type: Date, default: Date.now }
 });
 
