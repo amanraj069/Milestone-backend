@@ -1,5 +1,8 @@
 const JobListing = require("../models/job_listing");
 const Employer = require("../models/employer");
+const Freelancer = require("../models/freelancer");
+const User = require("../models/user");
+const JobApplication = require("../models/job_application");
 
 exports.getHome = (req, res) => {
   let dashboardRoute = "";
@@ -136,6 +139,71 @@ exports.getJobDetail = async (req, res) => {
       success: false,
       message: "Failed to fetch job details",
       error: error.message,
+    });
+  }
+};
+
+exports.getFreelancerPublicProfile = async (req, res) => {
+  try {
+    const { freelancerId } = req.params;
+
+    // Find freelancer by freelancerId
+    const freelancer = await Freelancer.findOne({ freelancerId }).lean();
+    if (!freelancer) {
+      return res.status(404).json({
+        success: false,
+        error: "Freelancer not found",
+      });
+    }
+
+    // Find user data
+    const user = await User.findOne({ roleId: freelancerId }).lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User profile not found",
+      });
+    }
+
+    // Get job applications count
+    const applicationsCount = await JobApplication.countDocuments({ freelancerId });
+
+    // Get completed jobs count
+    const completedJobsCount = await JobApplication.countDocuments({ 
+      freelancerId, 
+      status: "Accepted" 
+    });
+
+    res.json({
+      success: true,
+      data: {
+        freelancerId: freelancer.freelancerId,
+        userId: user.userId,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        picture: user.picture,
+        location: user.location,
+        aboutMe: user.aboutMe,
+        rating: user.rating || 0,
+        subscription: user.subscription || "Basic",
+        resume: freelancer.resume,
+        skills: freelancer.skills || [],
+        experience: freelancer.experience || [],
+        education: freelancer.education || [],
+        portfolio: freelancer.portfolio || [],
+        statistics: {
+          applicationsCount,
+          completedJobsCount,
+          memberSince: user.createdAt,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching freelancer public profile:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch freelancer profile",
     });
   }
 };
