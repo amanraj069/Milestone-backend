@@ -18,6 +18,8 @@ const blogRoutes = require("./routes/blogRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const quizRoutes = require("./routes/quizRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
+const questionRoutes = require("./routes/questionRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 const app = express();
 const server = http.createServer(app);
@@ -105,6 +107,10 @@ app.use(blogRoutes);
 app.use("/api/quizzes", quizRoutes);
 // Feedback routes
 app.use("/api/feedback", feedbackRoutes);
+// Question routes for Q&A on jobs
+app.use("/api/questions", questionRoutes);
+// Notification routes
+app.use("/api/notifications", notificationRoutes);
 
 // Socket.IO connection handling with better error handling
 const userSockets = new Map(); // Map userId to socket.id
