@@ -170,13 +170,38 @@ exports.upgradeSubscription = async (req, res) => {
   try {
     const user = req.session.user;
     const userId = req.session.user.id;
+    const { duration, paymentDetails } = req.body;
+    
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    // Update the user's subscription to "Premium"
-    await User.updateOne({ userId }, { $set: { subscription: "Premium" } });
+    
+    // Calculate expiry date
+    const expiryDate = new Date();
+    expiryDate.setMonth(expiryDate.getMonth() + (duration || 1));
+    
+    // Update the user's subscription to "Premium" with duration
+    await User.updateOne(
+      { userId }, 
+      { 
+        $set: { 
+          subscription: "Premium",
+          subscriptionDuration: duration || null,
+          subscriptionExpiryDate: expiryDate
+        } 
+      }
+    );
+    
     req.session.user.subscription = "Premium";
-    res.json({ success: true, message: "Successfully upgraded to Premium" });
+    req.session.user.subscriptionDuration = duration || null;
+    req.session.user.subscriptionExpiryDate = expiryDate;
+    
+    res.json({ 
+      success: true, 
+      message: "Successfully upgraded to Premium",
+      duration: duration,
+      expiryDate: expiryDate
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -188,9 +213,19 @@ exports.downgradeSubscription = async (req, res) => {
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    // Update the user's subscription to "Basic"
-    await User.updateOne({ userId }, { $set: { subscription: "Basic" } });
+    // Update the user's subscription to "Basic" and clear duration
+    await User.updateOne(
+      { userId }, 
+      { 
+        $set: { subscription: "Basic" },
+        $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" }
+      }
+    );
+    
     req.session.user.subscription = "Basic";
+    delete req.session.user.subscriptionDuration;
+    delete req.session.user.subscriptionExpiryDate;
+    
     res.json({ success: true, message: "Successfully downgraded to Basic" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -325,6 +360,15 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
         }).lean();
         const companyName = employer ? employer.companyName : "Unknown Company";
 
+        // Calculate days since start
+        const startDate = job.assignedFreelancer?.startDate;
+        const daysSinceStart = startDate
+          ? Math.floor(
+              (Date.now() - new Date(startDate).getTime()) /
+                (1000 * 60 * 60 * 24)
+            )
+          : 0;
+
         return {
           id: job.jobId,
           title: job.title,
@@ -341,6 +385,20 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
           }`,
           price: paidAmount ? `Rs.${paidAmount.toFixed(2)}` : "Not paid",
           rating: job.assignedFreelancer.employerRating || null,
+          startDate: startDate
+            ? new Date(startDate).toLocaleDateString()
+            : "Not set",
+          daysSinceStart: daysSinceStart,
+          description: job.description?.text || job.description || "",
+          milestones: job.milestones || [],
+          progress: Math.round(
+            job.milestones.length > 0
+              ? (job.milestones.filter((m) => m.status === "paid").length /
+                  job.milestones.length) *
+                  100
+              : 0
+          ),
+          cancelReason: job.assignedFreelancer.cancelReason || null,
         };
       })
     );
@@ -585,11 +643,9 @@ exports.uploadResume = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
-    const result = await uploadPdfToCloudinary(
-      req.file.buffer,
-      req.file.originalname
-    );
+    // File is already saved to local storage by multer
+    // Get the file URL
+    const result = await uploadPdfToCloudinary(req.file);
 
     // Update freelancer resume link
     const updatedFreelancer = await Freelancer.findOneAndUpdate(
@@ -625,7 +681,7 @@ exports.applyForJob = async (req, res) => {
   try {
     const freelancerId = req.session.user.roleId;
     const { jobId } = req.params;
-    const { coverMessage, skillRating, availability } = req.body;
+    const { coverMessage, skillRating, availability, contactEmail } = req.body;
 
     // Validate input
     if (!coverMessage || coverMessage.length < 50) {
@@ -657,7 +713,7 @@ exports.applyForJob = async (req, res) => {
       });
     }
 
-    // Get freelancer's resume
+    // Get freelancer's resume and email
     const freelancer = await Freelancer.findOne({ freelancerId }).lean();
     if (!freelancer) {
       return res.status(404).json({
@@ -665,6 +721,10 @@ exports.applyForJob = async (req, res) => {
         error: "Freelancer profile not found",
       });
     }
+
+    // Get user's email
+    const user = await User.findOne({ roleId: freelancerId }).lean();
+    const defaultEmail = user?.email;
 
     // Create new application
     const newApplication = new JobApplication({
@@ -674,6 +734,9 @@ exports.applyForJob = async (req, res) => {
       resumeLink: freelancer.resume,
       appliedDate: new Date(),
       status: "Pending",
+      contactEmail: contactEmail || defaultEmail,
+      skillRating: skillRating || null,
+      availability: availability || 'immediate',
     });
 
     await newApplication.save();

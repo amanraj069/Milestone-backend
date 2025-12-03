@@ -260,10 +260,11 @@ exports.submitAttempt = async (req, res) => {
     }
     
     const quizId = req.params.id;
-    const { answers } = req.body; // [{questionId, selectedOptionIndex}]
+    const { answers, violationsCount = 0 } = req.body; // [{questionId, selectedOptionIndex}], violationsCount
     
     console.log('Quiz ID:', quizId);
     console.log('Answers received:', answers);
+    console.log('Violations detected:', violationsCount);
     
     const quiz = await Quiz.findById(quizId);
     if (!quiz) {
@@ -276,12 +277,21 @@ exports.submitAttempt = async (req, res) => {
     const attemptCount = userAttempts.length;
     console.log('Previous attempts for this user:', attemptCount);
     
-    // Check if user has premium subscription (you'll implement this check)
-    // For now, assume all users are free tier
-    const isPremium = false; // TODO: Check user's subscription status
+    // Check user's actual subscription status
+    const User = require('../models/user');
+    const user = await User.findOne({ userId: req.session.user.id });
+    const isPremium = user?.subscription === 'Premium' && 
+                      user?.subscriptionExpiryDate && 
+                      new Date(user.subscriptionExpiryDate) > new Date();
+    
+    console.log('User subscription check:', { 
+      subscription: user?.subscription, 
+      expiryDate: user?.subscriptionExpiryDate,
+      isPremium 
+    });
     
     const maxAttempts = isPremium ? 3 : 2; // Premium: 3 attempts, Free: 2 attempts
-    const cooldownDays = isPremium ? 4 : 7; // Premium: 4 days, Free: 7 days
+    const cooldownDays = isPremium ? 5 : 10; // Premium: 5 days, Free: 10 days
     
     // Check if max consecutive attempts reached
     if (attemptCount >= maxAttempts) {
@@ -343,8 +353,23 @@ exports.submitAttempt = async (req, res) => {
 
     console.log('Score calculation:', { totalMarks, userMarks, answerRecords });
 
-    const percentage = totalMarks ? (userMarks / totalMarks) * 100 : 0;
-    const passed = percentage >= (quiz.passingScore || 50);
+    // Calculate penalty: deduct passing percentage marks per violation
+    const passingScore = quiz.passingScore || 50;
+    const penaltyPerViolation = totalMarks; // Each violation = passing% of total marks
+    const totalPenalty = violationsCount * penaltyPerViolation;
+    const finalMarks = Math.max(0, userMarks - totalPenalty); // Can't go below 0
+    
+    console.log('Violation penalty:', { 
+      violationsCount, 
+      passingScore: passingScore + '%', 
+      penaltyPerViolation, 
+      totalPenalty, 
+      originalMarks: userMarks, 
+      finalMarks 
+    });
+
+    const percentage = totalMarks ? (finalMarks / totalMarks) * 100 : 0;
+    const passed = percentage >= passingScore;
 
     console.log('Creating attempt document...');
     // Calculate current attempt number (considering cooldown resets)
@@ -359,10 +384,11 @@ exports.submitAttempt = async (req, res) => {
       quizId, 
       answers: answerRecords, 
       totalMarks, 
-      userMarks, 
+      userMarks: finalMarks, // Use final marks after penalty
       percentage, 
       passed,
-      attemptNumber
+      attemptNumber,
+      violationsCount // Store violations count for records
     });
     
     try {
@@ -414,11 +440,15 @@ exports.checkAttemptEligibility = async (req, res) => {
     const userAttempts = await Attempt.find({ userId, quizId }).sort({ createdAt: -1 });
     const attemptCount = userAttempts.length;
     
-    // Check premium status (you'll implement this)
-    const isPremium = false; // TODO: Check user's subscription
+    // Check user's actual subscription status
+    const User = require('../models/user');
+    const user = await User.findOne({ userId });
+    const isPremium = user?.subscription === 'Premium' && 
+                      user?.subscriptionExpiryDate && 
+                      new Date(user.subscriptionExpiryDate) > new Date();
     
     const maxAttempts = isPremium ? 3 : 2;
-    const cooldownDays = isPremium ? 4 : 7;
+    const cooldownDays = isPremium ? 5 : 10;
     
     // If no attempts yet, user can take quiz
     if (attemptCount === 0) {

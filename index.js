@@ -4,6 +4,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const http = require("http");
 const { Server } = require("socket.io");
+const path = require("path");
 
 dotenv.config();
 
@@ -22,6 +23,8 @@ const notificationRoutes = require("./routes/notificationRoutes");
 
 const app = express();
 const server = http.createServer(app);
+
+// Enhanced Socket.IO configuration
 const io = new Server(server, {
   cors: {
     origin: [
@@ -31,7 +34,12 @@ const io = new Server(server, {
       "http://localhost:5173",
     ],
     credentials: true,
+    methods: ["GET", "POST"],
   },
+  transports: ["websocket", "polling"],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 const PORT = process.env.PORT || 9000;
@@ -43,7 +51,7 @@ app.use(
       process.env.FRONTEND_ORIGIN || "http://localhost:3000",
       "http://localhost:3001",
       "http://localhost:3002",
-      "http://localhost:5173",
+      "http://localhost:5173"
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -53,6 +61,15 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static files from uploads directory with proper headers
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'unsafe-none');
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 app.use(
   session({
@@ -95,25 +112,41 @@ app.use("/api/questions", questionRoutes);
 // Notification routes
 app.use("/api/notifications", notificationRoutes);
 
-// Socket.IO connection handling
+// Socket.IO connection handling with better error handling
 const userSockets = new Map(); // Map userId to socket.id
 const typingUsers = new Map(); // Map conversationId to Set of typing userIds
 
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("✅ User connected:", socket.id);
 
   // User joins with their userId
   socket.on("user:join", (userId) => {
+    console.log(`👤 User ${userId} joined with socket ${socket.id}`);
     userSockets.set(userId, socket.id);
     socket.userId = userId;
     socket.join(`user:${userId}`);
 
-    // Notify user's contacts that they're online
+    // Send current online users to the newly joined user
+    const onlineUserIds = Array.from(userSockets.keys());
+    console.log(`📋 Sending online users to ${userId}:`, onlineUserIds);
+    console.log(`📋 Emitting to socket ${socket.id}`);
+    socket.emit("users:online", { userIds: onlineUserIds });
+
+    // Notify ALL users (including the new one) that this user is online
+    console.log(`🔔 Broadcasting user:status online for ${userId} to all clients`);
     io.emit("user:status", { userId, status: "online" });
+  });
+
+  // Handle request for current online users
+  socket.on("request:online-users", () => {
+    const onlineUserIds = Array.from(userSockets.keys());
+    console.log(`📞 User ${socket.userId} requested online users:`, onlineUserIds);
+    socket.emit("users:online", { userIds: onlineUserIds });
   });
 
   // User starts typing
   socket.on("typing:start", ({ conversationId, userId, recipientId }) => {
+    console.log(`⌨️  Typing start: User ${userId} in conversation ${conversationId} - notifying ${recipientId}`);
     if (!typingUsers.has(conversationId)) {
       typingUsers.set(conversationId, new Set());
     }
@@ -121,17 +154,22 @@ io.on("connection", (socket) => {
 
     // Notify the recipient
     const recipientSocketId = userSockets.get(recipientId);
+    console.log(`   Recipient socket ID: ${recipientSocketId}`);
     if (recipientSocketId) {
       io.to(recipientSocketId).emit("typing:update", {
         conversationId,
         userId,
         isTyping: true,
       });
+      console.log(`   ✅ Sent typing:update (true) to ${recipientId}`);
+    } else {
+      console.log(`   ❌ Recipient ${recipientId} not found in userSockets`);
     }
   });
 
   // User stops typing
   socket.on("typing:stop", ({ conversationId, userId, recipientId }) => {
+    console.log(`⌨️  Typing stop: User ${userId} in conversation ${conversationId}`);
     if (typingUsers.has(conversationId)) {
       typingUsers.get(conversationId).delete(userId);
       if (typingUsers.get(conversationId).size === 0) {
@@ -147,6 +185,7 @@ io.on("connection", (socket) => {
         userId,
         isTyping: false,
       });
+      console.log(`   ✅ Sent typing:update (false) to ${recipientId}`);
     }
   });
 
@@ -185,9 +224,14 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Error handling
+  socket.on("error", (error) => {
+    console.error("❌ Socket error:", error);
+  });
+
   // Disconnect
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
+  socket.on("disconnect", (reason) => {
+    console.log("❌ User disconnected:", socket.id, "Reason:", reason);
 
     if (socket.userId) {
       userSockets.delete(socket.userId);
@@ -203,6 +247,8 @@ io.on("connection", (socket) => {
 
 // Make io accessible to routes
 app.set("io", io);
+// Public quiz routes
+app.use('/api/quizzes', quizRoutes);
 
 connectDB
   .then(() => {
