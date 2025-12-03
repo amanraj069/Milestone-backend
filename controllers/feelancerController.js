@@ -681,7 +681,7 @@ exports.applyForJob = async (req, res) => {
   try {
     const freelancerId = req.session.user.roleId;
     const { jobId } = req.params;
-    const { coverMessage, skillRating, availability } = req.body;
+    const { coverMessage, skillRating, availability, contactEmail } = req.body;
 
     // Validate input
     if (!coverMessage || coverMessage.length < 50) {
@@ -713,7 +713,7 @@ exports.applyForJob = async (req, res) => {
       });
     }
 
-    // Get freelancer's resume
+    // Get freelancer's resume and email
     const freelancer = await Freelancer.findOne({ freelancerId }).lean();
     if (!freelancer) {
       return res.status(404).json({
@@ -721,6 +721,10 @@ exports.applyForJob = async (req, res) => {
         error: "Freelancer profile not found",
       });
     }
+
+    // Get user's email
+    const user = await User.findOne({ roleId: freelancerId }).lean();
+    const defaultEmail = user?.email;
 
     // Create new application
     const newApplication = new JobApplication({
@@ -730,6 +734,9 @@ exports.applyForJob = async (req, res) => {
       resumeLink: freelancer.resume,
       appliedDate: new Date(),
       status: "Pending",
+      contactEmail: contactEmail || defaultEmail,
+      skillRating: skillRating || null,
+      availability: availability || 'immediate',
     });
 
     await newApplication.save();
