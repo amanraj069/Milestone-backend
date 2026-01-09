@@ -171,36 +171,36 @@ exports.upgradeSubscription = async (req, res) => {
     const user = req.session.user;
     const userId = req.session.user.id;
     const { duration, paymentDetails } = req.body;
-    
+
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    
+
     // Calculate expiry date
     const expiryDate = new Date();
     expiryDate.setMonth(expiryDate.getMonth() + (duration || 1));
-    
+
     // Update the user's subscription to "Premium" with duration
     await User.updateOne(
-      { userId }, 
-      { 
-        $set: { 
+      { userId },
+      {
+        $set: {
           subscription: "Premium",
           subscriptionDuration: duration || null,
-          subscriptionExpiryDate: expiryDate
-        } 
+          subscriptionExpiryDate: expiryDate,
+        },
       }
     );
-    
+
     req.session.user.subscription = "Premium";
     req.session.user.subscriptionDuration = duration || null;
     req.session.user.subscriptionExpiryDate = expiryDate;
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: "Successfully upgraded to Premium",
       duration: duration,
-      expiryDate: expiryDate
+      expiryDate: expiryDate,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -215,17 +215,17 @@ exports.downgradeSubscription = async (req, res) => {
     }
     // Update the user's subscription to "Basic" and clear duration
     await User.updateOne(
-      { userId }, 
-      { 
+      { userId },
+      {
         $set: { subscription: "Basic" },
-        $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" }
+        $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" },
       }
     );
-    
+
     req.session.user.subscription = "Basic";
     delete req.session.user.subscriptionDuration;
     delete req.session.user.subscriptionExpiryDate;
-    
+
     res.json({ success: true, message: "Successfully downgraded to Basic" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -736,10 +736,13 @@ exports.applyForJob = async (req, res) => {
       status: "Pending",
       contactEmail: contactEmail || defaultEmail,
       skillRating: skillRating || null,
-      availability: availability || 'immediate',
+      availability: availability || "immediate",
     });
 
     await newApplication.save();
+
+    // Increment the applicants count for the job
+    await JobListing.findOneAndUpdate({ jobId }, { $inc: { applicants: 1 } });
 
     // Update user's last cover message for future use
     await User.findOneAndUpdate(

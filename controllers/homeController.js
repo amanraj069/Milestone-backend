@@ -3,6 +3,7 @@ const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
 const User = require("../models/user");
 const JobApplication = require("../models/job_application");
+const Question = require("../models/Question");
 
 exports.getHome = (req, res) => {
   let dashboardRoute = "";
@@ -29,18 +30,20 @@ exports.getPublicJobs = async (req, res) => {
       .lean();
 
     // Get all employer IDs
-    const employerIds = [...new Set(jobs.map(job => job.employerId))];
-    
+    const employerIds = [...new Set(jobs.map((job) => job.employerId))];
+
     // Get employers with their user data to check subscription
-    const employers = await Employer.find({ employerId: { $in: employerIds } }).lean();
+    const employers = await Employer.find({
+      employerId: { $in: employerIds },
+    }).lean();
     const User = require("../models/user");
-    const employerUserIds = employers.map(emp => emp.userId);
+    const employerUserIds = employers.map((emp) => emp.userId);
     const users = await User.find({ userId: { $in: employerUserIds } }).lean();
-    
+
     // Create a map of employerId to subscription status
     const subscriptionMap = {};
-    employers.forEach(emp => {
-      const user = users.find(u => u.userId === emp.userId);
+    employers.forEach((emp) => {
+      const user = users.find((u) => u.userId === emp.userId);
       subscriptionMap[emp.employerId] = user?.subscription === "Premium";
     });
 
@@ -60,7 +63,7 @@ exports.getPublicJobs = async (req, res) => {
       description: {
         skills: job.description?.skills || [],
       },
-      applicationCount: job.applications?.length || 0,
+      applicationCount: job.applicants || 0,
       isSponsored: subscriptionMap[job.employerId] || false,
     }));
 
@@ -88,16 +91,21 @@ exports.getJobDetail = async (req, res) => {
     }
 
     // Get employer details
-    const employer = await Employer.findOne({ employerId: job.employerId }).lean();
+    const employer = await Employer.findOne({
+      employerId: job.employerId,
+    }).lean();
     const companyName = employer?.companyName || "Company Name Not Available";
+
+    // Get questions count for this job
+    const questionsCount = await Question.countDocuments({ jobId });
 
     // Check if user has applied (only if user is logged in as freelancer)
     let hasApplied = false;
     if (req.session?.user && req.session.user.role === "Freelancer") {
       const freelancerId = req.session.user.roleId;
-      hasApplied = job.applications?.some(
-        (app) => app.freelancerId === freelancerId
-      ) || false;
+      hasApplied =
+        job.applications?.some((app) => app.freelancerId === freelancerId) ||
+        false;
     }
 
     // Format the job data
@@ -124,7 +132,8 @@ exports.getJobDetail = async (req, res) => {
         skills: job.description?.skills || [],
       },
       milestones: job.milestones || [],
-      applicationCount: job.applications?.length || 0,
+      applicationCount: job.applicants || 0,
+      questionsCount,
       hasApplied,
     };
 
@@ -166,12 +175,14 @@ exports.getFreelancerPublicProfile = async (req, res) => {
     }
 
     // Get job applications count
-    const applicationsCount = await JobApplication.countDocuments({ freelancerId });
+    const applicationsCount = await JobApplication.countDocuments({
+      freelancerId,
+    });
 
     // Get completed jobs count
-    const completedJobsCount = await JobApplication.countDocuments({ 
-      freelancerId, 
-      status: "Accepted" 
+    const completedJobsCount = await JobApplication.countDocuments({
+      freelancerId,
+      status: "Accepted",
     });
 
     res.json({
