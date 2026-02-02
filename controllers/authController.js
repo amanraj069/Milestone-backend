@@ -216,6 +216,7 @@ exports.signup = async (req, res) => {
       name: existingUser.name,
       roleId: existingUser.roleId,
       subscription: existingUser.subscription || "Basic",
+      picture: existingUser.picture,
       authenticated: true,
     };
 
@@ -266,6 +267,7 @@ exports.login = async (req, res) => {
       name: user.name,
       roleId: user.roleId,
       subscription: user.subscription || "Basic",
+      picture: user.picture,
       authenticated: true,
     };
     req.session.save(() => res.json({ success: true }));
@@ -423,7 +425,7 @@ exports.me = async (req, res) => {
     const User = require("../models/user");
 
     const user = await User.findOne({ userId: req.session.user.id })
-      .select("userId name email role picture subscription")
+      .select("userId name email role roleId picture subscription")
       .lean();
 
     if (!user) {
@@ -439,6 +441,7 @@ exports.me = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        roleId: user.roleId,
         picture: user.picture, // Fresh from database
         subscription: user.subscription,
       },
