@@ -13,9 +13,41 @@ const getJobQuestions = async (req, res) => {
 
     const questions = await Question.find({ jobId }).sort({ createdAt: -1 });
 
+    // Populate askerPicture and answererPicture from User model if missing
+    const enrichedQuestions = await Promise.all(
+      questions.map(async (question) => {
+        const questionObj = question.toObject();
+        
+        // If askerPicture is missing or empty, fetch from User model
+        if (!questionObj.askerPicture || questionObj.askerPicture === "") {
+          const user = await User.findOne({ roleId: questionObj.askerId });
+          if (user && user.picture) {
+            questionObj.askerPicture = user.picture;
+          }
+        }
+
+        // Populate answerer pictures if missing
+        if (questionObj.answers && questionObj.answers.length > 0) {
+          questionObj.answers = await Promise.all(
+            questionObj.answers.map(async (answer) => {
+              if (!answer.answererPicture || answer.answererPicture === "") {
+                const user = await User.findOne({ roleId: answer.answererId });
+                if (user && user.picture) {
+                  answer.answererPicture = user.picture;
+                }
+              }
+              return answer;
+            })
+          );
+        }
+
+        return questionObj;
+      })
+    );
+
     res.json({
       success: true,
-      questions,
+      questions: enrichedQuestions,
     });
   } catch (error) {
     console.error("Error fetching questions:", error);
@@ -248,6 +280,14 @@ const postAnswer = async (req, res) => {
       return res.status(404).json({
         success: false,
         error: "Question not found",
+      });
+    }
+
+    // Check if user is trying to answer their own question
+    if (question.askerId === user.roleId) {
+      return res.status(403).json({
+        success: false,
+        error: "You cannot answer your own question",
       });
     }
 
