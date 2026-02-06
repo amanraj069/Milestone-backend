@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const employerController = require("../controllers/employerController");
 const { upload } = require("../middleware/imageUpload");
+const { subscriptionRateLimiter, jobApplicationRateLimiter } = require("../middleware/rateLimiter");
+const asyncHandler = require("../middleware/asyncHandler");
 
 // Middleware to check if user is authenticated and is an employer
 const requireEmployer = (req, res, next) => {
@@ -9,6 +11,10 @@ const requireEmployer = (req, res, next) => {
   console.log("Session role:", req.session.user?.role);
   if (!req.session.user || req.session.user.role !== "Employer") {
     console.log("Access denied for employer route");
+    console.error('UNAUTHORIZED ACCESS ATTEMPT - EMPLOYER ROUTE');
+    console.error(`Path: ${req.method} ${req.originalUrl}`);
+    console.error(`User: ${req.session?.user?.name || 'Not logged in'}`);
+    console.error(`Role: ${req.session?.user?.role || 'None'}`);
     return res.status(403).json({
       success: false,
       error: "Access denied. Employer access required.",
@@ -40,48 +46,53 @@ router.get(
   employerController.getJobById
 );
 
-// Job Applications
+// Job Applications - with rate limiter
 router.get(
   "/job_applications",
   requireEmployer,
-  employerController.getJobApplications
+  asyncHandler(employerController.getJobApplications)
 );
 router.get(
   "/job_applications/api/data",
   requireEmployer,
-  employerController.getJobApplicationsAPI
+  asyncHandler(employerController.getJobApplicationsAPI)
 );
 router.post(
   "/job_applications/:applicationId/accept",
   requireEmployer,
-  employerController.acceptJobApplication
+  jobApplicationRateLimiter,
+  asyncHandler(employerController.acceptJobApplication)
 );
 router.post(
   "/job_applications/:applicationId/reject",
   requireEmployer,
-  employerController.rejectJobApplication
+  jobApplicationRateLimiter,
+  asyncHandler(employerController.rejectJobApplication)
 );
 
-// Subscription
+// Subscription - with rate limiter
 router.get(
   "/subscription",
   requireEmployer,
-  employerController.getSubscription
+  asyncHandler(employerController.getSubscription)
 );
 router.post(
   "/subscription/purchase",
   requireEmployer,
-  employerController.purchaseSubscription
+  subscriptionRateLimiter,
+  asyncHandler(employerController.purchaseSubscription)
 );
 router.post(
   "/upgrade_subscription",
   requireEmployer,
-  employerController.upgradeSubscription
+  subscriptionRateLimiter,
+  asyncHandler(employerController.upgradeSubscription)
 );
 router.post(
   "/downgrade_subscription",
   requireEmployer,
-  employerController.downgradeSubscription
+  subscriptionRateLimiter,
+  asyncHandler(employerController.downgradeSubscription)
 );
 
 // Current Freelancers and Work History
