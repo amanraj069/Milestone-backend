@@ -10,6 +10,12 @@ const blogSchema = new Schema(
       unique: true,
       default: uuidv4,
     },
+    slug: {
+      type: String,
+      unique: true,
+      trim: true,
+      sparse: true, // Allow null values temporarily for migration
+    },
     title: {
       type: String,
       required: true,
@@ -101,5 +107,17 @@ blogSchema.virtual("readTimeDisplay").get(function () {
 // Ensure virtuals are included when converting to JSON
 blogSchema.set("toJSON", { virtuals: true });
 blogSchema.set("toObject", { virtuals: true });
+
+// Pre-save hook to auto-generate slug if not provided
+blogSchema.pre('save', function(next) {
+  if (!this.slug && this.title) {
+    this.slug = this.title
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
+  }
+  next();
+});
 
 module.exports = mongoose.model("Blog", blogSchema);
