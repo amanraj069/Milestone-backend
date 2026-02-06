@@ -3,9 +3,10 @@ const adminController = require("../controllers/adminController");
 const { upload } = require("../middleware/imageUpload");
 const router = express.Router();
 
-// Middleware to check if user is authenticated and is an admin
+// Inline admin authentication check (consistent with auth pattern in controllers)
+// This is kept as inline middleware here for DRY principle since all admin routes require it
 const requireAdmin = (req, res, next) => {
-  if (!req.session.user || req.session.user.role !== "Admin") {
+  if (!req.session?.user || req.session.user.role !== "Admin") {
     return res.status(403).json({
       success: false,
       error: "Access denied. Admin access required.",

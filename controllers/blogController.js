@@ -388,6 +388,14 @@ exports.getAdminBlogs = async (req, res) => {
 // Admin: Get single blog by ID (for editing)
 exports.getAdminBlogById = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.session?.user || req.session.user.role !== "Admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized. Admin access required.",
+      });
+    }
+
     const { blogId } = req.params;
     const blog = await Blog.findOne({ blogId }).lean();
 
@@ -426,6 +434,14 @@ exports.getAdminBlogById = async (req, res) => {
 // Admin: Get single blog by slug (for editing)
 exports.getAdminBlogBySlug = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.session?.user || req.session.user.role !== "Admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized. Admin access required.",
+      });
+    }
+
     const { slug } = req.params;
     let blog = await Blog.findOne({ slug }).lean();
 
@@ -468,6 +484,14 @@ exports.getAdminBlogBySlug = async (req, res) => {
 // Admin: Upload blog image to Cloudinary
 exports.uploadBlogImage = async (req, res) => {
   try {
+    // Check if user is admin
+    if (!req.session?.user || req.session.user.role !== "Admin") {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized. Admin access required.",
+      });
+    }
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
