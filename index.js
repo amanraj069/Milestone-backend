@@ -20,6 +20,7 @@ const quizRoutes = require("./routes/quizRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const questionRoutes = require("./routes/questionRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const { notFound, errorHandler } = require("./middleware/errorHandler");
 
 const app = express();
 const server = http.createServer(app);
@@ -257,6 +258,12 @@ io.on("connection", (socket) => {
 app.set("io", io);
 // Public quiz routes
 app.use("/api/quizzes", quizRoutes);
+
+// 404 handler - Must be after all routes
+app.use(notFound);
+
+// Global error handler - Must be last
+app.use(errorHandler);
 
 connectDB
   .then(() => {
