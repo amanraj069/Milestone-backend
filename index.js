@@ -5,6 +5,11 @@ const dotenv = require("dotenv");
 const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const rfs = require("rotating-file-stream");
+const hpp = require("hpp");
+const mongoSanitize = require("express-mongo-sanitize");
 
 dotenv.config();
 
@@ -25,15 +30,23 @@ const { notFound, errorHandler } = require("./middleware/errorHandler");
 const app = express();
 const server = http.createServer(app);
 
-// Enhanced Socket.IO configuration
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+
+const logStream = rfs.createStream("access.log", {
+  interval: "1d",
+  path: path.join(__dirname, "logs"),
+});
+
+app.use(morgan("combined", { stream: logStream }));
+
 const io = new Server(server, {
   cors: {
-    origin: [
-      process.env.FRONTEND_ORIGIN || "http://localhost:3000",
-      "http://localhost:3001",
-      "http://localhost:3002",
-      "http://localhost:5173",
-    ],
+    origin: [process.env.FRONTEND_ORIGIN || "http://localhost:3000"],
     credentials: true,
     methods: ["GET", "POST"],
   },
@@ -45,7 +58,6 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 9000;
 
-// Enhanced CORS configuration
 app.use(
   cors({
     origin: [
@@ -57,13 +69,27 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files from uploads directory with proper headers
+// Only sanitize req.body and req.params,
+// skip req.query to avoid read-only property error
+
+app.use((req, res, next) => {
+  if (req.body) {
+    req.body = mongoSanitize.sanitize(req.body);
+  }
+  if (req.params) {
+    req.params = mongoSanitize.sanitize(req.params);
+  }
+  next();
+});
+
+app.use(hpp());
+
 app.use(
   "/uploads",
   (req, res, next) => {
@@ -73,7 +99,7 @@ app.use(
     res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
     next();
   },
-  express.static(path.join(__dirname, "uploads"))
+  express.static(path.join(__dirname, "uploads")),
 );
 
 app.use(
@@ -87,7 +113,7 @@ app.use(
       httpOnly: true,
       sameSite: "lax",
     },
-  })
+  }),
 );
 
 // Health check endpoint
@@ -152,7 +178,7 @@ io.on("connection", (socket) => {
   // User starts typing
   socket.on("typing:start", ({ conversationId, userId, recipientId }) => {
     console.log(
-      `⌨️  Typing start: User ${userId} in conversation ${conversationId} - notifying ${recipientId}`
+      `⌨️  Typing start: User ${userId} in conversation ${conversationId} - notifying ${recipientId}`,
     );
     if (!typingUsers.has(conversationId)) {
       typingUsers.set(conversationId, new Set());
@@ -177,7 +203,7 @@ io.on("connection", (socket) => {
   // User stops typing
   socket.on("typing:stop", ({ conversationId, userId, recipientId }) => {
     console.log(
-      `⌨️  Typing stop: User ${userId} in conversation ${conversationId}`
+      `⌨️  Typing stop: User ${userId} in conversation ${conversationId}`,
     );
     if (typingUsers.has(conversationId)) {
       typingUsers.get(conversationId).delete(userId);
@@ -272,7 +298,7 @@ connectDB
       console.log(
         `CORS enabled for: ${
           process.env.FRONTEND_ORIGIN || "http://localhost:3000"
-        }`
+        }`,
       );
       console.log(`Socket.IO server ready`);
     });
