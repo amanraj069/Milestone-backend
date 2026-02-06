@@ -5,6 +5,8 @@ const dotenv = require("dotenv");
 const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
+const morgan = require("morgan");
+const fs = require("fs");
 
 dotenv.config();
 
@@ -20,7 +22,8 @@ const quizRoutes = require("./routes/quizRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const questionRoutes = require("./routes/questionRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
-const { notFound, errorHandler } = require("./middleware/errorHandler");
+const { errorHandler, notFound } = require("./middleware/errorHandler");
+const chatLogger = require("./utils/chatLogger");
 
 const app = express();
 const server = http.createServer(app);
@@ -45,6 +48,32 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 9000;
 
+// Create logs directory structure
+const logsDir = path.join(__dirname, "logs");
+const httpLogsDir = path.join(logsDir, "http");
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+if (!fs.existsSync(httpLogsDir)) {
+  fs.mkdirSync(httpLogsDir, { recursive: true });
+}
+
+// Morgan HTTP request logging
+const accessLogStream = fs.createWriteStream(
+  path.join(httpLogsDir, `access-${new Date().toISOString().split('T')[0]}.log`),
+  { flags: "a" }
+);
+
+// Custom Morgan format with user info
+morgan.token('user', (req) => {
+  return req.session?.user ? `${req.session.user.name}(${req.session.user.id})` : 'anonymous';
+});
+morgan.token('role', (req) => {
+  return req.session?.user?.role || 'guest';
+});
+
+const morganFormat = ':remote-addr - :user [:date[clf]] ":method :url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent" - Role: :role - :response-time ms';
+
 // Enhanced CORS configuration
 app.use(
   cors({
@@ -63,6 +92,10 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Morgan logging middleware
+app.use(morgan(morganFormat, { stream: accessLogStream }));
+app.use(morgan('dev')); // Also log to console in colored format
+
 // Serve static files from uploads directory with proper headers
 app.use(
   "/uploads",
@@ -76,19 +109,20 @@ app.use(
   express.static(path.join(__dirname, "uploads"))
 );
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      maxAge: 24 * 60 * 60 * 1000,
-      secure: false,
-      httpOnly: true,
-      sameSite: "lax",
-    },
-  })
-);
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000,
+    secure: false,
+    httpOnly: true,
+    sameSite: "lax",
+  },
+});
+
+// Use same session middleware for Express and Socket.IO
+app.use(sessionMiddleware);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
@@ -121,8 +155,25 @@ app.use("/api/notifications", notificationRoutes);
 const userSockets = new Map(); // Map userId to socket.id
 const typingUsers = new Map(); // Map conversationId to Set of typing userIds
 
+// Make express-session available to socket.handshake via session middleware
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, {}, () => {
+    // now socket.request.session is available
+    if (socket.request.session?.user) {
+      socket.user = socket.request.session.user;
+    }
+    next();
+  });
+});
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
+
+  // Attach session user if available (populated via io.use below)
+  const connectedUserId = socket.request?.session?.user?.id || socket.user?.id || null;
+
+  // Log connection (will show userId if session present)
+  chatLogger.logConnection(socket.id, connectedUserId, 'CONNECTED');
 
   // User joins with their userId
   socket.on("user:join", (userId) => {
@@ -130,6 +181,9 @@ io.on("connection", (socket) => {
     userSockets.set(userId, socket.id);
     socket.userId = userId;
     socket.join(`user:${userId}`);
+    
+    // Log user connection with userId
+    chatLogger.logConnection(socket.id, userId, 'USER_JOINED');
 
     // Send current online users to the newly joined user
     const onlineUserIds = Array.from(userSockets.keys());
@@ -210,6 +264,9 @@ io.on("connection", (socket) => {
 
     // Send back to sender for confirmation
     socket.emit("message:sent", message);
+    
+    // Log message
+    chatLogger.logMessage(message);
   });
 
   // Message read
@@ -236,11 +293,15 @@ io.on("connection", (socket) => {
   // Error handling
   socket.on("error", (error) => {
     console.error("Socket error:", error);
+    chatLogger.logError(error, { socketId: socket.id, userId: socket.userId });
   });
 
   // Disconnect
   socket.on("disconnect", (reason) => {
     console.log("User disconnected:", socket.id, "Reason:", reason);
+    
+    // Log disconnection
+    chatLogger.logDisconnection(socket.id, socket.userId, reason);
 
     if (socket.userId) {
       userSockets.delete(socket.userId);
@@ -256,8 +317,10 @@ io.on("connection", (socket) => {
 
 // Make io accessible to routes
 app.set("io", io);
-// Public quiz routes
-app.use("/api/quizzes", quizRoutes);
+
+// Error handling - must be after all routes
+app.use(notFound);
+app.use(errorHandler);
 
 // 404 handler - Must be after all routes
 app.use(notFound);

@@ -3,11 +3,17 @@ const freelancerController = require("../controllers/feelancerController");
 const employerController = require("../controllers/employerController");
 const { upload } = require("../middleware/imageUpload");
 const { upload: pdfUpload } = require("../middleware/pdfUpload");
+const { subscriptionRateLimiter, jobApplicationRateLimiter } = require("../middleware/rateLimiter");
+const asyncHandler = require("../middleware/asyncHandler");
 const router = express.Router();
 
 // Middleware to check if user is authenticated and is a freelancer
 const requireFreelancer = (req, res, next) => {
   if (!req.session.user || req.session.user.role !== "Freelancer") {
+    console.error('UNAUTHORIZED ACCESS ATTEMPT - FREELANCER ROUTE');
+    console.error(`Path: ${req.method} ${req.originalUrl}`);
+    console.error(`User: ${req.session?.user?.name || 'Not logged in'}`);
+    console.error(`Role: ${req.session?.user?.role || 'None'}`);
     return res.status(403).json({
       success: false,
       error: "Access denied. Freelancer access required.",
@@ -41,20 +47,23 @@ router.get(
   requireFreelancer,
   freelancerController.getFreelancerJobHistoryAPI
 );
+// Subscription - with rate limiter
 router.get(
   "/subscription",
   requireFreelancer,
-  freelancerController.getSubscription
+  asyncHandler(freelancerController.getSubscription)
 );
 router.post(
   "/upgrade_subscription",
   requireFreelancer,
-  freelancerController.upgradeSubscription
+  subscriptionRateLimiter,
+  asyncHandler(freelancerController.upgradeSubscription)
 );
 router.post(
   "/downgrade_subscription",
   requireFreelancer,
-  freelancerController.downgradeSubscription
+  subscriptionRateLimiter,
+  asyncHandler(freelancerController.downgradeSubscription)
 );
 
 // Profile and application routes
@@ -89,7 +98,8 @@ router.post(
 router.post(
   "/apply/:jobId",
   requireFreelancer,
-  freelancerController.applyForJob
+  jobApplicationRateLimiter,
+  asyncHandler(freelancerController.applyForJob)
 );
 router.get(
   "/cover-message/last",
