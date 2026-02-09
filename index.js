@@ -25,7 +25,8 @@ const quizRoutes = require("./routes/quizRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const questionRoutes = require("./routes/questionRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
-const { notFound, errorHandler } = require("./middleware/errorHandler");
+const { errorHandler, notFound } = require("./middleware/errorHandler");
+const chatLogger = require("./utils/chatLogger");
 
 const app = express();
 const server = http.createServer(app);
@@ -102,29 +103,24 @@ app.use(
   express.static(path.join(__dirname, "uploads")),
 );
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      maxAge: 24 * 60 * 60 * 1000,
-      secure: false,
-      httpOnly: true,
-      sameSite: "lax",
-    },
-  }),
-);
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000,
+    secure: false,
+    httpOnly: true,
+    sameSite: "lax",
+  },
+});
+
+// Use same session middleware for Express and Socket.IO
+app.use(sessionMiddleware);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Backend is running" });
-});
-
-// Logging middleware for debugging
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
 });
 
 app.use("/api/auth", authRoutes);
@@ -147,8 +143,25 @@ app.use("/api/notifications", notificationRoutes);
 const userSockets = new Map(); // Map userId to socket.id
 const typingUsers = new Map(); // Map conversationId to Set of typing userIds
 
+// Make express-session available to socket.handshake via session middleware
+io.use((socket, next) => {
+  sessionMiddleware(socket.request, {}, () => {
+    // now socket.request.session is available
+    if (socket.request.session?.user) {
+      socket.user = socket.request.session.user;
+    }
+    next();
+  });
+});
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
+
+  // Attach session user if available (populated via io.use below)
+  const connectedUserId = socket.request?.session?.user?.id || socket.user?.id || null;
+
+  // Log connection (will show userId if session present)
+  chatLogger.logConnection(socket.id, connectedUserId, 'CONNECTED');
 
   // User joins with their userId
   socket.on("user:join", (userId) => {
@@ -156,6 +169,9 @@ io.on("connection", (socket) => {
     userSockets.set(userId, socket.id);
     socket.userId = userId;
     socket.join(`user:${userId}`);
+    
+    // Log user connection with userId
+    chatLogger.logConnection(socket.id, userId, 'USER_JOINED');
 
     // Send current online users to the newly joined user
     const onlineUserIds = Array.from(userSockets.keys());
@@ -178,7 +194,7 @@ io.on("connection", (socket) => {
   // User starts typing
   socket.on("typing:start", ({ conversationId, userId, recipientId }) => {
     console.log(
-      `⌨️  Typing start: User ${userId} in conversation ${conversationId} - notifying ${recipientId}`,
+      `Typing start: User ${userId} in conversation ${conversationId} - notifying ${recipientId}`,
     );
     if (!typingUsers.has(conversationId)) {
       typingUsers.set(conversationId, new Set());
@@ -203,7 +219,7 @@ io.on("connection", (socket) => {
   // User stops typing
   socket.on("typing:stop", ({ conversationId, userId, recipientId }) => {
     console.log(
-      `⌨️  Typing stop: User ${userId} in conversation ${conversationId}`,
+      `Typing stop: User ${userId} in conversation ${conversationId}`,
     );
     if (typingUsers.has(conversationId)) {
       typingUsers.get(conversationId).delete(userId);
@@ -236,6 +252,9 @@ io.on("connection", (socket) => {
 
     // Send back to sender for confirmation
     socket.emit("message:sent", message);
+    
+    // Log message
+    chatLogger.logMessage(message);
   });
 
   // Message read
@@ -262,11 +281,15 @@ io.on("connection", (socket) => {
   // Error handling
   socket.on("error", (error) => {
     console.error("Socket error:", error);
+    chatLogger.logError(error, { socketId: socket.id, userId: socket.userId });
   });
 
   // Disconnect
   socket.on("disconnect", (reason) => {
     console.log("User disconnected:", socket.id, "Reason:", reason);
+    
+    // Log disconnection
+    chatLogger.logDisconnection(socket.id, socket.userId, reason);
 
     if (socket.userId) {
       userSockets.delete(socket.userId);
@@ -282,8 +305,10 @@ io.on("connection", (socket) => {
 
 // Make io accessible to routes
 app.set("io", io);
-// Public quiz routes
-app.use("/api/quizzes", quizRoutes);
+
+// Error handling - must be after all routes
+app.use(notFound);
+app.use(errorHandler);
 
 // 404 handler - Must be after all routes
 app.use(notFound);
