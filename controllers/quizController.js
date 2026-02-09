@@ -16,23 +16,19 @@ exports.createQuiz = async (req, res) => {
         .status(400)
         .json({ success: false, error: { message: "Invalid payload" } });
     if (!payload.title || String(payload.title).trim().length < 3)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: { message: "Title required (min 3 chars)" },
-        });
+      return res.status(400).json({
+        success: false,
+        error: { message: "Title required (min 3 chars)" },
+      });
     if (!payload.skillName || String(payload.skillName).trim().length < 2)
       return res
         .status(400)
         .json({ success: false, error: { message: "Skill name required" } });
     if (!Array.isArray(payload.questions) || payload.questions.length < 1)
-      return res
-        .status(400)
-        .json({
-          success: false,
-          error: { message: "At least one question required" },
-        });
+      return res.status(400).json({
+        success: false,
+        error: { message: "At least one question required" },
+      });
     const quiz = new Quiz({ ...payload, createdBy: req.session.user?._id });
     await quiz.save();
 
@@ -247,7 +243,7 @@ exports.getQuizAttempts = async (req, res) => {
           badgeAwarded,
           attemptedAt: attempt.createdAt,
         };
-      })
+      }),
     );
 
     res.json({
@@ -277,7 +273,7 @@ exports.publicListQuizzes = async (req, res) => {
     const q = {};
     if (req.query.skill) q.skillName = req.query.skill;
     const quizzes = await Quiz.find(q).select(
-      "title skillName description timeLimitMinutes passingScore questions"
+      "title skillName description timeLimitMinutes passingScore questions",
     );
     res.json({ success: true, data: quizzes });
   } catch (err) {
@@ -329,12 +325,10 @@ exports.submitAttempt = async (req, res) => {
 
     if (!req.session.user) {
       console.log("Authentication failed - no session user");
-      return res
-        .status(401)
-        .json({
-          success: false,
-          error: { message: "Authentication required" },
-        });
+      return res.status(401).json({
+        success: false,
+        error: { message: "Authentication required" },
+      });
     }
 
     const quizId = req.params.id;
@@ -387,7 +381,7 @@ exports.submitAttempt = async (req, res) => {
 
       if (timeSinceLastAttempt < cooldownMs) {
         const daysRemaining = Math.ceil(
-          (cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000)
+          (cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000),
         );
         console.log("Cooldown period active. Days remaining:", daysRemaining);
         return res.status(400).json({
@@ -397,7 +391,7 @@ exports.submitAttempt = async (req, res) => {
             cooldownDays,
             daysRemaining,
             nextAttemptDate: new Date(
-              new Date(lastAttempt.createdAt).getTime() + cooldownMs
+              new Date(lastAttempt.createdAt).getTime() + cooldownMs,
             ),
           },
         });
@@ -414,7 +408,7 @@ exports.submitAttempt = async (req, res) => {
       const qMarks = question.marks || 0;
       totalMarks += qMarks;
       const provided = answers.find(
-        (a) => String(a.questionId) === String(question._id)
+        (a) => String(a.questionId) === String(question._id),
       );
       const selectedIndex = provided ? provided.selectedOptionIndex : null;
 
@@ -448,21 +442,25 @@ exports.submitAttempt = async (req, res) => {
 
     console.log("Score calculation:", { totalMarks, userMarks, answerRecords });
 
-    // Calculate penalty: deduct passing percentage marks per violation
-    const passingScore = quiz.passingScore || 50;
-    const penaltyPerViolation = totalMarks; // Each violation = passing% of total marks
-    const totalPenalty = violationsCount * penaltyPerViolation;
+    // Calculate penalty: deduct 5% of total marks per violation (up to max of userMarks)
+    const penaltyPercentPerViolation = 5;
+    const penaltyPerViolation = (totalMarks * penaltyPercentPerViolation) / 100;
+    const totalPenalty = Math.min(
+      userMarks,
+      violationsCount * penaltyPerViolation,
+    ); // Can't deduct more than earned
     const finalMarks = Math.max(0, userMarks - totalPenalty); // Can't go below 0
 
     console.log("Violation penalty:", {
       violationsCount,
-      passingScore: passingScore + "%",
+      penaltyPercentPerViolation: penaltyPercentPerViolation + "%",
       penaltyPerViolation,
       totalPenalty,
       originalMarks: userMarks,
       finalMarks,
     });
 
+    const passingScore = quiz.passingScore || 50;
     const percentage = totalMarks ? (finalMarks / totalMarks) * 100 : 0;
     const passed = percentage >= passingScore;
 
@@ -490,7 +488,7 @@ exports.submitAttempt = async (req, res) => {
       await attempt.save();
       console.log(
         "Attempt saved successfully with attemptNumber:",
-        attemptNumber
+        attemptNumber,
       );
     } catch (saveError) {
       console.error("Error saving attempt:", saveError);
@@ -510,7 +508,7 @@ exports.submitAttempt = async (req, res) => {
           const ub = await UserBadge.findOneAndUpdate(
             { userId: req.session.user.id, badgeId: badge._id },
             { $setOnInsert: { awardedAt: new Date() } },
-            { upsert: true, new: true }
+            { upsert: true, new: true },
           );
           awardedBadges.push(badge);
         } catch (e) {
@@ -525,12 +523,10 @@ exports.submitAttempt = async (req, res) => {
   } catch (err) {
     console.error("Submit attempt error:", err);
     console.error("Error stack:", err.stack);
-    res
-      .status(500)
-      .json({
-        success: false,
-        error: { message: "Server error: " + err.message },
-      });
+    res.status(500).json({
+      success: false,
+      error: { message: "Server error: " + err.message },
+    });
   }
 };
 
@@ -540,12 +536,10 @@ exports.submitAttempt = async (req, res) => {
 exports.checkAttemptEligibility = async (req, res) => {
   try {
     if (!req.session.user) {
-      return res
-        .status(401)
-        .json({
-          success: false,
-          error: { message: "Authentication required" },
-        });
+      return res.status(401).json({
+        success: false,
+        error: { message: "Authentication required" },
+      });
     }
 
     const quizId = req.params.id;
@@ -598,13 +592,13 @@ exports.checkAttemptEligibility = async (req, res) => {
 
     if (timeSinceLastAttempt < cooldownMs) {
       const daysRemaining = Math.ceil(
-        (cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000)
+        (cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000),
       );
       const hoursRemaining = Math.ceil(
-        (cooldownMs - timeSinceLastAttempt) / (60 * 60 * 1000)
+        (cooldownMs - timeSinceLastAttempt) / (60 * 60 * 1000),
       );
       const nextAttemptDate = new Date(
-        new Date(lastAttempt.createdAt).getTime() + cooldownMs
+        new Date(lastAttempt.createdAt).getTime() + cooldownMs,
       );
 
       return res.json({
