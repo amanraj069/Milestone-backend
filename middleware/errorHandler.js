@@ -22,15 +22,37 @@ const errorHandler = (err, req, res, next) => {
   error.message = err.message;
   error.statusCode = err.statusCode || 500;
 
-  // Log error for debugging
-  console.error('Error:', {
-    message: err.message,
-    stack: err.stack,
-    statusCode: error.statusCode,
-    url: req.originalUrl,
-    method: req.method,
-  });
+  // Enhanced error logging
+  console.error('ERROR OCCURRED');
+  console.error(`Path: ${req.method} ${req.originalUrl}`);
+  console.error(`Time: ${new Date().toISOString()}`);
+  console.error(`Status Code: ${error.statusCode}`);
+  console.error(`Message: ${err.message}`);
+  
+  if (req.session?.user) {
+    console.error(`User: ${req.session.user.name} (${req.session.user.id}) - Role: ${req.session.user.role}`);
+  }
+  
+  if (req.body && Object.keys(req.body).length > 0) {
+    // Hide sensitive data
+    const sanitizedBody = { ...req.body };
+    if (sanitizedBody.password) sanitizedBody.password = '[HIDDEN]';
+    if (sanitizedBody.otp) sanitizedBody.otp = '[HIDDEN]';
+    console.error('Request Body:', JSON.stringify(sanitizedBody, null, 2));
+  }
+  
+  if (req.params && Object.keys(req.params).length > 0) {
+    console.error('Request Params:', req.params);
+  }
+  
+  if (req.query && Object.keys(req.query).length > 0) {
+    console.error('Query Params:', req.query);
+  }
 
+  if (err.stack) {
+    console.error('Stack Trace:');
+    console.error(err.stack);
+  }
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
     const message = `Resource not found with id of ${err.value}`;
@@ -49,6 +71,19 @@ const errorHandler = (err, req, res, next) => {
     const message = Object.values(err.errors)
       .map((val) => val.message)
       .join(', ');
+    error = new AppError(message, 400);
+  }
+
+  // Multer file upload errors
+  if (err.name === 'MulterError') {
+    let message = 'File upload error';
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      message = 'File size is too large';
+    } else if (err.code === 'LIMIT_FILE_COUNT') {
+      message = 'Too many files';
+    } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      message = 'Unexpected file field';
+    }
     error = new AppError(message, 400);
   }
 
