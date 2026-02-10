@@ -11,7 +11,8 @@ const User = require("../models/user");
 
 async function main() {
   await mongoose.connect(
-    "mongodb+srv://amanraj3567:Passw0rd@react-m-cluster.gz7cugu.mongodb.net/milestone_db?retryWrites=true&w=majority"
+    process.env.MONGO_URL ||
+      "mongodb+srv://amanraj3567:Passw0rd@react-m-cluster.gz7cugu.mongodb.net/milestone_db?retryWrites=true&w=majority",
   );
   console.log("Connected to DB");
 
