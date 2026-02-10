@@ -609,16 +609,27 @@ exports.getCurrentFreelancers = async (req, res) => {
       });
     }
 
-    // Get user data for freelancers
-    const users = await User.find({ roleId: { $in: freelancerIds } })
-      .select("userId roleId name email phone picture rating")
+    // Get userIds for freelancers, then load user profiles
+    const freelancerRecords = await Freelancer.find({
+      freelancerId: { $in: freelancerIds },
+    })
+      .select("freelancerId userId")
+      .lean();
+
+    const userIds = freelancerRecords
+      .map((f) => f.userId)
+      .filter((id) => Boolean(id));
+
+    const users = await User.find({ userId: { $in: userIds } })
+      .select("userId name email phone picture rating")
       .lean();
 
     // Build response with job details
     const freelancersData = jobs.map((job) => {
-      const user = users.find(
-        (u) => u.roleId === job.assignedFreelancer.freelancerId
+      const freelancerRecord = freelancerRecords.find(
+        (f) => f.freelancerId === job.assignedFreelancer.freelancerId
       );
+      const user = users.find((u) => u.userId === freelancerRecord?.userId);
       const daysSinceStart = job.assignedFreelancer.startDate
         ? Math.floor(
             (Date.now() -
@@ -713,18 +724,43 @@ exports.getWorkHistory = async (req, res) => {
       });
     }
 
-    // Get user data for freelancers
-    const users = await User.find({ roleId: { $in: freelancerIds } })
-      .select("roleId name email phone picture rating")
+    console.log('Work history - freelancerIds:', freelancerIds);
+
+    // Get Freelancer records to fetch userId
+    const freelancerRecords = await Freelancer.find({
+      freelancerId: { $in: freelancerIds },
+    })
+      .select("freelancerId userId")
       .lean();
+
+    console.log('Work history - freelancerRecords:', freelancerRecords);
+
+    // Get all users by roleId (most reliable way to fetch freelancer user data)
+    const usersByRoleId = await User.find({ 
+      roleId: { $in: freelancerIds },
+      role: "Freelancer"
+    })
+      .select("userId roleId name email phone picture rating")
+      .lean();
+
+    console.log('Work history - users by roleId found:', usersByRoleId.length);
 
     // Build response with job details
     const freelancersData = jobs.map((job) => {
-      const user = users.find(
-        (u) => u.roleId === job.assignedFreelancer.freelancerId
+      const freelancerRecord = freelancerRecords.find(
+        (f) => f.freelancerId === job.assignedFreelancer.freelancerId
       );
+      
+      // Try to find user by roleId (most reliable)
+      let user = usersByRoleId.find((u) => u.roleId === job.assignedFreelancer.freelancerId);
+      
+      // If not found by roleId, try by userId from freelancer record
+      if (!user && freelancerRecord?.userId) {
+        user = usersByRoleId.find((u) => u.userId === freelancerRecord.userId);
+      }
 
-      return {
+      const result = {
+        userId: user?.userId || freelancerRecord?.userId || "",
         freelancerId: job.assignedFreelancer.freelancerId,
         name: user?.name || "Unknown",
         email: user?.email || "",
@@ -737,8 +773,16 @@ exports.getWorkHistory = async (req, res) => {
         startDate: job.assignedFreelancer.startDate,
         endDate: job.assignedFreelancer.endDate,
         completedDate: job.assignedFreelancer.endDate,
-        status: job.assignedFreelancer.status, // Add status field
+        status: job.assignedFreelancer.status,
       };
+
+      console.log('Work history - freelancer data:', {
+        freelancerId: result.freelancerId,
+        userId: result.userId,
+        name: result.name
+      });
+
+      return result;
     });
 
     // Calculate stats
