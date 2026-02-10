@@ -130,13 +130,9 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api", homeRoutes);
 app.use(blogRoutes);
-// Public quiz routes
 app.use("/api/quizzes", quizRoutes);
-// Feedback routes
 app.use("/api/feedback", feedbackRoutes);
-// Question routes for Q&A on jobs
 app.use("/api/questions", questionRoutes);
-// Notification routes
 app.use("/api/notifications", notificationRoutes);
 
 // Socket.IO connection handling with better error handling
@@ -158,10 +154,11 @@ io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
   // Attach session user if available (populated via io.use below)
-  const connectedUserId = socket.request?.session?.user?.id || socket.user?.id || null;
+  const connectedUserId =
+    socket.request?.session?.user?.id || socket.user?.id || null;
 
   // Log connection (will show userId if session present)
-  chatLogger.logConnection(socket.id, connectedUserId, 'CONNECTED');
+  chatLogger.logConnection(socket.id, connectedUserId, "CONNECTED");
 
   // User joins with their userId
   socket.on("user:join", (userId) => {
@@ -169,9 +166,9 @@ io.on("connection", (socket) => {
     userSockets.set(userId, socket.id);
     socket.userId = userId;
     socket.join(`user:${userId}`);
-    
+
     // Log user connection with userId
-    chatLogger.logConnection(socket.id, userId, 'USER_JOINED');
+    chatLogger.logConnection(socket.id, userId, "USER_JOINED");
 
     // Send current online users to the newly joined user
     const onlineUserIds = Array.from(userSockets.keys());
@@ -252,7 +249,7 @@ io.on("connection", (socket) => {
 
     // Send back to sender for confirmation
     socket.emit("message:sent", message);
-    
+
     // Log message
     chatLogger.logMessage(message);
   });
@@ -287,7 +284,7 @@ io.on("connection", (socket) => {
   // Disconnect
   socket.on("disconnect", (reason) => {
     console.log("User disconnected:", socket.id, "Reason:", reason);
-    
+
     // Log disconnection
     chatLogger.logDisconnection(socket.id, socket.userId, reason);
 
