@@ -316,6 +316,85 @@ app.use(notFound);
 // Global error handler - Must be last
 app.use(errorHandler);
 
+// Global Error Handling Middleware
+// This must be defined after all other routes and middleware
+app.use((err, req, res, next) => {
+  console.error("Global Error Handler:", {
+    message: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    timestamp: new Date().toISOString(),
+  });
+
+  // Handle Multer errors
+  if (err.name === "MulterError") {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "File too large. Maximum size is 5MB.",
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: `File upload error: ${err.message}`,
+    });
+  }
+
+  // Handle validation errors
+  if (err.name === "ValidationError") {
+    return res.status(400).json({
+      success: false,
+      message: "Validation error",
+      errors: Object.values(err.errors).map((e) => e.message),
+    });
+  }
+
+  // Handle MongoDB duplicate key errors
+  if (err.code === 11000) {
+    return res.status(409).json({
+      success: false,
+      message: "Duplicate entry. This record already exists.",
+    });
+  }
+
+  // Handle JWT errors
+  if (err.name === "JsonWebTokenError") {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid token. Please log in again.",
+    });
+  }
+
+  if (err.name === "TokenExpiredError") {
+    return res.status(401).json({
+      success: false,
+      message: "Token expired. Please log in again.",
+    });
+  }
+
+  // Default error response
+  const statusCode = err.statusCode || err.status || 500;
+  const message =
+    process.env.NODE_ENV === "production"
+      ? "An unexpected error occurred"
+      : err.message || "Internal server error";
+
+  res.status(statusCode).json({
+    success: false,
+    message,
+    ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
+  });
+});
+
+// 404 handler for unmatched routes
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route not found: ${req.method} ${req.path}`,
+  });
+});
+
 connectDB
   .then(() => {
     server.listen(PORT, "0.0.0.0", () => {
