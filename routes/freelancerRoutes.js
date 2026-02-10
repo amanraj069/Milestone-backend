@@ -3,7 +3,7 @@ const freelancerController = require("../controllers/feelancerController");
 const employerController = require("../controllers/employerController");
 const { upload } = require("../middleware/imageUpload");
 const { upload: pdfUpload } = require("../middleware/pdfUpload");
-const { subscriptionRateLimiter, jobApplicationRateLimiter } = require("../middleware/rateLimiter");
+const { subscriptionRateLimiter, jobApplicationRateLimiter, uploadRateLimiter } = require("../middleware/rateLimiter");
 const asyncHandler = require("../middleware/asyncHandler");
 const router = express.Router();
 
@@ -80,18 +80,21 @@ router.post(
 router.post(
   "/profile/picture/upload",
   requireFreelancer,
+  uploadRateLimiter,
   upload.single("profilePicture"),
   freelancerController.uploadProfilePicture
 );
 router.post(
   "/portfolio/image/upload",
   requireFreelancer,
+  uploadRateLimiter,
   upload.single("portfolioImage"),
   freelancerController.uploadPortfolioImage
 );
 router.post(
   "/resume/upload",
   requireFreelancer,
+  uploadRateLimiter,
   pdfUpload.single("resume"),
   freelancerController.uploadResume
 );
