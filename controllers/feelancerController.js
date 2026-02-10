@@ -360,6 +360,25 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
         }).lean();
         const companyName = employer ? employer.companyName : "Unknown Company";
 
+        // Get employerUserId - try from Employer record first, then fallback to User by roleId
+        let employerUserId = employer?.userId || "";
+        
+        if (!employerUserId) {
+          console.log('Job history - No userId in Employer record, using fallback for:', job.employerId);
+          const employerUser = await User.findOne({
+            roleId: job.employerId,
+            role: "Employer"
+          }).select("userId").lean();
+          employerUserId = employerUser?.userId || "";
+          console.log('Job history - Fallback employerUserId:', employerUserId);
+        }
+
+        console.log('Job history - employer data:', {
+          employerId: job.employerId,
+          employerUserId: employerUserId,
+          companyName
+        });
+
         // Calculate days since start
         const startDate = job.assignedFreelancer?.startDate;
         const daysSinceStart = startDate
@@ -371,11 +390,13 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
 
         return {
           id: job.jobId,
+          _id: job.jobId,
           title: job.title,
           company: companyName,
           logo: job.imageUrl || "/assets/company_logo.jpg",
           status: job.assignedFreelancer.status,
           tech: job.description.skills || [],
+          employerUserId: employerUserId,
           date: `${
             job.assignedFreelancer.startDate
               ? job.assignedFreelancer.startDate.toLocaleDateString()
