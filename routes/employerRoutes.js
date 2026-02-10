@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const employerController = require("../controllers/employerController");
 const { upload } = require("../middleware/imageUpload");
-const { subscriptionRateLimiter, jobApplicationRateLimiter } = require("../middleware/rateLimiter");
+const { subscriptionRateLimiter, jobApplicationRateLimiter, uploadRateLimiter, jobPostingLimiter } = require("../middleware/rateLimiter");
 const asyncHandler = require("../middleware/asyncHandler");
 
 // Middleware to check if user is authenticated and is an employer
@@ -28,6 +28,7 @@ router.get("/job-listings", requireEmployer, employerController.getJobListings);
 router.post(
   "/job-listings",
   requireEmployer,
+  jobPostingLimiter,
   employerController.createJobListing
 );
 router.put(
@@ -121,6 +122,7 @@ router.put(
 router.post(
   "/upload-image",
   requireEmployer,
+  uploadRateLimiter,
   upload.single("picture"),
   employerController.uploadEmployerImage
 );

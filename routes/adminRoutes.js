@@ -1,6 +1,7 @@
 const express = require("express");
 const adminController = require("../controllers/adminController");
 const { upload } = require("../middleware/imageUpload");
+const { uploadRateLimiter } = require("../middleware/rateLimiter");
 const router = express.Router();
 
 // Middleware to check if user is authenticated and is an admin
@@ -49,6 +50,7 @@ router.post(
 router.post(
   "/profile/picture/upload",
   requireAdmin,
+  uploadRateLimiter,
   upload.single("profilePicture"),
   adminController.uploadProfilePicture
 );
