@@ -1,5 +1,8 @@
 const mongoose = require("mongoose");
 const JobListing = require("../models/job_listing");
+const dotenv = require("dotenv");
+
+dotenv.config();
 
 const jobs = [
   {
@@ -727,7 +730,8 @@ const jobs = [
 
 async function seedJobs() {
   await mongoose.connect(
-    "mongodb+srv://amanraj3567:Passw0rd@react-m-cluster.gz7cugu.mongodb.net/milestone_db?retryWrites=true&w=majority"
+    process.env.MONGO_URL ||
+      "mongodb+srv://amanraj3567:Passw0rd@react-m-cluster.gz7cugu.mongodb.net/milestone_db?retryWrites=true&w=majority",
   );
   await JobListing.insertMany(jobs);
   console.log("Indian jobs seeded successfully.");
