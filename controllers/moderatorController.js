@@ -1,22 +1,22 @@
 const Complaint = require("../models/complaint");
 const User = require("../models/user");
-const Admin = require("../models/admin");
+const Moderator = require("../models/moderator");
 const JobListing = require("../models/job_listing");
 const JobApplication = require("../models/job_application");
 const Freelancer = require("../models/freelancer");
 const Employer = require("../models/employer");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
-// Get admin profile data
-exports.getAdminProfile = async (req, res) => {
+// Get moderator profile data
+exports.getModeratorProfile = async (req, res) => {
   try {
     const userId = req.session.user.id;
-    const adminId = req.session.user.roleId;
+    const moderatorId = req.session.user.roleId;
 
     const user = await User.findOne({ userId }).lean();
-    const admin = await Admin.findOne({ adminId }).lean();
+    const moderator = await Moderator.findOne({ moderatorId }).lean();
 
-    if (!user || !admin) {
+    if (!user || !moderator) {
       return res.status(404).json({
         success: false,
         error: "Profile not found",
@@ -38,7 +38,7 @@ exports.getAdminProfile = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error fetching admin profile:", error.message);
+    console.error("Error fetching moderator profile:", error.message);
     res.status(500).json({
       success: false,
       error: "Failed to fetch profile",
@@ -46,8 +46,8 @@ exports.getAdminProfile = async (req, res) => {
   }
 };
 
-// Update admin profile
-exports.updateAdminProfile = async (req, res) => {
+// Update moderator profile
+exports.updateModeratorProfile = async (req, res) => {
   try {
     const userId = req.session.user.id;
     const { name, email, phone, location, profileImageUrl, about } = req.body;
@@ -119,7 +119,7 @@ exports.uploadProfilePicture = async (req, res) => {
     const updatedUser = await User.findOneAndUpdate(
       { userId },
       { picture: result.secure_url },
-      { new: true }
+      { new: true },
     ).lean();
 
     if (!updatedUser) {
@@ -148,7 +148,7 @@ exports.uploadProfilePicture = async (req, res) => {
   }
 };
 
-// Get all complaints (Admin only)
+// Get all complaints (Moderator only)
 exports.getAllComplaints = async (req, res) => {
   try {
     const complaints = await Complaint.find({}).sort({ createdAt: -1 }).lean();
@@ -166,7 +166,7 @@ exports.getAllComplaints = async (req, res) => {
     // Add complainant userId to each complaint
     const complaintsWithUserId = complaints.map((complaint) => {
       const complainantUser = complainantUsers.find(
-        (user) => user.roleId === complaint.complainantId
+        (user) => user.roleId === complaint.complainantId,
       );
       const result = {
         ...complaint,
@@ -189,11 +189,11 @@ exports.getAllComplaints = async (req, res) => {
   }
 };
 
-// Update complaint status (Admin only)
+// Update complaint status (Moderator only)
 exports.updateComplaintStatus = async (req, res) => {
   try {
     const { complaintId } = req.params;
-    const { status, adminNotes } = req.body;
+    const { status, moderatorNotes } = req.body;
 
     if (!status) {
       return res.status(400).json({
@@ -215,8 +215,8 @@ exports.updateComplaintStatus = async (req, res) => {
       updatedAt: new Date(),
     };
 
-    if (adminNotes !== undefined) {
-      updateData.adminNotes = adminNotes;
+    if (moderatorNotes !== undefined) {
+      updateData.moderatorNotes = moderatorNotes;
     }
 
     if (status === "Resolved") {
@@ -226,7 +226,7 @@ exports.updateComplaintStatus = async (req, res) => {
     const complaint = await Complaint.findOneAndUpdate(
       { complaintId },
       updateData,
-      { new: true }
+      { new: true },
     ).lean();
 
     if (!complaint) {
@@ -262,7 +262,7 @@ exports.updateComplaintStatus = async (req, res) => {
   }
 };
 
-// Get complaint by ID (Admin only)
+// Get complaint by ID (Moderator only)
 exports.getComplaintById = async (req, res) => {
   try {
     const { complaintId } = req.params;
@@ -289,105 +289,6 @@ exports.getComplaintById = async (req, res) => {
   }
 };
 
-// Get admin profile data
-exports.getAdminProfile = async (req, res) => {
-  try {
-    const userId = req.session.user.id;
-
-    const user = await User.findOne({ userId }).lean();
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "Profile not found",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        picture: user.picture,
-        location: user.location,
-        role: user.role,
-        aboutMe: user.aboutMe,
-        subscription: user.subscription || "Premium Admin",
-        socialMedia: user.socialMedia || {
-          linkedin: "",
-          twitter: "",
-          facebook: "",
-          instagram: "",
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Error fetching admin profile:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch profile",
-    });
-  }
-};
-
-// Update admin profile
-exports.updateAdminProfile = async (req, res) => {
-  try {
-    const userId = req.session.user.id;
-    const { name, phone, location, profileImageUrl, about, socialMedia } =
-      req.body;
-
-    const updateData = {};
-
-    if (name !== undefined) updateData.name = name;
-    if (phone !== undefined) updateData.phone = phone;
-    if (location !== undefined) updateData.location = location;
-    if (profileImageUrl !== undefined) updateData.picture = profileImageUrl;
-    if (about !== undefined) updateData.aboutMe = about;
-    if (socialMedia !== undefined) updateData.socialMedia = socialMedia;
-
-    const updatedUser = await User.findOneAndUpdate({ userId }, updateData, {
-      new: true,
-    }).lean();
-
-    if (!updatedUser) {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    // Update session
-    if (name) req.session.user.name = name;
-    if (phone) req.session.user.phone = phone;
-    if (location) req.session.user.location = location;
-    if (profileImageUrl) req.session.user.picture = profileImageUrl;
-    if (about) req.session.user.aboutMe = about;
-    if (socialMedia) req.session.user.socialMedia = socialMedia;
-
-    res.json({
-      success: true,
-      message: "Profile updated successfully",
-      data: {
-        name: updatedUser.name,
-        email: updatedUser.email,
-        phone: updatedUser.phone,
-        location: updatedUser.location,
-        picture: updatedUser.picture,
-        aboutMe: updatedUser.aboutMe,
-        socialMedia: updatedUser.socialMedia,
-      },
-    });
-  } catch (error) {
-    console.error("Error updating admin profile:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Failed to update profile",
-    });
-  }
-};
-
 // Upload profile picture
 exports.uploadProfilePicture = async (req, res) => {
   try {
@@ -407,7 +308,7 @@ exports.uploadProfilePicture = async (req, res) => {
     const updatedUser = await User.findOneAndUpdate(
       { userId },
       { picture: result.secure_url },
-      { new: true }
+      { new: true },
     ).lean();
 
     if (!updatedUser) {
@@ -436,11 +337,13 @@ exports.uploadProfilePicture = async (req, res) => {
   }
 };
 
-// Get admin dashboard statistics
+// Get moderator dashboard statistics
 exports.getDashboardStats = async (req, res) => {
   try {
-    // Get total users count (excluding admins)
-    const totalUsers = await User.countDocuments({ role: { $ne: "Admin" } });
+    // Get total users count (excluding moderators)
+    const totalUsers = await User.countDocuments({
+      role: { $ne: "Moderator" },
+    });
 
     // Get active jobs count (status: open)
     const activeJobs = await JobListing.countDocuments({ status: "open" });
@@ -568,7 +471,7 @@ function getTimeAgo(date) {
   }
 }
 
-// Get all freelancers (Admin only)
+// Get all freelancers (Moderator only)
 exports.getAllFreelancers = async (req, res) => {
   try {
     const freelancers = await Freelancer.find({}).lean();
@@ -609,7 +512,7 @@ exports.getAllFreelancers = async (req, res) => {
   }
 };
 
-// Delete freelancer (Admin only)
+// Delete freelancer (Moderator only)
 exports.deleteFreelancer = async (req, res) => {
   try {
     const { freelancerId } = req.params;
@@ -642,7 +545,7 @@ exports.deleteFreelancer = async (req, res) => {
   }
 };
 
-// Get all employers (Admin only)
+// Get all employers (Moderator only)
 exports.getAllEmployers = async (req, res) => {
   try {
     const employers = await Employer.find({}).lean();
@@ -682,7 +585,7 @@ exports.getAllEmployers = async (req, res) => {
   }
 };
 
-// Delete employer (Admin only)
+// Delete employer (Moderator only)
 exports.deleteEmployer = async (req, res) => {
   try {
     const { employerId } = req.params;
@@ -715,7 +618,7 @@ exports.deleteEmployer = async (req, res) => {
   }
 };
 
-// Get all job listings (Admin only)
+// Get all job listings (Moderator only)
 exports.getAllJobListings = async (req, res) => {
   try {
     const jobs = await JobListing.find({}).lean();
@@ -764,7 +667,7 @@ exports.getAllJobListings = async (req, res) => {
   }
 };
 
-// Delete job listing (Admin only)
+// Delete job listing (Moderator only)
 exports.deleteJobListing = async (req, res) => {
   try {
     const { jobId } = req.params;
