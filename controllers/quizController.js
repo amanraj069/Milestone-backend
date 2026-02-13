@@ -5,7 +5,7 @@ const Badge = require("../models/Badge");
 const UserBadge = require("../models/UserBadge");
 
 /**
- * Create a new quiz (admin)
+ * Create a new quiz (moderator)
  */
 exports.createQuiz = async (req, res) => {
   try {
@@ -93,7 +93,7 @@ exports.listQuizzes = async (req, res) => {
 };
 
 /**
- * Get quiz detail (admin)
+ * Get quiz detail (moderator)
  */
 exports.getQuiz = async (req, res) => {
   try {
@@ -112,7 +112,7 @@ exports.getQuiz = async (req, res) => {
 };
 
 /**
- * Update quiz (admin)
+ * Update quiz (moderator)
  */
 exports.updateQuiz = async (req, res) => {
   try {
@@ -133,7 +133,7 @@ exports.updateQuiz = async (req, res) => {
 };
 
 /**
- * Delete quiz (admin)
+ * Delete quiz (moderator)
  */
 exports.deleteQuiz = async (req, res) => {
   try {
@@ -152,7 +152,7 @@ exports.deleteQuiz = async (req, res) => {
 };
 
 /**
- * Admin: quiz stats
+ * Moderator: quiz stats
  */
 exports.getQuizStats = async (req, res) => {
   try {
@@ -185,7 +185,7 @@ exports.getQuizStats = async (req, res) => {
 };
 
 /**
- * Admin: detailed quiz attempts with user info
+ * Moderator: detailed quiz attempts with user info
  */
 exports.getQuizAttempts = async (req, res) => {
   try {

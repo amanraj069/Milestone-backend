@@ -1,6 +1,6 @@
 const bcrypt = require("bcrypt");
 const { v4: uuidv4 } = require("uuid");
-const { User, Employer, Freelancer, Admin } = require("../models");
+const { User, Employer, Freelancer, Moderator } = require("../models");
 const { generateOTP, sendOTPEmail } = require("../utils/emailService");
 
 // Send OTP for email verification (called after password is entered)
@@ -27,8 +27,8 @@ exports.sendOtp = async (req, res) => {
         case "freelancer":
           normalizedRole = "Freelancer";
           break;
-        case "admin":
-          normalizedRole = "Admin";
+        case "moderator":
+          normalizedRole = "Moderator";
           break;
         default:
           return res.status(400).json({ error: "Invalid role" });
@@ -161,8 +161,8 @@ exports.signup = async (req, res) => {
       case "freelancer":
         normalizedRole = "Freelancer";
         break;
-      case "admin":
-        normalizedRole = "Admin";
+      case "moderator":
+        normalizedRole = "Moderator";
         break;
       default:
         return res.status(400).json({ error: "Invalid role" });
@@ -196,9 +196,9 @@ exports.signup = async (req, res) => {
           userId: existingUser.userId,
         });
         break;
-      case "Admin":
-        roleEntity = new Admin({
-          adminId: roleId,
+      case "Moderator":
+        roleEntity = new Moderator({
+          moderatorId: roleId,
           userId: existingUser.userId,
         });
         break;
@@ -245,8 +245,8 @@ exports.login = async (req, res) => {
       case "freelancer":
         normalizedRole = "Freelancer";
         break;
-      case "admin":
-        normalizedRole = "Admin";
+      case "moderator":
+        normalizedRole = "Moderator";
         break;
       default:
         return res.status(400).json({ error: "Invalid role" });

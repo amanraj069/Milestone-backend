@@ -53,7 +53,7 @@ const complaintSchema = new mongoose.Schema({
       "Scope Creep",
       "Contract Violation",
       "Harassment",
-      "Other"
+      "Other",
     ],
     required: true,
   },
@@ -78,7 +78,7 @@ const complaintSchema = new mongoose.Schema({
     enum: ["Pending", "Under Review", "Resolved", "Rejected"],
     default: "Pending",
   },
-  adminNotes: {
+  moderatorNotes: {
     type: String,
     default: "",
   },

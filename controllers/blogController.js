@@ -230,14 +230,14 @@ exports.getBlogById = async (req, res) => {
   }
 };
 
-// Admin: Create new blog
+// Moderator: Create new blog
 exports.createBlog = async (req, res) => {
   try {
-    // Check if user is admin
-    if (!req.session?.user || req.session.user.role !== "Admin") {
+    // Check if user is moderator
+    if (!req.session?.user || req.session.user.role !== "Moderator") {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized. Admin access required.",
+        message: "Unauthorized. Moderator access required.",
       });
     }
 
@@ -265,14 +265,14 @@ exports.createBlog = async (req, res) => {
   }
 };
 
-// Admin: Update blog
+// Moderator: Update blog
 exports.updateBlog = async (req, res) => {
   try {
-    // Check if user is admin
-    if (!req.session?.user || req.session.user.role !== "Admin") {
+    // Check if user is moderator
+    if (!req.session?.user || req.session.user.role !== "Moderator") {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized. Admin access required.",
+        message: "Unauthorized. Moderator access required.",
       });
     }
 
@@ -311,14 +311,14 @@ exports.updateBlog = async (req, res) => {
   }
 };
 
-// Admin: Delete blog
+// Moderator: Delete blog
 exports.deleteBlog = async (req, res) => {
   try {
-    // Check if user is admin
-    if (!req.session?.user || req.session.user.role !== "Admin") {
+    // Check if user is moderator
+    if (!req.session?.user || req.session.user.role !== "Moderator") {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized. Admin access required.",
+        message: "Unauthorized. Moderator access required.",
       });
     }
 
@@ -347,14 +347,14 @@ exports.deleteBlog = async (req, res) => {
   }
 };
 
-// Admin: Get all blogs (including drafts)
-exports.getAdminBlogs = async (req, res) => {
+// Moderator: Get all blogs (including drafts)
+exports.getModeratorBlogs = async (req, res) => {
   try {
-    // Check if user is admin
-    if (!req.session?.user || req.session.user.role !== "Admin") {
+    // Check if user is moderator
+    if (!req.session?.user || req.session.user.role !== "Moderator") {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized. Admin access required.",
+        message: "Unauthorized. Moderator access required.",
       });
     }
 
@@ -376,7 +376,7 @@ exports.getAdminBlogs = async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("Error fetching admin blogs:", error);
+    console.error("Error fetching moderator blogs:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch blogs",
@@ -385,14 +385,14 @@ exports.getAdminBlogs = async (req, res) => {
   }
 };
 
-// Admin: Get single blog by ID (for editing)
-exports.getAdminBlogById = async (req, res) => {
+// Moderator: Get single blog by ID (for editing)
+exports.getModeratorBlogById = async (req, res) => {
   try {
-    // Check if user is admin
-    if (!req.session?.user || req.session.user.role !== "Admin") {
+    // Check if user is moderator
+    if (!req.session?.user || req.session.user.role !== "Moderator") {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized. Admin access required.",
+        message: "Unauthorized. Moderator access required.",
       });
     }
 
@@ -431,14 +431,14 @@ exports.getAdminBlogById = async (req, res) => {
   }
 };
 
-// Admin: Get single blog by slug (for editing)
-exports.getAdminBlogBySlug = async (req, res) => {
+// Moderator: Get single blog by slug (for editing)
+exports.getModeratorBlogBySlug = async (req, res) => {
   try {
-    // Check if user is admin
-    if (!req.session?.user || req.session.user.role !== "Admin") {
+    // Check if user is moderator
+    if (!req.session?.user || req.session.user.role !== "Moderator") {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized. Admin access required.",
+        message: "Unauthorized. Moderator access required.",
       });
     }
 
@@ -481,14 +481,14 @@ exports.getAdminBlogBySlug = async (req, res) => {
   }
 };
 
-// Admin: Upload blog image to Cloudinary
+// Moderator: Upload blog image to Cloudinary
 exports.uploadBlogImage = async (req, res) => {
   try {
-    // Check if user is admin
-    if (!req.session?.user || req.session.user.role !== "Admin") {
+    // Check if user is moderator
+    if (!req.session?.user || req.session.user.role !== "Moderator") {
       return res.status(403).json({
         success: false,
-        message: "Unauthorized. Admin access required.",
+        message: "Unauthorized. Moderator access required.",
       });
     }
 
