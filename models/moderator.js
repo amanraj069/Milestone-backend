@@ -2,9 +2,9 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 const { v4: uuidv4 } = require("uuid");
 
-const adminSchema = new Schema(
+const moderatorSchema = new Schema(
   {
-    adminId: {
+    moderatorId: {
       type: String,
       required: true,
       unique: true,
@@ -15,4 +15,4 @@ const adminSchema = new Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("Admin", adminSchema);
+module.exports = mongoose.model("Moderator", moderatorSchema);

@@ -4,8 +4,7 @@ const { upload } = require("../middleware/imageUpload");
 const { uploadRateLimiter } = require("../middleware/rateLimiter");
 const router = express.Router();
 
-// Inline admin authentication check (consistent with auth pattern in controllers)
-// This is kept as inline middleware here for DRY principle since all admin routes require it
+// Inline admin authentication check
 const requireAdmin = (req, res, next) => {
   if (!req.session?.user || req.session.user.role !== "Admin") {
     return res.status(403).json({
@@ -16,100 +15,73 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// Complaint routes
-router.get(
-  "/complaints",
-  requireAdmin,
-  adminController.getAllComplaints
-);
-
-router.get(
-  "/complaints/:complaintId",
-  requireAdmin,
-  adminController.getComplaintById
-);
-
-router.put(
-  "/complaints/:complaintId",
-  requireAdmin,
-  adminController.updateComplaintStatus
-);
-
 // Profile routes
-router.get(
-  "/profile",
-  requireAdmin,
-  adminController.getAdminProfile
-);
-
+router.get("/profile", requireAdmin, adminController.getAdminProfile);
 router.post(
   "/profile/update",
   requireAdmin,
-  adminController.updateAdminProfile
+  adminController.updateAdminProfile,
 );
-
 router.post(
   "/profile/picture/upload",
   requireAdmin,
   uploadRateLimiter,
   upload.single("profilePicture"),
-  adminController.uploadProfilePicture
+  adminController.uploadProfilePicture,
 );
 
-// Dashboard statistics routes
+// Dashboard overview
 router.get(
-  "/dashboard/stats",
+  "/dashboard/overview",
   requireAdmin,
-  adminController.getDashboardStats
+  adminController.getDashboardOverview,
 );
-
 router.get(
   "/dashboard/activities",
   requireAdmin,
-  adminController.getRecentActivities
+  adminController.getRecentActivities,
 );
-
-// Admin quiz management (mounted at /api/admin/quizzes)
-const adminQuizRoutes = require('./adminQuizRoutes');
-router.use('/quizzes', requireAdmin, adminQuizRoutes);
-
-// Freelancer routes
 router.get(
-  "/freelancers",
+  "/dashboard/revenue",
   requireAdmin,
-  adminController.getAllFreelancers
+  adminController.getDashboardRevenue,
 );
 
-router.delete(
-  "/freelancers/:freelancerId",
-  requireAdmin,
-  adminController.deleteFreelancer
-);
+// Revenue & Payments
+router.get("/revenue", requireAdmin, adminController.getRevenueStats);
+router.get("/payments", requireAdmin, adminController.getAllPayments);
 
-// Employer routes
+// Moderator management
+router.get("/moderators", requireAdmin, adminController.getAllModerators);
 router.get(
-  "/employers",
+  "/moderators/:moderatorId/activity",
   requireAdmin,
-  adminController.getAllEmployers
+  adminController.getModeratorActivity,
 );
-
 router.delete(
-  "/employers/:employerId",
+  "/moderators/:moderatorId",
   requireAdmin,
-  adminController.deleteEmployer
+  adminController.deleteModerator,
 );
 
-// Job Listing routes
-router.get(
-  "/jobs",
-  requireAdmin,
-  adminController.getAllJobListings
-);
+// All users management
+router.get("/users", requireAdmin, adminController.getAllUsers);
+router.delete("/users/:userId", requireAdmin, adminController.deleteUser);
 
-router.delete(
-  "/jobs/:jobId",
-  requireAdmin,
-  adminController.deleteJobListing
-);
+// Platform statistics
+router.get("/statistics", requireAdmin, adminController.getPlatformStats);
+
+// Complaints
+router.get("/complaints", requireAdmin, adminController.getAllComplaints);
+
+// Freelancers & Employers
+router.get("/freelancers", requireAdmin, adminController.getAllFreelancers);
+router.get("/employers", requireAdmin, adminController.getAllEmployers);
+
+// Job Listings
+router.get("/jobs", requireAdmin, adminController.getAllJobListings);
+
+// Feedback
+router.get("/feedbacks", requireAdmin, adminController.getAllFeedbacks);
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const bcrypt = require("bcrypt");
 const { v4: uuidv4 } = require("uuid");
-const { User, Employer, Freelancer, Admin } = require("../models");
+const { User, Employer, Freelancer, Moderator } = require("../models");
+const Admin = require("../models/admin");
 const { generateOTP, sendOTPEmail } = require("../utils/emailService");
 
 // Send OTP for email verification (called after password is entered)
@@ -26,6 +27,9 @@ exports.sendOtp = async (req, res) => {
           break;
         case "freelancer":
           normalizedRole = "Freelancer";
+          break;
+        case "moderator":
+          normalizedRole = "Moderator";
           break;
         case "admin":
           normalizedRole = "Admin";
@@ -161,6 +165,9 @@ exports.signup = async (req, res) => {
       case "freelancer":
         normalizedRole = "Freelancer";
         break;
+      case "moderator":
+        normalizedRole = "Moderator";
+        break;
       case "admin":
         normalizedRole = "Admin";
         break;
@@ -193,6 +200,12 @@ exports.signup = async (req, res) => {
       case "Freelancer":
         roleEntity = new Freelancer({
           freelancerId: roleId,
+          userId: existingUser.userId,
+        });
+        break;
+      case "Moderator":
+        roleEntity = new Moderator({
+          moderatorId: roleId,
           userId: existingUser.userId,
         });
         break;
@@ -244,6 +257,9 @@ exports.login = async (req, res) => {
         break;
       case "freelancer":
         normalizedRole = "Freelancer";
+        break;
+      case "moderator":
+        normalizedRole = "Moderator";
         break;
       case "admin":
         normalizedRole = "Admin";

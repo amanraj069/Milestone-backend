@@ -17,7 +17,7 @@ const subscriptionRateLimiter = rateLimit({
     res.status(options.statusCode).json(options.message);
   },
   skip: (req, res) => {
-    if (req.session?.user?.role === "Admin") {
+    if (req.session?.user?.role === "Moderator") {
       return true;
     }
     return false;
