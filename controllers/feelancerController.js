@@ -4,6 +4,7 @@ const User = require("../models/user");
 const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
+const Feedback = require("../models/Feedback");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 const {
   uploadToCloudinary: uploadPdfToCloudinary,
@@ -296,15 +297,20 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
           price: job.budget
             ? `Rs.${parseFloat(job.budget).toFixed(2)}`
             : "Not specified",
+          totalBudget: totalBudget,
+          paidAmount: paidAmount,
           progress: Math.round(progress),
           tech: job.description.skills || [],
           employerUserId: user?.userId || "",
           description: job.description?.text || job.description || "",
           milestones: job.milestones || [],
+          milestonesCount: (job.milestones || []).length,
+          completedMilestones: (job.milestones || []).filter(m => m.status === "paid").length,
           daysSinceStart: daysSinceStart,
           startDate: startDate
             ? new Date(startDate).toLocaleDateString()
             : "Not set",
+          startDateRaw: startDate || null,
         };
       })
     );
@@ -345,6 +351,17 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
     }).lean();
 
     console.log("Found history jobs:", historyJobs.length);
+
+    // Bulk-fetch feedback ratings for this freelancer across all history jobs
+    const userId = req.session.user.id;
+    const jobIds = historyJobs.map(j => j.jobId);
+    const feedbacks = await Feedback.find({
+      jobId: { $in: jobIds },
+      toUserId: userId,
+      toRole: 'Freelancer',
+    }).lean();
+    const feedbackByJob = {};
+    feedbacks.forEach(fb => { feedbackByJob[fb.jobId] = fb.rating; });
 
     const formattedJobs = await Promise.all(
       historyJobs.map(async (job) => {
@@ -388,6 +405,8 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
             )
           : 0;
 
+        const totalBudget = parseFloat(job.budget) || 0;
+
         return {
           id: job.jobId,
           _id: job.jobId,
@@ -405,13 +424,19 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
             job.updatedAt ? job.updatedAt.toLocaleDateString() : "Unknown"
           }`,
           price: paidAmount ? `Rs.${paidAmount.toFixed(2)}` : "Not paid",
-          rating: job.assignedFreelancer.employerRating || null,
+          paidAmount: paidAmount,
+          totalBudget: totalBudget,
+          rating: feedbackByJob[job.jobId] || job.assignedFreelancer.employerRating || null,
           startDate: startDate
             ? new Date(startDate).toLocaleDateString()
             : "Not set",
+          startDateRaw: startDate || null,
+          endDateRaw: job.assignedFreelancer.endDate || job.updatedAt || null,
           daysSinceStart: daysSinceStart,
           description: job.description?.text || job.description || "",
           milestones: job.milestones || [],
+          milestonesCount: (job.milestones || []).length,
+          completedMilestones: (job.milestones || []).filter(m => m.status === "paid").length,
           progress: Math.round(
             job.milestones.length > 0
               ? (job.milestones.filter((m) => m.status === "paid").length /
@@ -809,6 +834,70 @@ exports.getLastCoverMessage = async (req, res) => {
   }
 };
 
+// Get freelancer's job applications
+exports.getFreelancerApplications = async (req, res) => {
+  try {
+    const freelancerId = req.session.user.roleId;
+
+    const applications = await JobApplication.find({ freelancerId })
+      .sort({ appliedDate: -1 })
+      .lean();
+
+    const jobIds = applications.map(app => app.jobId);
+    const jobs = await JobListing.find({ jobId: { $in: jobIds } }).lean();
+    const jobMap = {};
+    jobs.forEach(job => {
+      jobMap[job.jobId] = job;
+    });
+
+    const employerIds = jobs.map(job => job.employerId).filter(Boolean);
+    const employers = await Employer.find({ employerId: { $in: employerIds } }).lean();
+    const employerMap = {};
+    employers.forEach(emp => {
+      employerMap[emp.employerId] = emp;
+    });
+
+    const result = applications.map(app => {
+      const job = jobMap[app.jobId] || {};
+      const employer = employerMap[job.employerId] || {};
+      
+      return {
+        applicationId: app.applicationId,
+        jobId: app.jobId,
+        jobTitle: job.title || 'N/A',
+        company: employer.companyName || 'Unknown',
+        logo: employer.logo || null,
+        appliedDate: app.appliedDate,
+        status: app.status,
+        coverMessage: app.coverMessage,
+        resumeLink: app.resumeLink,
+        budget: job.budget || 0,
+        location: job.location || 'N/A',
+        jobType: job.jobType || 'N/A',
+        skillsRequired: job.skillsRequired || [],
+        experienceLevel: job.experienceLevel || 'N/A',
+      };
+    });
+
+    res.json({
+      success: true,
+      applications: result,
+      stats: {
+        total: result.length,
+        pending: result.filter(a => a.status === 'Pending').length,
+        accepted: result.filter(a => a.status === 'Accepted').length,
+        rejected: result.filter(a => a.status === 'Rejected').length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching applications:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch applications',
+    });
+  }
+};
+
 // Create a new complaint
 exports.createComplaint = async (req, res) => {
   try {
@@ -936,10 +1025,10 @@ exports.getFreelancerPayments = async (req, res) => {
       });
     }
 
-    // Find all jobs where this freelancer is assigned (working or finished)
+    // Find all jobs where this freelancer is assigned (working, finished, or left)
     const jobs = await JobListing.find({
       "assignedFreelancer.freelancerId": freelancerId,
-      "assignedFreelancer.status": { $in: ["working", "finished"] },
+      "assignedFreelancer.status": { $in: ["working", "finished", "left"] },
     }).lean();
 
     if (jobs.length === 0) {
@@ -969,6 +1058,9 @@ exports.getFreelancerPayments = async (req, res) => {
       const paidAmount = milestones
         .filter((m) => m.status === "paid")
         .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
+      const requestedAmount = milestones
+        .filter((m) => m.status !== "paid" && m.requested)
+        .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
       const paymentPercentage =
         totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
 
@@ -994,6 +1086,7 @@ exports.getFreelancerPayments = async (req, res) => {
         endDate: job.assignedFreelancer.endDate,
         totalBudget,
         paidAmount,
+        requestedAmount,
         paymentPercentage,
         projectCompletion,
         milestonesCount: milestones.length,
