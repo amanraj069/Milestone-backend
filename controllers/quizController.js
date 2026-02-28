@@ -315,218 +315,334 @@ exports.getQuizForUser = async (req, res) => {
 };
 
 /**
- * Submit attempt: evaluate and store
+ * Start a quiz attempt – creates an in_progress Attempt and records server-side startedAt.
+ * The returned attemptId must be used for reportViolation and submitAttempt.
  */
-exports.submitAttempt = async (req, res) => {
+exports.startAttempt = async (req, res) => {
   try {
-    console.log("Submit attempt request received");
-    console.log("Session user:", req.session.user);
-    console.log("Request body:", req.body);
-
     if (!req.session.user) {
-      console.log("Authentication failed - no session user");
-      return res.status(401).json({
-        success: false,
-        error: { message: "Authentication required" },
-      });
+      return res.status(401).json({ success: false, error: { message: "Authentication required" } });
     }
 
     const quizId = req.params.id;
-    const { answers, violationsCount = 0 } = req.body; // [{questionId, selectedOptionIndex}], violationsCount
-
-    console.log("Quiz ID:", quizId);
-    console.log("Answers received:", answers);
-    console.log("Violations detected:", violationsCount);
+    const userId = req.session.user.id;
 
     const quiz = await Quiz.findById(quizId);
     if (!quiz) {
-      console.log("Quiz not found:", quizId);
-      return res
-        .status(404)
-        .json({ success: false, error: { message: "Quiz not found" } });
+      return res.status(404).json({ success: false, error: { message: "Quiz not found" } });
     }
 
-    // FIX: Get attempts for THIS USER only (not all users)
-    const userAttempts = await Attempt.find({
-      userId: req.session.user.id,
-      quizId,
-    }).sort({ createdAt: -1 });
+    //  Check eligibility (same logic as checkAttemptEligibility) 
+    const userAttempts = await Attempt.find({ userId, quizId, status: { $ne: 'in_progress' } }).sort({ createdAt: -1 });
     const attemptCount = userAttempts.length;
-    console.log("Previous attempts for this user:", attemptCount);
 
-    // Check user's actual subscription status
     const User = require("../models/user");
-    const user = await User.findOne({ userId: req.session.user.id });
-    const isPremium =
-      user?.subscription === "Premium" &&
-      user?.subscriptionExpiryDate &&
-      new Date(user.subscriptionExpiryDate) > new Date();
+    const user = await User.findOne({ userId });
+    const isPremium = user?.subscription === "Premium" && user?.subscriptionExpiryDate && new Date(user.subscriptionExpiryDate) > new Date();
 
-    console.log("User subscription check:", {
-      subscription: user?.subscription,
-      expiryDate: user?.subscriptionExpiryDate,
-      isPremium,
-    });
+    const maxAttempts = isPremium ? 3 : 2;
+    const cooldownDays = isPremium ? 5 : 10;
 
-    const maxAttempts = isPremium ? 3 : 2; // Premium: 3 attempts, Free: 2 attempts
-    const cooldownDays = isPremium ? 5 : 10; // Premium: 5 days, Free: 10 days
-
-    // Check if max consecutive attempts reached
     if (attemptCount >= maxAttempts) {
-      // Check cooldown period from last attempt
       const lastAttempt = userAttempts[0];
       const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
-      const timeSinceLastAttempt =
-        Date.now() - new Date(lastAttempt.createdAt).getTime();
-
+      const timeSinceLastAttempt = Date.now() - new Date(lastAttempt.createdAt).getTime();
       if (timeSinceLastAttempt < cooldownMs) {
-        const daysRemaining = Math.ceil(
-          (cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000),
-        );
-        console.log("Cooldown period active. Days remaining:", daysRemaining);
+        const daysRemaining = Math.ceil((cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000));
         return res.status(400).json({
           success: false,
-          error: {
-            message: `You can take your next attempt after ${cooldownDays} days. Please wait ${daysRemaining} more day(s).`,
-            cooldownDays,
-            daysRemaining,
-            nextAttemptDate: new Date(
-              new Date(lastAttempt.createdAt).getTime() + cooldownMs,
-            ),
-          },
+          error: { message: `Cooldown active. Please wait ${daysRemaining} more day(s).`, cooldownDays, daysRemaining },
         });
       }
-      // Cooldown expired - reset attempt counter for this cooldown period
-      console.log("Cooldown expired, allowing new attempt");
     }
 
+    // Cancel any existing in_progress attempt for this user+quiz
+    await Attempt.updateMany(
+      { userId, quizId, status: 'in_progress' },
+      { $set: { status: 'auto_terminated', submittedAt: new Date() } }
+    );
+
+    // Calculate attempt number
+    let attemptNumber = attemptCount + 1;
+    if (attemptCount >= maxAttempts) attemptNumber = 1; // cooldown expired → new cycle
+
+    const totalMarks = quiz.questions.reduce((s, q) => s + (q.marks || 0), 0);
+
+    const attempt = new Attempt({
+      userId,
+      quizId,
+      totalMarks,
+      attemptNumber,
+      status: 'in_progress',
+      startedAt: new Date(),
+    });
+    await attempt.save();
+
+    console.log(`[startAttempt] Created attempt ${attempt._id} for user ${userId}, quiz ${quizId}`);
+
+    res.json({
+      success: true,
+      data: {
+        attemptId: attempt._id,
+        startedAt: attempt.startedAt,
+        maxViolations: quiz.maxViolations || 5,
+        timeLimitMinutes: quiz.timeLimitMinutes,
+      },
+    });
+  } catch (err) {
+    console.error("startAttempt error:", err);
+    res.status(500).json({ success: false, error: { message: "Server error" } });
+  }
+};
+
+/**
+ * Report a violation – server-side tracking. Returns { terminated: true } if max exceeded.
+ */
+exports.reportViolation = async (req, res) => {
+  try {
+    if (!req.session.user) {
+      return res.status(401).json({ success: false, error: { message: "Authentication required" } });
+    }
+
+    const { attemptId, type } = req.body;
+    if (!attemptId || !type) {
+      return res.status(400).json({ success: false, error: { message: "attemptId and type required" } });
+    }
+
+    const attempt = await Attempt.findById(attemptId);
+    if (!attempt || attempt.userId !== req.session.user.id) {
+      return res.status(404).json({ success: false, error: { message: "Attempt not found" } });
+    }
+    if (attempt.status !== 'in_progress') {
+      return res.status(400).json({ success: false, error: { message: "Attempt already completed" } });
+    }
+
+    // Push violation server-side
+    attempt.violations.push({ type, timestamp: new Date() });
+    attempt.violationsCount = attempt.violations.length;
+
+    // Check max violations from the quiz settings
+    const quiz = await Quiz.findById(attempt.quizId);
+    const maxViolations = quiz?.maxViolations || 5;
+
+    let terminated = false;
+    if (attempt.violations.length >= maxViolations) {
+      attempt.status = 'auto_terminated';
+      attempt.submittedAt = new Date();
+      terminated = true;
+      console.log(`[reportViolation] Attempt ${attemptId} auto-terminated (${attempt.violations.length} violations)`);
+    }
+
+    await attempt.save();
+
+    res.json({
+      success: true,
+      data: {
+        violationsCount: attempt.violations.length,
+        maxViolations,
+        terminated,
+      },
+    });
+  } catch (err) {
+    console.error("reportViolation error:", err);
+    res.status(500).json({ success: false, error: { message: "Server error" } });
+  }
+};
+
+/**
+ * Submit attempt: evaluate answers using server-side attemptId, timer validation, and violation count.
+ */
+exports.submitAttempt = async (req, res) => {
+  try {
+    if (!req.session.user) {
+      return res.status(401).json({ success: false, error: { message: "Authentication required" } });
+    }
+
+    const quizId = req.params.id;
+    const { answers, attemptId } = req.body; // answers: [{questionId, selectedOptionIndex}]
+
+    const quiz = await Quiz.findById(quizId);
+    if (!quiz) {
+      return res.status(404).json({ success: false, error: { message: "Quiz not found" } });
+    }
+
+    //  Locate the in-progress attempt   
+    let attempt;
+    if (attemptId) {
+      attempt = await Attempt.findById(attemptId);
+      if (!attempt || attempt.userId !== req.session.user.id || String(attempt.quizId) !== String(quizId)) {
+        return res.status(404).json({ success: false, error: { message: "Attempt not found" } });
+      }
+      if (attempt.status !== 'in_progress') {
+        return res.status(400).json({ success: false, error: { message: "This attempt has already been completed" } });
+      }
+    } else {
+      // Legacy fallback: create attempt inline (backwards compat for old frontend)
+      const userAttempts = await Attempt.find({ userId: req.session.user.id, quizId, status: { $ne: 'in_progress' } }).sort({ createdAt: -1 });
+      const attemptCount = userAttempts.length;
+      const User = require("../models/user");
+      const user = await User.findOne({ userId: req.session.user.id });
+      const isPremium = user?.subscription === "Premium" && user?.subscriptionExpiryDate && new Date(user.subscriptionExpiryDate) > new Date();
+      const maxAttempts = isPremium ? 3 : 2;
+      const cooldownDays = isPremium ? 5 : 10;
+
+      if (attemptCount >= maxAttempts) {
+        const lastAttempt = userAttempts[0];
+        const cooldownMs = cooldownDays * 24 * 60 * 60 * 1000;
+        const timeSinceLastAttempt = Date.now() - new Date(lastAttempt.createdAt).getTime();
+        if (timeSinceLastAttempt < cooldownMs) {
+          const daysRemaining = Math.ceil((cooldownMs - timeSinceLastAttempt) / (24 * 60 * 60 * 1000));
+          return res.status(400).json({ success: false, error: { message: `Cooldown active. Wait ${daysRemaining} more day(s).` } });
+        }
+      }
+
+      let attemptNumber = attemptCount + 1;
+      if (attemptCount >= maxAttempts) attemptNumber = 1;
+
+      attempt = new Attempt({
+        userId: req.session.user.id,
+        quizId,
+        totalMarks: quiz.questions.reduce((s, q) => s + (q.marks || 0), 0),
+        attemptNumber,
+        status: 'in_progress',
+        startedAt: new Date(),
+      });
+    }
+
+    //  Server-side timer validation (30s grace period)  
+    if (quiz.timeLimitMinutes && attempt.startedAt) {
+      const elapsed = (Date.now() - new Date(attempt.startedAt).getTime()) / 1000;
+      const allowed = quiz.timeLimitMinutes * 60 + 30; // 30s grace
+      if (elapsed > allowed) {
+        attempt.status = 'timed_out';
+        attempt.submittedAt = new Date();
+        await attempt.save();
+        console.log(`[submitAttempt] Attempt ${attempt._id} rejected: timed out (${Math.round(elapsed)}s > ${allowed}s)`);
+        return res.status(400).json({ success: false, error: { message: "Time limit exceeded. Your attempt has been marked as timed out." } });
+      }
+    }
+
+    //  Score the answers    
     let totalMarks = 0;
     let userMarks = 0;
     const answerRecords = [];
 
-    quiz.questions.forEach((question, qIndex) => {
+    quiz.questions.forEach((question) => {
       const qMarks = question.marks || 0;
       totalMarks += qMarks;
-      const provided = answers.find(
-        (a) => String(a.questionId) === String(question._id),
-      );
+      const provided = answers.find((a) => String(a.questionId) === String(question._id));
       const selectedIndex = provided ? provided.selectedOptionIndex : null;
-
-      console.log(`Question ${qIndex + 1}:`, {
-        questionId: question._id,
-        selectedIndex,
-        totalOptions: question.options.length,
-        options: question.options.map((opt, idx) => ({
-          index: idx,
-          text: opt.text.substring(0, 30),
-          isCorrect: opt.isCorrect,
-        })),
-      });
-
       let awarded = 0;
       if (selectedIndex !== null && typeof selectedIndex === "number") {
         const opt = question.options[selectedIndex];
-        console.log(`Selected option at index ${selectedIndex}:`, {
-          text: opt?.text?.substring(0, 30),
-          isCorrect: opt?.isCorrect,
-        });
         if (opt && opt.isCorrect) awarded = qMarks;
       }
       userMarks += awarded;
-      answerRecords.push({
-        questionId: question._id,
-        selectedOptionIndex: selectedIndex,
-        awardedMarks: awarded,
-      });
+      answerRecords.push({ questionId: question._id, selectedOptionIndex: selectedIndex, awardedMarks: awarded });
     });
 
-    console.log("Score calculation:", { totalMarks, userMarks, answerRecords });
+    //  Violation penalty (use SERVER-stored count, not client-reported) 
+    const serverViolationsCount = attempt.violations?.length || 0;
+    const penaltyPercent = quiz.violationPenaltyPercent || 5;
+    const penaltyPerViolation = (totalMarks * penaltyPercent) / 100;
+    const totalPenalty = Math.min(userMarks, serverViolationsCount * penaltyPerViolation);
+    const finalMarks = Math.max(0, userMarks - totalPenalty);
 
-    // Calculate penalty: deduct 5% of total marks per violation (up to max of userMarks)
-    const penaltyPercentPerViolation = 5;
-    const penaltyPerViolation = (totalMarks * penaltyPercentPerViolation) / 100;
-    const totalPenalty = Math.min(
-      userMarks,
-      violationsCount * penaltyPerViolation,
-    ); // Can't deduct more than earned
-    const finalMarks = Math.max(0, userMarks - totalPenalty); // Can't go below 0
-
-    console.log("Violation penalty:", {
-      violationsCount,
-      penaltyPercentPerViolation: penaltyPercentPerViolation + "%",
-      penaltyPerViolation,
-      totalPenalty,
-      originalMarks: userMarks,
-      finalMarks,
-    });
+    console.log(`[submitAttempt] Score: ${userMarks}/${totalMarks}, violations: ${serverViolationsCount}, penalty: ${totalPenalty}, final: ${finalMarks}`);
 
     const passingScore = quiz.passingScore || 50;
     const percentage = totalMarks ? (finalMarks / totalMarks) * 100 : 0;
     const passed = percentage >= passingScore;
 
-    console.log("Creating attempt document...");
-    // Calculate current attempt number (considering cooldown resets)
-    let attemptNumber = attemptCount + 1;
-    if (attemptCount >= maxAttempts) {
-      // This is after cooldown, so reset to 1
-      attemptNumber = 1;
-    }
+    //  Update the attempt document   
+    attempt.answers = answerRecords;
+    attempt.totalMarks = totalMarks;
+    attempt.userMarks = finalMarks;
+    attempt.percentage = percentage;
+    attempt.passed = passed;
+    attempt.violationsCount = serverViolationsCount;
+    attempt.status = 'submitted';
+    attempt.submittedAt = new Date();
+    await attempt.save();
 
-    const attempt = new Attempt({
-      userId: req.session.user.id,
-      quizId,
-      answers: answerRecords,
-      totalMarks,
-      userMarks: finalMarks, // Use final marks after penalty
-      percentage,
-      passed,
-      attemptNumber,
-      violationsCount, // Store violations count for records
-    });
-
-    try {
-      await attempt.save();
-      console.log(
-        "Attempt saved successfully with attemptNumber:",
-        attemptNumber,
-      );
-    } catch (saveError) {
-      console.error("Error saving attempt:", saveError);
-      throw saveError;
-    }
-
-    // Check badges and award if applicable
-    const badges = await Badge.find({
-      "criteria.type": "pass_quiz",
-      "criteria.quizId": String(quiz._id),
-    });
+    //  Award badges      
+    const badges = await Badge.find({ "criteria.type": "pass_quiz", "criteria.quizId": String(quiz._id) });
     const awardedBadges = [];
     for (const badge of badges) {
       const min = badge.criteria.minPercentage || 0;
       if (passed && percentage >= min) {
         try {
-          const ub = await UserBadge.findOneAndUpdate(
+          await UserBadge.findOneAndUpdate(
             { userId: req.session.user.id, badgeId: badge._id },
             { $setOnInsert: { awardedAt: new Date() } },
             { upsert: true, new: true },
           );
           awardedBadges.push(badge);
         } catch (e) {
-          // ignore duplicate key errors
           console.log("Badge already awarded or error:", e.message);
         }
       }
     }
 
-    console.log("Attempt submission successful");
-    res.json({ success: true, data: { attempt, awardedBadges } });
+    //  Check if all attempts are exhausted     
+    const User = require("../models/user");
+    const userForSub = await User.findOne({ userId: req.session.user.id });
+    const isPremiumSub = userForSub?.subscription === "Premium" && userForSub?.subscriptionExpiryDate && new Date(userForSub.subscriptionExpiryDate) > new Date();
+    const maxAttemptsForUser = isPremiumSub ? 3 : 2;
+    const completedAttempts = await Attempt.countDocuments({ userId: req.session.user.id, quizId, status: { $in: ['submitted', 'auto_terminated', 'timed_out'] } });
+    const attemptsExhausted = completedAttempts >= maxAttemptsForUser;
+
+    //  Build question details only after all attempts used   
+    let questionDetails = [];
+    if (attemptsExhausted) {
+      questionDetails = quiz.questions.map((question, idx) => {
+        const answerRecord = answerRecords[idx];
+        const isCorrect = answerRecord.awardedMarks > 0;
+
+        // Only expose full question content for correctly answered questions
+        // Wrong/skipped questions only get metadata to prevent answer leakage
+        if (isCorrect) {
+          return {
+            questionId: question._id,
+            text: question.text,
+            codeSnippet: question.codeSnippet || null,
+            codeLanguage: question.codeLanguage || null,
+            marks: question.marks,
+            options: question.options.map((o, oi) => ({ text: o.text, index: oi })),
+            selectedOptionIndex: answerRecord.selectedOptionIndex,
+            awardedMarks: answerRecord.awardedMarks,
+            isCorrect: true,
+          };
+        }
+
+        // Wrong or skipped — only metadata, no question text or options
+        return {
+          questionId: question._id,
+          marks: question.marks,
+          selectedOptionIndex: answerRecord.selectedOptionIndex,
+          awardedMarks: answerRecord.awardedMarks,
+          isCorrect: false,
+        };
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        attempt,
+        awardedBadges,
+        questionDetails,
+        quizTitle: quiz.title,
+        skillName: quiz.skillName,
+        passingScore: quiz.passingScore,
+        violationsPenalty: totalPenalty,
+        serverViolationsCount,
+        attemptsExhausted,
+      },
+    });
   } catch (err) {
     console.error("Submit attempt error:", err);
-    console.error("Error stack:", err.stack);
-    res.status(500).json({
-      success: false,
-      error: { message: "Server error: " + err.message },
-    });
+    res.status(500).json({ success: false, error: { message: "Server error: " + err.message } });
   }
 };
 
