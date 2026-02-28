@@ -150,7 +150,7 @@ exports.getFeedbacksForJob = async (req, res) => {
     const isParticipant = job.employerId === currentUserRoleId || 
                           (job.assignedFreelancer && job.assignedFreelancer.freelancerId === currentUserRoleId);
 
-    if (!isParticipant && req.session.user.role !== 'Admin') {
+    if (!isParticipant && req.session.user.role !== 'Moderator') {
       return res.status(403).json({ 
         success: false, 
         error: 'Access denied' 
@@ -161,7 +161,7 @@ exports.getFeedbacksForJob = async (req, res) => {
 
     // Populate user details for non-anonymous feedbacks
     const populatedFeedbacks = await Promise.all(feedbacks.map(async (fb) => {
-      if (fb.anonymous && req.session.user.role !== 'Admin') {
+      if (fb.anonymous && req.session.user.role !== 'Moderator') {
         return {
           ...fb,
           fromUser: { name: 'Anonymous' }

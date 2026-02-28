@@ -41,14 +41,14 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      enum: ["Employer", "Freelancer", "Admin", ""],
+      enum: ["Employer", "Freelancer", "Moderator", "Admin", ""],
       default: "",
     },
     roleId: { type: String, default: "" },
     rating: { type: Number, min: 1, max: 5, default: 4.5 },
     lastCoverMessage: { type: String, default: "" },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 module.exports = mongoose.model("User", userSchema);

@@ -37,7 +37,7 @@ const upload = multer({
   },
 });
 
-// Function to save PDF to local file system (replaces uploadToCloudinary)
+// Function to save PDF to local file system (replacing uploadToCloudinary since cloudinary limit reached for free tier)
 const uploadToLocalStorage = (file) => {
   return new Promise((resolve, reject) => {
     if (!file) {
