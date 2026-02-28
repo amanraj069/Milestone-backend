@@ -478,11 +478,42 @@ exports.getAllFreelancers = async (req, res) => {
 
     const freelancerIds = freelancers.map((f) => f.userId);
     const users = await User.find({ userId: { $in: freelancerIds } })
-      .select("userId name email phone picture location rating createdAt")
+      .select(
+        "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate"
+      )
       .lean();
+
+    // Get applications count for each freelancer using roleId
+    const roleIds = freelancers.map((f) => f.freelancerId);
+    const applicationCounts = await JobApplication.aggregate([
+      { $match: { freelancerId: { $in: roleIds } } },
+      { $group: { _id: "$freelancerId", count: { $sum: 1 } } },
+    ]);
+
+    const applicationMap = {};
+    applicationCounts.forEach((item) => {
+      applicationMap[item._id] = item.count;
+    });
+
+    // Get currently working status (check if freelancer is assigned to any active job)
+    const activeJobs = await JobListing.find({
+      "assignedFreelancer.freelancerId": { $in: roleIds },
+      "assignedFreelancer.status": "working",
+    })
+      .select("assignedFreelancer.freelancerId")
+      .lean();
+
+    const workingFreelancerIds = new Set(
+      activeJobs.map((job) => job.assignedFreelancer.freelancerId)
+    );
 
     const freelancersWithDetails = freelancers.map((freelancer) => {
       const user = users.find((u) => u.userId === freelancer.userId);
+      const isPremium = user?.subscription === "Premium";
+      const isCurrentlyWorking = workingFreelancerIds.has(
+        freelancer.freelancerId
+      );
+
       return {
         freelancerId: freelancer.freelancerId,
         userId: freelancer.userId,
@@ -495,6 +526,12 @@ exports.getAllFreelancers = async (req, res) => {
         skills: freelancer.skills?.length || 0,
         portfolioCount: freelancer.portfolio?.length || 0,
         joinedDate: user?.createdAt || freelancer.createdAt,
+        subscription: user?.subscription || "Basic",
+        isPremium,
+        subscriptionDuration: user?.subscriptionDuration || null,
+        subscriptionExpiryDate: user?.subscriptionExpiryDate || null,
+        applicationsCount: applicationMap[freelancer.freelancerId] || 0,
+        isCurrentlyWorking,
       };
     });
 
@@ -508,6 +545,60 @@ exports.getAllFreelancers = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch freelancers",
+    });
+  }
+};
+
+// Get freelancer applications (Moderator only)
+exports.getFreelancerApplications = async (req, res) => {
+  try {
+    const { freelancerId } = req.params;
+
+    // Check if freelancer exists
+    const freelancer = await Freelancer.findOne({ freelancerId }).lean();
+    if (!freelancer) {
+      return res.status(404).json({
+        success: false,
+        error: "Freelancer not found",
+      });
+    }
+
+    // Get all applications for this freelancer
+    const applications = await JobApplication.find({ freelancerId }).lean();
+
+    // Get job details for all applications
+    const jobIds = applications.map((app) => app.jobId);
+    const jobs = await JobListing.find({ jobId: { $in: jobIds } })
+      .select("jobId title")
+      .lean();
+
+    // Combine application data with job details
+    const applicationsWithDetails = applications.map((app) => {
+      const job = jobs.find((j) => j.jobId === app.jobId);
+      return {
+        applicationId: app.applicationId,
+        jobId: app.jobId,
+        jobTitle: job?.title || "Unknown Job",
+        appliedDate: app.appliedDate,
+        status: app.status,
+      };
+    });
+
+    // Sort by applied date (most recent first)
+    applicationsWithDetails.sort(
+      (a, b) => new Date(b.appliedDate) - new Date(a.appliedDate)
+    );
+
+    res.json({
+      success: true,
+      applications: applicationsWithDetails,
+      total: applicationsWithDetails.length,
+    });
+  } catch (error) {
+    console.error("Error fetching freelancer applications:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch freelancer applications",
     });
   }
 };
@@ -552,11 +643,29 @@ exports.getAllEmployers = async (req, res) => {
 
     const employerIds = employers.map((e) => e.userId);
     const users = await User.find({ userId: { $in: employerIds } })
-      .select("userId name email phone picture location rating createdAt")
+      .select(
+        "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate"
+      )
       .lean();
 
+    // Get job listing counts per employer
+    const empIds = employers.map((e) => e.employerId);
+    const jobCounts = await JobListing.aggregate([
+      { $match: { employerId: { $in: empIds } } },
+      { $group: { _id: "$employerId", count: { $sum: 1 } } },
+    ]);
+    const jobCountMap = {};
+    jobCounts.forEach((item) => {
+      jobCountMap[item._id] = item.count;
+    });
+
+    // Get hired freelancers count (current + previously worked)
     const employersWithDetails = employers.map((employer) => {
       const user = users.find((u) => u.userId === employer.userId);
+      const isPremium = user?.subscription === "Premium";
+      const currentHires = employer.currentFreelancers?.length || 0;
+      const pastHires = employer.previouslyWorkedFreelancers?.length || 0;
+
       return {
         employerId: employer.employerId,
         userId: employer.userId,
@@ -564,9 +673,17 @@ exports.getAllEmployers = async (req, res) => {
         email: user?.email || "N/A",
         phone: user?.phone || "N/A",
         picture: user?.picture || "",
+        location: user?.location || "N/A",
         companyName: employer.companyName || "N/A",
-        jobsPosted: employer.jobsPosted?.length || 0,
-        currentFreelancers: employer.currentFreelancers?.length || 0,
+        rating: user?.rating || 0,
+        subscription: user?.subscription || "Basic",
+        isPremium,
+        subscriptionDuration: user?.subscriptionDuration || null,
+        subscriptionExpiryDate: user?.subscriptionExpiryDate || null,
+        jobListingsCount: jobCountMap[employer.employerId] || 0,
+        hiredCount: currentHires + pastHires,
+        currentHires,
+        pastHires,
         joinedDate: user?.createdAt || employer.createdAt,
       };
     });
@@ -581,6 +698,54 @@ exports.getAllEmployers = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch employers",
+    });
+  }
+};
+
+// Get employer job listings (Moderator only)
+exports.getEmployerJobListings = async (req, res) => {
+  try {
+    const { employerId } = req.params;
+
+    // Check if employer exists
+    const employer = await Employer.findOne({ employerId }).lean();
+    if (!employer) {
+      return res.status(404).json({
+        success: false,
+        error: "Employer not found",
+      });
+    }
+
+    // Get all job listings for this employer
+    const jobs = await JobListing.find({ employerId })
+      .select("jobId title budget status jobType postedDate applicants assignedFreelancer")
+      .lean();
+
+    const jobsWithDetails = jobs.map((job) => ({
+      jobId: job.jobId,
+      title: job.title,
+      budget: job.budget,
+      status: job.status,
+      jobType: job.jobType,
+      postedDate: job.postedDate,
+      hasAssignedFreelancer: !!job.assignedFreelancer?.freelancerId,
+    }));
+
+    // Sort by posted date (most recent first)
+    jobsWithDetails.sort(
+      (a, b) => new Date(b.postedDate) - new Date(a.postedDate)
+    );
+
+    res.json({
+      success: true,
+      jobListings: jobsWithDetails,
+      total: jobsWithDetails.length,
+    });
+  } catch (error) {
+    console.error("Error fetching employer job listings:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch employer job listings",
     });
   }
 };
@@ -632,6 +797,18 @@ exports.getAllJobListings = async (req, res) => {
       .select("userId name")
       .lean();
 
+    // Get applicant counts for all jobs
+    const jobIds = jobs.map((job) => job.jobId);
+    const applicantCounts = await JobApplication.aggregate([
+      { $match: { jobId: { $in: jobIds } } },
+      { $group: { _id: "$jobId", count: { $sum: 1 } } },
+    ]);
+
+    const applicantMap = {};
+    applicantCounts.forEach((item) => {
+      applicantMap[item._id] = item.count;
+    });
+
     const jobsWithDetails = jobs.map((job) => {
       const employer = employers.find((e) => e.employerId === job.employerId);
       const user = users.find((u) => u.userId === employer?.userId);
@@ -650,6 +827,7 @@ exports.getAllJobListings = async (req, res) => {
         skills: job.description?.skills || [],
         description: job.description,
         assignedFreelancer: job.assignedFreelancer,
+        applicantsCount: applicantMap[job.jobId] || 0,
       };
     });
 
@@ -663,6 +841,61 @@ exports.getAllJobListings = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch job listings",
+    });
+  }
+};
+
+// Get applicants for a specific job (Moderator only)
+exports.getJobApplicants = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    // Check if job exists
+    const job = await JobListing.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job listing not found",
+      });
+    }
+
+    // Get all applications for this job
+    const applications = await JobApplication.find({ jobId }).lean();
+
+    // Get user details for all applicants using roleId (freelancerId)
+    const freelancerIds = applications.map((app) => app.freelancerId);
+    const users = await User.find({ roleId: { $in: freelancerIds } })
+      .select("roleId name email picture phone rating")
+      .lean();
+
+    // Combine application data with user details
+    const applicantsWithDetails = applications.map((app) => {
+      const user = users.find((u) => u.roleId === app.freelancerId);
+      return {
+        applicationId: app.applicationId,
+        freelancerId: app.freelancerId,
+        name: user?.name || "Unknown",
+        email: user?.email || "N/A",
+        picture: user?.picture || "",
+        phone: user?.phone || "N/A",
+        rating: user?.rating || 0,
+        appliedDate: app.appliedDate,
+        status: app.status,
+        coverMessage: app.coverMessage,
+        resumeLink: app.resumeLink,
+      };
+    });
+
+    res.json({
+      success: true,
+      applicants: applicantsWithDetails,
+      total: applicantsWithDetails.length,
+    });
+  } catch (error) {
+    console.error("Error fetching job applicants:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch job applicants",
     });
   }
 };
