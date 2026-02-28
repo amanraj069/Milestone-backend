@@ -632,6 +632,18 @@ exports.getAllJobListings = async (req, res) => {
       .select("userId name")
       .lean();
 
+    // Get applicant counts for all jobs
+    const jobIds = jobs.map((job) => job.jobId);
+    const applicantCounts = await JobApplication.aggregate([
+      { $match: { jobId: { $in: jobIds } } },
+      { $group: { _id: "$jobId", count: { $sum: 1 } } },
+    ]);
+
+    const applicantMap = {};
+    applicantCounts.forEach((item) => {
+      applicantMap[item._id] = item.count;
+    });
+
     const jobsWithDetails = jobs.map((job) => {
       const employer = employers.find((e) => e.employerId === job.employerId);
       const user = users.find((u) => u.userId === employer?.userId);
@@ -650,6 +662,7 @@ exports.getAllJobListings = async (req, res) => {
         skills: job.description?.skills || [],
         description: job.description,
         assignedFreelancer: job.assignedFreelancer,
+        applicantsCount: applicantMap[job.jobId] || 0,
       };
     });
 
@@ -663,6 +676,61 @@ exports.getAllJobListings = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to fetch job listings",
+    });
+  }
+};
+
+// Get applicants for a specific job (Moderator only)
+exports.getJobApplicants = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    // Check if job exists
+    const job = await JobListing.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job listing not found",
+      });
+    }
+
+    // Get all applications for this job
+    const applications = await JobApplication.find({ jobId }).lean();
+
+    // Get user details for all applicants using roleId (freelancerId)
+    const freelancerIds = applications.map((app) => app.freelancerId);
+    const users = await User.find({ roleId: { $in: freelancerIds } })
+      .select("roleId name email picture phone rating")
+      .lean();
+
+    // Combine application data with user details
+    const applicantsWithDetails = applications.map((app) => {
+      const user = users.find((u) => u.roleId === app.freelancerId);
+      return {
+        applicationId: app.applicationId,
+        freelancerId: app.freelancerId,
+        name: user?.name || "Unknown",
+        email: user?.email || "N/A",
+        picture: user?.picture || "",
+        phone: user?.phone || "N/A",
+        rating: user?.rating || 0,
+        appliedDate: app.appliedDate,
+        status: app.status,
+        coverMessage: app.coverMessage,
+        resumeLink: app.resumeLink,
+      };
+    });
+
+    res.json({
+      success: true,
+      applicants: applicantsWithDetails,
+      total: applicantsWithDetails.length,
+    });
+  } catch (error) {
+    console.error("Error fetching job applicants:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch job applicants",
     });
   }
 };

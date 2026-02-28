@@ -98,6 +98,12 @@ router.delete(
 // Job Listing routes
 router.get("/jobs", requireModerator, moderatorController.getAllJobListings);
 
+router.get(
+  "/jobs/:jobId/applicants",
+  requireModerator,
+  moderatorController.getJobApplicants,
+);
+
 router.delete(
   "/jobs/:jobId",
   requireModerator,
