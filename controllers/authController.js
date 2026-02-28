@@ -1,6 +1,7 @@
 const bcrypt = require("bcrypt");
 const { v4: uuidv4 } = require("uuid");
 const { User, Employer, Freelancer, Moderator } = require("../models");
+const Admin = require("../models/admin");
 const { generateOTP, sendOTPEmail } = require("../utils/emailService");
 
 // Send OTP for email verification (called after password is entered)
@@ -29,6 +30,9 @@ exports.sendOtp = async (req, res) => {
           break;
         case "moderator":
           normalizedRole = "Moderator";
+          break;
+        case "admin":
+          normalizedRole = "Admin";
           break;
         default:
           return res.status(400).json({ error: "Invalid role" });
@@ -164,6 +168,9 @@ exports.signup = async (req, res) => {
       case "moderator":
         normalizedRole = "Moderator";
         break;
+      case "admin":
+        normalizedRole = "Admin";
+        break;
       default:
         return res.status(400).json({ error: "Invalid role" });
     }
@@ -199,6 +206,12 @@ exports.signup = async (req, res) => {
       case "Moderator":
         roleEntity = new Moderator({
           moderatorId: roleId,
+          userId: existingUser.userId,
+        });
+        break;
+      case "Admin":
+        roleEntity = new Admin({
+          adminId: roleId,
           userId: existingUser.userId,
         });
         break;
@@ -247,6 +260,9 @@ exports.login = async (req, res) => {
         break;
       case "moderator":
         normalizedRole = "Moderator";
+        break;
+      case "admin":
+        normalizedRole = "Admin";
         break;
       default:
         return res.status(400).json({ error: "Invalid role" });

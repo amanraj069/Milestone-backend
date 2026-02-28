@@ -41,7 +41,7 @@ const userSchema = new Schema(
     },
     role: {
       type: String,
-      enum: ["Employer", "Freelancer", "Moderator", ""],
+      enum: ["Employer", "Freelancer", "Moderator", "Admin", ""],
       default: "",
     },
     roleId: { type: String, default: "" },
