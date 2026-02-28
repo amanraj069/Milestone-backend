@@ -80,6 +80,12 @@ router.get(
   moderatorController.getAllFreelancers,
 );
 
+router.get(
+  "/freelancers/:freelancerId/applications",
+  requireModerator,
+  moderatorController.getFreelancerApplications,
+);
+
 router.delete(
   "/freelancers/:freelancerId",
   requireModerator,
@@ -88,6 +94,12 @@ router.delete(
 
 // Employer routes
 router.get("/employers", requireModerator, moderatorController.getAllEmployers);
+
+router.get(
+  "/employers/:employerId/job-listings",
+  requireModerator,
+  moderatorController.getEmployerJobListings,
+);
 
 router.delete(
   "/employers/:employerId",
