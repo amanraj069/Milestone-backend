@@ -6,6 +6,7 @@ const Admin = require("./admin");
 const Complaint = require("./complaint");
 const Question = require("./Question");
 const Notification = require("./Notification");
+const RatingAudit = require("./RatingAudit");
 
 module.exports = {
   User,
@@ -16,4 +17,5 @@ module.exports = {
   Complaint,
   Question,
   Notification,
+  RatingAudit,
 };
