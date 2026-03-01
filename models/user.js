@@ -45,6 +45,8 @@ const userSchema = new Schema(
       default: "",
     },
     roleId: { type: String, default: "" },
+    isApproved: { type: Boolean, default: true }, // false for new employers until approved by moderator
+    isRejected: { type: Boolean, default: false }, // true when moderator rejects an employer
     rating: { type: Number, min: 1, max: 5, default: 4.5 },
     lastCoverMessage: { type: String, default: "" },
   },
