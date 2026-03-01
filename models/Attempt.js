@@ -6,16 +6,27 @@ const AnswerSchema = new mongoose.Schema({
   awardedMarks: { type: Number, required: true }
 });
 
+const ViolationSchema = new mongoose.Schema({
+  type: { type: String, required: true }, // tab_switch, fullscreen_exit, window_blur, copy_attempt, devtools_open
+  timestamp: { type: Date, default: Date.now }
+}, { _id: false });
+
 const AttemptSchema = new mongoose.Schema({
   userId: { type: String, ref: 'User', index: true, required: true },
   quizId: { type: mongoose.Schema.Types.ObjectId, ref: 'Quiz', required: true },
   answers: { type: [AnswerSchema], default: [] },
-  totalMarks: { type: Number, required: true },
-  userMarks: { type: Number, required: true },
-  percentage: { type: Number, required: true },
-  passed: { type: Boolean, required: true },
-  attemptNumber: { type: Number, default: 1 }, // Track which attempt this is (1, 2, 3, etc.)
-  violationsCount: { type: Number, default: 0 }, // Track quiz violations (tab switch, fullscreen exit, etc.)
+  totalMarks: { type: Number, default: 0 },
+  userMarks: { type: Number, default: 0 },
+  percentage: { type: Number, default: 0 },
+  passed: { type: Boolean, default: false },
+  attemptNumber: { type: Number, default: 1 },
+  // Server-side violation tracking
+  violations: { type: [ViolationSchema], default: [] },
+  violationsCount: { type: Number, default: 0 },
+  // Attempt lifecycle
+  status: { type: String, enum: ['in_progress', 'submitted', 'auto_terminated', 'timed_out'], default: 'in_progress' },
+  startedAt: { type: Date, default: Date.now },
+  submittedAt: { type: Date },
   createdAt: { type: Date, default: Date.now }
 });
 
