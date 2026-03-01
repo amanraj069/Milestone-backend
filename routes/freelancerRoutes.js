@@ -105,6 +105,11 @@ router.post(
   asyncHandler(freelancerController.applyForJob)
 );
 router.get(
+  "/applications",
+  requireFreelancer,
+  freelancerController.getFreelancerApplications
+);
+router.get(
   "/cover-message/last",
   requireFreelancer,
   freelancerController.getLastCoverMessage
