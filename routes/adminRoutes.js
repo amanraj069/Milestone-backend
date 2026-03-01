@@ -74,6 +74,11 @@ router.get("/statistics", requireAdmin, adminController.getPlatformStats);
 // Complaints
 router.get("/complaints", requireAdmin, adminController.getAllComplaints);
 
+// Rating Adjustments
+router.put("/users/:targetUserId/rating", requireAdmin, adminController.adjustUserRating);
+router.get("/users/:userId/rating-history", requireAdmin, adminController.getRatingAuditHistory);
+router.post("/users/:userId/revert-rating", requireAdmin, adminController.revertToCalculatedRating);
+
 // Freelancers & Employers
 router.get("/freelancers", requireAdmin, adminController.getAllFreelancers);
 router.get("/employers", requireAdmin, adminController.getAllEmployers);
