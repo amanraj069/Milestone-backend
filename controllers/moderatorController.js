@@ -769,20 +769,67 @@ exports.getEmployerJobListings = async (req, res) => {
       });
     }
 
-    // Get all job listings for this employer
-    const jobs = await JobListing.find({ employerId })
-      .select("jobId title budget status jobType postedDate applicants assignedFreelancer")
-      .lean();
+    // Get all job listings for this employer with full details
+    const jobs = await JobListing.find({ employerId }).lean();
 
-    const jobsWithDetails = jobs.map((job) => ({
-      jobId: job.jobId,
-      title: job.title,
-      budget: job.budget,
-      status: job.status,
-      jobType: job.jobType,
-      postedDate: job.postedDate,
-      hasAssignedFreelancer: !!job.assignedFreelancer?.freelancerId,
-    }));
+    const now = new Date();
+
+    const jobsWithDetails = jobs.map((job) => {
+      // Real-time status calculation
+      let computedStatus = job.status;
+      if (
+        job.status === "open" &&
+        job.applicationDeadline &&
+        new Date(job.applicationDeadline) < now
+      ) {
+        computedStatus = "expired";
+      }
+      if (job.status === "in-progress" && job.assignedFreelancer?.status === "finished") {
+        computedStatus = "completed";
+      }
+
+      // Calculate overall progress from milestones
+      let overallProgress = 0;
+      if (job.milestones && job.milestones.length > 0) {
+        const totalPercentage = job.milestones.reduce(
+          (sum, m) => sum + (m.completionPercentage || 0),
+          0
+        );
+        overallProgress = Math.round(totalPercentage / job.milestones.length);
+      }
+
+      return {
+        jobId: job.jobId,
+        title: job.title,
+        budget: job.budget,
+        status: computedStatus,
+        originalStatus: job.status,
+        jobType: job.jobType,
+        experienceLevel: job.experienceLevel,
+        location: job.location || "Remote",
+        remote: job.remote,
+        postedDate: job.postedDate,
+        applicationDeadline: job.applicationDeadline,
+        description: job.description?.text || "",
+        skills: job.description?.skills || [],
+        responsibilities: job.description?.responsibilities || [],
+        requirements: job.description?.requirements || [],
+        startDate: job.assignedFreelancer?.startDate || null,
+        endDate: job.assignedFreelancer?.endDate || null,
+        hasAssignedFreelancer: !!job.assignedFreelancer?.freelancerId,
+        freelancerStatus: job.assignedFreelancer?.status || null,
+        milestones: (job.milestones || []).map((m) => ({
+          milestoneId: m.milestoneId,
+          description: m.description,
+          deadline: m.deadline,
+          payment: m.payment,
+          status: m.status,
+          completionPercentage: m.completionPercentage || 0,
+        })),
+        overallProgress,
+        applicants: job.applicants || 0,
+      };
+    });
 
     // Sort by posted date (most recent first)
     jobsWithDetails.sort(
