@@ -22,6 +22,9 @@ const QuizSchema = new mongoose.Schema({
   timeLimitMinutes: { type: Number },
   passingScore: { type: Number, default: 50 },
   questions: { type: [QuestionSchema], default: [] },
+  // Anti-cheat settings (configurable per quiz by admin)
+  maxViolations: { type: Number, default: 5 },
+  violationPenaltyPercent: { type: Number, default: 5 }, // % of total marks deducted per violation
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
