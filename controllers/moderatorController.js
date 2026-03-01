@@ -5,6 +5,7 @@ const JobListing = require("../models/job_listing");
 const JobApplication = require("../models/job_application");
 const Freelancer = require("../models/freelancer");
 const Employer = require("../models/employer");
+const RatingAudit = require("../models/RatingAudit");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
 // Get moderator profile data
@@ -155,6 +156,10 @@ exports.getAllComplaints = async (req, res) => {
 
     // Get complainant userIds for chat functionality
     const complainantIds = [...new Set(complaints.map((c) => c.complainantId))];
+    
+    // Get all unique freelancer and employer IDs to fetch their ratings
+    const freelancerIds = [...new Set(complaints.map((c) => c.freelancerId))];
+    const employerIds = [...new Set(complaints.map((c) => c.employerId))];
 
     // Fetch users based on roleId (complainantId could be freelancerId or employerId)
     const complainantUsers = await User.find({
@@ -162,15 +167,44 @@ exports.getAllComplaints = async (req, res) => {
     })
       .select("userId roleId")
       .lean();
+    
+    // Fetch freelancers with their ratings
+    const freelancers = await User.find({
+      roleId: { $in: freelancerIds },
+    })
+      .select("userId roleId rating email")
+      .lean();
+    
+    // Fetch employers with their ratings
+    const employers = await User.find({
+      roleId: { $in: employerIds },
+    })
+      .select("userId roleId rating email")
+      .lean();
 
-    // Add complainant userId to each complaint
+    // Add complainant userId and user ratings to each complaint
     const complaintsWithUserId = complaints.map((complaint) => {
       const complainantUser = complainantUsers.find(
         (user) => user.roleId === complaint.complainantId,
       );
+      
+      const freelancer = freelancers.find(
+        (user) => user.roleId === complaint.freelancerId,
+      );
+      
+      const employer = employers.find(
+        (user) => user.roleId === complaint.employerId,
+      );
+      
       const result = {
         ...complaint,
         complainantUserId: complainantUser?.userId || null,
+        freelancerUserId: freelancer?.userId || null,
+        freelancerRating: freelancer?.rating || null,
+        freelancerEmail: freelancer?.email || null,
+        employerUserId: employer?.userId || null,
+        employerRating: employer?.rating || null,
+        employerEmail: employer?.email || null,
       };
       return result;
     });
@@ -236,16 +270,35 @@ exports.updateComplaintStatus = async (req, res) => {
       });
     }
 
-    // Add complainantUserId for chat functionality
+    // Add complainantUserId and user data for chat functionality
     const complainantUser = await User.findOne({
       roleId: complaint.complainantId,
     })
       .select("userId")
       .lean();
+    
+    // Fetch freelancer and employer ratings
+    const freelancer = await User.findOne({
+      roleId: complaint.freelancerId,
+    })
+      .select("userId roleId rating email")
+      .lean();
+    
+    const employer = await User.findOne({
+      roleId: complaint.employerId,
+    })
+      .select("userId roleId rating email")
+      .lean();
 
     const complaintWithUserId = {
       ...complaint,
       complainantUserId: complainantUser?.userId || null,
+      freelancerUserId: freelancer?.userId || null,
+      freelancerRating: freelancer?.rating || null,
+      freelancerEmail: freelancer?.email || null,
+      employerUserId: employer?.userId || null,
+      employerRating: employer?.rating || null,
+      employerEmail: employer?.email || null,
     };
 
     res.json({
@@ -926,6 +979,224 @@ exports.deleteJobListing = async (req, res) => {
     res.status(500).json({
       success: false,
       error: "Failed to delete job listing",
+    });
+  }
+};
+
+//RATING ADJUSTMENT (Moderator)
+
+exports.adjustUserRating = async (req, res) => {
+  try {
+    const { targetUserId } = req.params;
+    const { adjustment, reason, complaintId } = req.body;
+
+    if (!targetUserId || adjustment === undefined || !reason) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: targetUserId, adjustment, reason",
+      });
+    }
+
+    const adjustmentNum = parseFloat(adjustment);
+    if (isNaN(adjustmentNum) || adjustmentNum < -4.0 || adjustmentNum > 0.5) {
+      return res.status(400).json({
+        success: false,
+        error: "Adjustment must be between -4.0 and +0.5",
+      });
+    }
+
+    if (Math.abs(adjustmentNum * 10 % 1) > 0.001) {
+      return res.status(400).json({
+        success: false,
+        error: "Adjustment must be in increments of 0.1",
+      });
+    }
+
+    if (reason.trim().length < 20 || reason.trim().length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: "Reason must be between 20 and 500 characters",
+      });
+    }
+
+    const targetUser = await User.findOne({ userId: targetUserId });
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: "Target user not found",
+      });
+    }
+
+    const moderatorUserId = req.session.user.id;
+    const moderator = await User.findOne({ userId: moderatorUserId });
+    if (!moderator) {
+      return res.status(404).json({
+        success: false,
+        error: "Moderator not found",
+      });
+    }
+
+    const currentRating = targetUser.useModeratorRating
+      ? targetUser.moderatorRating
+      : targetUser.calculatedRating || targetUser.rating;
+
+    let newRating = currentRating + adjustmentNum;
+    newRating = Math.max(1.0, Math.min(5.0, newRating));
+    newRating = Math.round(newRating * 10) / 10;
+
+    const ipAddress =
+      req.headers["x-forwarded-for"] ||
+      req.connection.remoteAddress ||
+      req.socket.remoteAddress ||
+      null;
+
+    const auditLog = new RatingAudit({
+      targetUserId: targetUser.userId,
+      targetUserName: targetUser.name,
+      targetUserRole: targetUser.role,
+      previousRating: currentRating,
+      newRating: newRating,
+      adjustment: adjustmentNum,
+      reason: reason.trim(),
+      relatedComplaintId: complaintId || null,
+      adjustedBy: moderator.userId,
+      adjustedByName: moderator.name,
+      adjustedByRole: moderator.role,
+      ipAddress: ipAddress,
+    });
+
+    await auditLog.save();
+
+    targetUser.moderatorRating = newRating;
+    targetUser.useModeratorRating = true;
+    targetUser.moderatorAdjustmentReason = reason.trim();
+    targetUser.adjustedBy = moderator.userId;
+    targetUser.adjustedAt = new Date();
+    targetUser.rating = newRating;
+
+    await targetUser.save();
+
+    res.json({
+      success: true,
+      message: "Rating adjusted successfully",
+      data: {
+        userId: targetUser.userId,
+        name: targetUser.name,
+        previousRating: currentRating,
+        newRating: newRating,
+        adjustment: adjustmentNum,
+        adjustedBy: moderator.name,
+        adjustedAt: targetUser.adjustedAt,
+        auditId: auditLog.auditId,
+      },
+    });
+  } catch (error) {
+    console.error("Error adjusting user rating:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to adjust rating",
+    });
+  }
+};
+
+exports.getRatingAuditHistory = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const auditLogs = await RatingAudit.find({ targetUserId: userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      history: auditLogs,
+      total: auditLogs.length,
+    });
+  } catch (error) {
+    console.error("Error fetching rating audit history:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch audit history",
+    });
+  }
+};
+
+exports.revertToCalculatedRating = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || reason.trim().length < 20) {
+      return res.status(400).json({
+        success: false,
+        error: "Reason must be at least 20 characters",
+      });
+    }
+
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    if (!user.useModeratorRating) {
+      return res.status(400).json({
+        success: false,
+        error: "User is already using calculated rating",
+      });
+    }
+
+    const moderatorUserId = req.session.user.id;
+    const moderator = await User.findOne({ userId: moderatorUserId });
+
+    const previousRating = user.moderatorRating;
+    const calculatedRating = user.calculatedRating || user.rating;
+
+    const auditLog = new RatingAudit({
+      targetUserId: user.userId,
+      targetUserName: user.name,
+      targetUserRole: user.role,
+      previousRating: previousRating,
+      newRating: calculatedRating,
+      adjustment: calculatedRating - previousRating,
+      reason: `[REVERT TO CALCULATED] ${reason.trim()}`,
+      adjustedBy: moderator.userId,
+      adjustedByName: moderator.name,
+      adjustedByRole: moderator.role,
+      ipAddress:
+        req.headers["x-forwarded-for"] ||
+        req.connection.remoteAddress ||
+        null,
+    });
+
+    await auditLog.save();
+
+    user.useModeratorRating = false;
+    user.rating = calculatedRating;
+    user.moderatorRating = null;
+    user.moderatorAdjustmentReason = "";
+    user.adjustedBy = null;
+    user.adjustedAt = null;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Reverted to calculated rating",
+      data: {
+        userId: user.userId,
+        name: user.name,
+        previousRating: previousRating,
+        newRating: calculatedRating,
+      },
+    });
+  } catch (error) {
+    console.error("Error reverting rating:", error);
+    res.status(500).json({
+      success: false,
+      error: "Failed to revert rating",
     });
   }
 };

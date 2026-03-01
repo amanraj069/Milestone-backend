@@ -11,6 +11,7 @@ const Quiz = require("../models/Quiz");
 const Attempt = require("../models/Attempt");
 const Blog = require("../models/blog");
 const Subscription = require("../models/subscription");
+const RatingAudit = require("../models/RatingAudit");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
 // ============ PROFILE ============
@@ -1789,5 +1790,236 @@ exports.getAllFeedbacks = async (req, res) => {
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch feedbacks" });
+  }
+};
+
+// ============ RATING ADJUSTMENT ============
+
+exports.adjustUserRating = async (req, res) => {
+  try {
+    const { targetUserId } = req.params;
+    const { adjustment, reason, complaintId } = req.body;
+
+    // Validate required fields
+    if (!targetUserId || adjustment === undefined || !reason) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: targetUserId, adjustment, reason'
+      });
+    }
+
+    // Validate adjustment (must be multiple of 0.1, between -4.0 and +0.5)
+    const adjustmentNum = parseFloat(adjustment);
+    if (isNaN(adjustmentNum) || adjustmentNum < -4.0 || adjustmentNum > 0.5) {
+      return res.status(400).json({
+        success: false,
+        error: 'Adjustment must be between -4.0 and +0.5'
+      });
+    }
+
+    // Check if adjustment is multiple of 0.1
+    if (Math.abs(adjustmentNum * 10 % 1) > 0.001) {
+      return res.status(400).json({
+        success: false,
+        error: 'Adjustment must be in increments of 0.1'
+      });
+    }
+
+    // Validate reason length
+    if (reason.trim().length < 20 || reason.trim().length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be between 20 and 500 characters'
+      });
+    }
+
+    // Get target user
+    const targetUser = await User.findOne({ userId: targetUserId });
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'Target user not found'
+      });
+    }
+
+    // Get moderator info
+    const moderatorUserId = req.session.user.id;
+    const moderator = await User.findOne({ userId: moderatorUserId });
+    if (!moderator) {
+      return res.status(404).json({
+        success: false,
+        error: 'Moderator not found'
+      });
+    }
+
+    // Calculate new rating
+    const currentRating = targetUser.useModeratorRating 
+      ? targetUser.moderatorRating 
+      : (targetUser.calculatedRating || targetUser.rating);
+    
+    let newRating = currentRating + adjustmentNum;
+    
+    // Apply floor and ceiling
+    newRating = Math.max(1.0, Math.min(5.0, newRating));
+    newRating = Math.round(newRating * 10) / 10; // Round to 1 decimal
+
+    // Get IP address
+    const ipAddress = req.headers['x-forwarded-for'] || 
+                     req.connection.remoteAddress || 
+                     req.socket.remoteAddress ||
+                     null;
+
+    // Create audit log
+    const auditLog = new RatingAudit({
+      targetUserId: targetUser.userId,
+      targetUserName: targetUser.name,
+      targetUserRole: targetUser.role,
+      previousRating: currentRating,
+      newRating: newRating,
+      adjustment: adjustmentNum,
+      reason: reason.trim(),
+      relatedComplaintId: complaintId || null,
+      adjustedBy: moderator.userId,
+      adjustedByName: moderator.name,
+      adjustedByRole: moderator.role,
+      ipAddress: ipAddress
+    });
+
+    await auditLog.save();
+
+    // Update user rating
+    targetUser.moderatorRating = newRating;
+    targetUser.useModeratorRating = true;
+    targetUser.moderatorAdjustmentReason = reason.trim();
+    targetUser.adjustedBy = moderator.userId;
+    targetUser.adjustedAt = new Date();
+    targetUser.rating = newRating; // Update display rating
+
+    await targetUser.save();
+
+    res.json({
+      success: true,
+      message: 'Rating adjusted successfully',
+      data: {
+        userId: targetUser.userId,
+        name: targetUser.name,
+        previousRating: currentRating,
+        newRating: newRating,
+        adjustment: adjustmentNum,
+        adjustedBy: moderator.name,
+        adjustedAt: targetUser.adjustedAt,
+        auditId: auditLog.auditId
+      }
+    });
+
+  } catch (error) {
+    console.error('Error adjusting user rating:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to adjust rating'
+    });
+  }
+};
+
+exports.getRatingAuditHistory = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const auditLogs = await RatingAudit.find({ targetUserId: userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      history: auditLogs,
+      total: auditLogs.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching rating audit history:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch audit history'
+    });
+  }
+};
+
+exports.revertToCalculatedRating = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || reason.trim().length < 20) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reason must be at least 20 characters'
+      });
+    }
+
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    if (!user.useModeratorRating) {
+      return res.status(400).json({
+        success: false,
+        error: 'User is already using calculated rating'
+      });
+    }
+
+    const moderatorUserId = req.session.user.id;
+    const moderator = await User.findOne({ userId: moderatorUserId });
+
+    const previousRating = user.moderatorRating;
+    const calculatedRating = user.calculatedRating || user.rating;
+
+    // Create audit log for reversion
+    const auditLog = new RatingAudit({
+      targetUserId: user.userId,
+      targetUserName: user.name,
+      targetUserRole: user.role,
+      previousRating: previousRating,
+      newRating: calculatedRating,
+      adjustment: calculatedRating - previousRating,
+      reason: `[REVERT TO CALCULATED] ${reason.trim()}`,
+      adjustedBy: moderator.userId,
+      adjustedByName: moderator.name,
+      adjustedByRole: moderator.role,
+      ipAddress: req.headers['x-forwarded-for'] || req.connection.remoteAddress || null
+    });
+
+    await auditLog.save();
+
+    // Revert to calculated rating
+    user.useModeratorRating = false;
+    user.rating = calculatedRating;
+    user.moderatorRating = null;
+    user.moderatorAdjustmentReason = '';
+    user.adjustedBy = null;
+    user.adjustedAt = null;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Reverted to calculated rating',
+      data: {
+        userId: user.userId,
+        name: user.name,
+        previousRating: previousRating,
+        newRating: calculatedRating
+      }
+    });
+
+  } catch (error) {
+    console.error('Error reverting rating:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to revert rating'
+    });
   }
 };
