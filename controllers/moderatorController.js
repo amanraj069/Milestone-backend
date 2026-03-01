@@ -6,6 +6,7 @@ const JobApplication = require("../models/job_application");
 const Freelancer = require("../models/freelancer");
 const Employer = require("../models/employer");
 const RatingAudit = require("../models/RatingAudit");
+const Blog = require("../models/blog");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
 // Get moderator profile data
@@ -406,6 +407,10 @@ exports.getDashboardStats = async (req, res) => {
       status: "completed",
     });
 
+    // Calculate total read time from all blogs
+    const blogs = await Blog.find({}, 'readTime').lean();
+    const totalReadTime = blogs.reduce((sum, blog) => sum + (blog.readTime || 0), 0);
+
     // Calculate uptime percentage (mock calculation)
     const uptime = 98;
 
@@ -416,6 +421,7 @@ exports.getDashboardStats = async (req, res) => {
         activeJobs,
         completedTasks,
         uptime,
+        totalReadTime,
       },
     });
   } catch (error) {

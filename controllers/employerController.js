@@ -26,9 +26,22 @@ exports.getJobListings = async (req, res) => {
       postedDate: -1,
     });
 
+    // Add application count for each job
+    const jobListingsWithCount = await Promise.all(
+      jobListings.map(async (job) => {
+        const applicationCount = await JobApplication.countDocuments({
+          jobId: job.jobId,
+        });
+        return {
+          ...job.toObject(),
+          applicationCount,
+        };
+      })
+    );
+
     return res.json({
       success: true,
-      data: jobListings,
+      data: jobListingsWithCount,
     });
   } catch (error) {
     console.error("Get job listings error:", error);
