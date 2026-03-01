@@ -98,11 +98,24 @@ exports.createFeedback = async (req, res) => {
     if (allFeedbacksForUser.length > 0) {
       const totalRating = allFeedbacksForUser.reduce((sum, fb) => sum + fb.rating, 0);
       const averageRating = totalRating / allFeedbacksForUser.length;
+      const roundedAverage = parseFloat(averageRating.toFixed(1));
       
-      // Update the user's rating in User model
+      // Get user to check if moderator rating is active
+      const user = await User.findOne({ userId: toUserId });
+      
+      // Always update calculatedRating
+      const updateData = {
+        calculatedRating: roundedAverage
+      };
+      
+      // Only update display rating if moderator override is not active
+      if (!user?.useModeratorRating) {
+        updateData.rating = roundedAverage;
+      }
+      
       await User.findOneAndUpdate(
         { userId: toUserId },
-        { rating: parseFloat(averageRating.toFixed(1)) },
+        updateData,
         { new: true }
       );
     }

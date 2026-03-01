@@ -140,5 +140,23 @@ router.post(
   requireModerator,
   moderatorController.rejectEmployer,
 );
+// Rating adjustment routes
+router.put(
+  "/users/:targetUserId/rating",
+  requireModerator,
+  moderatorController.adjustUserRating,
+);
+
+router.get(
+  "/users/:userId/rating-history",
+  requireModerator,
+  moderatorController.getRatingAuditHistory,
+);
+
+router.post(
+  "/users/:userId/revert-rating",
+  requireModerator,
+  moderatorController.revertToCalculatedRating,
+);
 
 module.exports = router;

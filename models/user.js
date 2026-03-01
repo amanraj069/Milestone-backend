@@ -48,6 +48,12 @@ const userSchema = new Schema(
     isApproved: { type: Boolean, default: true }, // false for new employers until approved by moderator
     isRejected: { type: Boolean, default: false }, // true when moderator rejects an employer
     rating: { type: Number, min: 1, max: 5, default: 4.5 },
+    calculatedRating: { type: Number, min: 1, max: 5, default: null },
+    moderatorRating: { type: Number, min: 1, max: 5, default: null },
+    useModeratorRating: { type: Boolean, default: false },
+    moderatorAdjustmentReason: { type: String, default: "" },
+    adjustedBy: { type: String, default: null },
+    adjustedAt: { type: Date, default: null },
     lastCoverMessage: { type: String, default: "" },
   },
   { timestamps: true },

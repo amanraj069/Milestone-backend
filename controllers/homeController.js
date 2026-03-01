@@ -49,6 +49,7 @@ exports.getPublicJobs = async (req, res) => {
 
     const formattedJobs = jobs.map((job) => ({
       jobId: job.jobId,
+      employerId: job.employerId,
       title: job.title,
       imageUrl: job.imageUrl || "/assets/company_logo.jpg",
       budget: {
@@ -218,3 +219,63 @@ exports.getFreelancerPublicProfile = async (req, res) => {
     });
   }
 };
+
+// Get all applicants for a specific job (Public)
+exports.getJobApplicants = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+
+    // Check if job exists
+    const job = await JobListing.findOne({ jobId }).lean();
+    if (!job) {
+      return res.status(404).json({
+        success: false,
+        error: "Job listing not found",
+      });
+    }
+
+    // Get all applications for this job
+    const applications = await JobApplication.find({ jobId }).lean();
+
+    // Get user details for all applicants using roleId (freelancerId)
+    const freelancerIds = applications.map((app) => app.freelancerId);
+    const users = await User.find({ roleId: { $in: freelancerIds } })
+      .select("roleId name email picture phone rating")
+      .lean();
+
+    // Combine application data with user details
+    const applicantsWithDetails = applications.map((app) => {
+      const user = users.find((u) => u.roleId === app.freelancerId);
+      return {
+        applicationId: app.applicationId,
+        freelancerId: app.freelancerId,
+        name: user?.name || "Unknown",
+        email: user?.email || "N/A",
+        picture: user?.picture || "/assets/default-avatar.png",
+        phone: user?.phone || "N/A",
+        rating: user?.rating || 0,
+        appliedDate: app.appliedDate,
+        status: app.status,
+        coverMessage: app.coverMessage,
+        resumeLink: app.resumeLink,
+      };
+    });
+
+    res.json({
+      success: true,
+      job: {
+        jobId: job.jobId,
+        title: job.title,
+      },
+      applicants: applicantsWithDetails,
+      total: applicantsWithDetails.length,
+    });
+  } catch (error) {
+    console.error("Error fetching job applicants:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch job applicants",
+    });
+  }
+};
+
