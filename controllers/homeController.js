@@ -104,9 +104,8 @@ exports.getJobDetail = async (req, res) => {
     let hasApplied = false;
     if (req.session?.user && req.session.user.role === "Freelancer") {
       const freelancerId = req.session.user.roleId;
-      hasApplied =
-        job.applications?.some((app) => app.freelancerId === freelancerId) ||
-        false;
+      const existing = await JobApplication.findOne({ jobId, freelancerId }).lean();
+      hasApplied = !!existing;
     }
 
     // Format the job data
