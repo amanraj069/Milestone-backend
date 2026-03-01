@@ -929,3 +929,140 @@ exports.deleteJobListing = async (req, res) => {
     });
   }
 };
+
+// Get pending employer approvals (or all employers if status=all)
+exports.getPendingApprovals = async (req, res) => {
+  try {
+    const { status } = req.query; // 'pending', 'approved', or 'all'
+    
+    let query = { role: "Employer" };
+    
+    // Filter by approval status if specified
+    if (status === 'pending') {
+      query.isApproved = false;
+      query.isRejected = { $ne: true };
+    } else if (status === 'approved') {
+      query.isApproved = true;
+      query.isRejected = { $ne: true };
+    } else if (status === 'rejected') {
+      query.isRejected = true;
+    }
+    // If status === 'all', don't add isApproved filter (shows all employers)
+    
+    const users = await User.find(query).lean();
+
+    // Get employer details for each user
+    const approvals = await Promise.all(
+      users.map(async (user) => {
+        const employer = await Employer.findOne({ userId: user.userId }).lean();
+        
+        return {
+          userId: user.userId,
+          employerId: employer?.employerId || null,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          picture: user.picture,
+          location: user.location,
+          companyName: employer?.companyName || "",
+          websiteLink: employer?.websiteLink || "",
+          registeredAt: user.createdAt,
+          isApproved: user.isApproved,
+          isRejected: user.isRejected || false,
+          approvalStatus: user.isRejected ? 'Rejected' : (user.isApproved ? 'Approved' : 'Pending'),
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      pendingApprovals: approvals, // keeping the same key for backward compatibility
+      count: approvals.length,
+    });
+  } catch (error) {
+    console.error("Error fetching approvals:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch approvals",
+    });
+  }
+};
+
+// Approve an employer
+exports.approveEmployer = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findOne({ userId });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    if (user.role !== "Employer") {
+      return res.status(400).json({
+        success: false,
+        error: "User is not an employer",
+      });
+    }
+
+    user.isApproved = true;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Employer approved successfully",
+    });
+  } catch (error) {
+    console.error("Error approving employer:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to approve employer",
+    });
+  }
+};
+
+// Reject an employer (delete their account)
+exports.rejectEmployer = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findOne({ userId });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    if (user.role !== "Employer") {
+      return res.status(400).json({
+        success: false,
+        error: "User is not an employer",
+      });
+    }
+
+    // Mark user as rejected rather than deleting (so stats/history remains)
+    user.isRejected = true;
+    user.isApproved = false;
+    await user.save();
+
+    // Optionally, you may want to remove sensitive role data from employer profile
+    // but keep employer document for record. We won't delete employer here.
+
+    res.json({
+      success: true,
+      message: "Employer rejected successfully",
+    });
+  } catch (error) {
+    console.error("Error rejecting employer:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to reject employer",
+    });
+  }
+};
