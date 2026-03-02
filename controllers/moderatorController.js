@@ -161,23 +161,32 @@ exports.getAllComplaints = async (req, res) => {
     const freelancerIds = [...new Set(complaints.map((c) => c.freelancerId))];
     const employerIds = [...new Set(complaints.map((c) => c.employerId))];
 
-    // Fetch users based on roleId (complainantId could be freelancerId or employerId)
+    // Fetch users based on roleId or userId (for backward compatibility in old complaints data)
     const complainantUsers = await User.find({
-      roleId: { $in: complainantIds },
+      $or: [
+        { roleId: { $in: complainantIds } },
+        { userId: { $in: complainantIds } },
+      ],
     })
       .select("userId roleId")
       .lean();
     
     // Fetch freelancers with their ratings
     const freelancers = await User.find({
-      roleId: { $in: freelancerIds },
+      $or: [
+        { roleId: { $in: freelancerIds } },
+        { userId: { $in: freelancerIds } },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
     
     // Fetch employers with their ratings
     const employers = await User.find({
-      roleId: { $in: employerIds },
+      $or: [
+        { roleId: { $in: employerIds } },
+        { userId: { $in: employerIds } },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
@@ -185,20 +194,24 @@ exports.getAllComplaints = async (req, res) => {
     // Add complainant userId and user ratings to each complaint
     const complaintsWithUserId = complaints.map((complaint) => {
       const complainantUser = complainantUsers.find(
-        (user) => user.roleId === complaint.complainantId,
+        (user) => user.roleId === complaint.complainantId || user.userId === complaint.complainantId,
       );
       
       const freelancer = freelancers.find(
-        (user) => user.roleId === complaint.freelancerId,
+        (user) => user.roleId === complaint.freelancerId || user.userId === complaint.freelancerId,
       );
       
       const employer = employers.find(
-        (user) => user.roleId === complaint.employerId,
+        (user) => user.roleId === complaint.employerId || user.userId === complaint.employerId,
       );
       
       const result = {
         ...complaint,
-        complainantUserId: complainantUser?.userId || null,
+        complainantUserId:
+          complainantUser?.userId ||
+          (complaint.complainantType === "Freelancer"
+            ? freelancer?.userId || null
+            : employer?.userId || null),
         freelancerUserId: freelancer?.userId || null,
         freelancerRating: freelancer?.rating || null,
         freelancerEmail: freelancer?.email || null,
@@ -272,27 +285,40 @@ exports.updateComplaintStatus = async (req, res) => {
 
     // Add complainantUserId and user data for chat functionality
     const complainantUser = await User.findOne({
-      roleId: complaint.complainantId,
+      $or: [
+        { roleId: complaint.complainantId },
+        { userId: complaint.complainantId },
+      ],
     })
       .select("userId")
       .lean();
     
     // Fetch freelancer and employer ratings
     const freelancer = await User.findOne({
-      roleId: complaint.freelancerId,
+      $or: [
+        { roleId: complaint.freelancerId },
+        { userId: complaint.freelancerId },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
     
     const employer = await User.findOne({
-      roleId: complaint.employerId,
+      $or: [
+        { roleId: complaint.employerId },
+        { userId: complaint.employerId },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
 
     const complaintWithUserId = {
       ...complaint,
-      complainantUserId: complainantUser?.userId || null,
+      complainantUserId:
+        complainantUser?.userId ||
+        (complaint.complainantType === "Freelancer"
+          ? freelancer?.userId || null
+          : employer?.userId || null),
       freelancerUserId: freelancer?.userId || null,
       freelancerRating: freelancer?.rating || null,
       freelancerEmail: freelancer?.email || null,
