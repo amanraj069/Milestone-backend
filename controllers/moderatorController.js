@@ -161,23 +161,32 @@ exports.getAllComplaints = async (req, res) => {
     const freelancerIds = [...new Set(complaints.map((c) => c.freelancerId))];
     const employerIds = [...new Set(complaints.map((c) => c.employerId))];
 
-    // Fetch users based on roleId (complainantId could be freelancerId or employerId)
+    // Fetch users based on roleId or userId (for backward compatibility in old complaints data)
     const complainantUsers = await User.find({
-      roleId: { $in: complainantIds },
+      $or: [
+        { roleId: { $in: complainantIds } },
+        { userId: { $in: complainantIds } },
+      ],
     })
       .select("userId roleId")
       .lean();
     
     // Fetch freelancers with their ratings
     const freelancers = await User.find({
-      roleId: { $in: freelancerIds },
+      $or: [
+        { roleId: { $in: freelancerIds } },
+        { userId: { $in: freelancerIds } },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
     
     // Fetch employers with their ratings
     const employers = await User.find({
-      roleId: { $in: employerIds },
+      $or: [
+        { roleId: { $in: employerIds } },
+        { userId: { $in: employerIds } },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
@@ -185,20 +194,24 @@ exports.getAllComplaints = async (req, res) => {
     // Add complainant userId and user ratings to each complaint
     const complaintsWithUserId = complaints.map((complaint) => {
       const complainantUser = complainantUsers.find(
-        (user) => user.roleId === complaint.complainantId,
+        (user) => user.roleId === complaint.complainantId || user.userId === complaint.complainantId,
       );
       
       const freelancer = freelancers.find(
-        (user) => user.roleId === complaint.freelancerId,
+        (user) => user.roleId === complaint.freelancerId || user.userId === complaint.freelancerId,
       );
       
       const employer = employers.find(
-        (user) => user.roleId === complaint.employerId,
+        (user) => user.roleId === complaint.employerId || user.userId === complaint.employerId,
       );
       
       const result = {
         ...complaint,
-        complainantUserId: complainantUser?.userId || null,
+        complainantUserId:
+          complainantUser?.userId ||
+          (complaint.complainantType === "Freelancer"
+            ? freelancer?.userId || null
+            : employer?.userId || null),
         freelancerUserId: freelancer?.userId || null,
         freelancerRating: freelancer?.rating || null,
         freelancerEmail: freelancer?.email || null,
@@ -272,27 +285,40 @@ exports.updateComplaintStatus = async (req, res) => {
 
     // Add complainantUserId and user data for chat functionality
     const complainantUser = await User.findOne({
-      roleId: complaint.complainantId,
+      $or: [
+        { roleId: complaint.complainantId },
+        { userId: complaint.complainantId },
+      ],
     })
       .select("userId")
       .lean();
     
     // Fetch freelancer and employer ratings
     const freelancer = await User.findOne({
-      roleId: complaint.freelancerId,
+      $or: [
+        { roleId: complaint.freelancerId },
+        { userId: complaint.freelancerId },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
     
     const employer = await User.findOne({
-      roleId: complaint.employerId,
+      $or: [
+        { roleId: complaint.employerId },
+        { userId: complaint.employerId },
+      ],
     })
       .select("userId roleId rating email")
       .lean();
 
     const complaintWithUserId = {
       ...complaint,
-      complainantUserId: complainantUser?.userId || null,
+      complainantUserId:
+        complainantUser?.userId ||
+        (complaint.complainantType === "Freelancer"
+          ? freelancer?.userId || null
+          : employer?.userId || null),
       freelancerUserId: freelancer?.userId || null,
       freelancerRating: freelancer?.rating || null,
       freelancerEmail: freelancer?.email || null,
@@ -983,7 +1009,149 @@ exports.deleteJobListing = async (req, res) => {
   }
 };
 
-//RATING ADJUSTMENT (Moderator)
+// ============================================
+// EMPLOYER APPROVAL SYSTEM (Moderator)
+// ============================================
+
+// Get pending employer approvals (or all employers if status=all)
+exports.getPendingApprovals = async (req, res) => {
+  try {
+    const { status } = req.query; // 'pending', 'approved', or 'all'
+    
+    let query = { role: "Employer" };
+    
+    // Filter by approval status if specified
+    if (status === 'pending') {
+      query.isApproved = false;
+      query.isRejected = { $ne: true };
+    } else if (status === 'approved') {
+      query.isApproved = true;
+      query.isRejected = { $ne: true };
+    } else if (status === 'rejected') {
+      query.isRejected = true;
+    }
+    // If status === 'all', don't add isApproved filter (shows all employers)
+    
+    const users = await User.find(query).lean();
+
+    // Get employer details for each user
+    const approvals = await Promise.all(
+      users.map(async (user) => {
+        const employer = await Employer.findOne({ userId: user.userId }).lean();
+        
+        return {
+          userId: user.userId,
+          employerId: employer?.employerId || null,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          picture: user.picture,
+          location: user.location,
+          companyName: employer?.companyName || "",
+          websiteLink: employer?.websiteLink || "",
+          registeredAt: user.createdAt,
+          isApproved: user.isApproved,
+          isRejected: user.isRejected || false,
+          approvalStatus: user.isRejected ? 'Rejected' : (user.isApproved ? 'Approved' : 'Pending'),
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      pendingApprovals: approvals, // keeping the same key for backward compatibility
+      count: approvals.length,
+    });
+  } catch (error) {
+    console.error("Error fetching approvals:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch approvals",
+    });
+  }
+};
+
+// Approve an employer
+exports.approveEmployer = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findOne({ userId });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    if (user.role !== "Employer") {
+      return res.status(400).json({
+        success: false,
+        error: "User is not an employer",
+      });
+    }
+
+    user.isApproved = true;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Employer approved successfully",
+    });
+  } catch (error) {
+    console.error("Error approving employer:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to approve employer",
+    });
+  }
+};
+
+// Reject an employer (delete their account)
+exports.rejectEmployer = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findOne({ userId });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    if (user.role !== "Employer") {
+      return res.status(400).json({
+        success: false,
+        error: "User is not an employer",
+      });
+    }
+
+    // Mark user as rejected rather than deleting (so stats/history remains)
+    user.isRejected = true;
+    user.isApproved = false;
+    await user.save();
+
+    // Optionally, you may want to remove sensitive role data from employer profile
+    // but keep employer document for record. We won't delete employer here.
+
+    res.json({
+      success: true,
+      message: "Employer rejected successfully",
+    });
+  } catch (error) {
+    console.error("Error rejecting employer:", error.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to reject employer",
+    });
+  }
+};
+
+// ============================================
+// RATING ADJUSTMENT SYSTEM (Moderator)
+// ============================================
 
 exports.adjustUserRating = async (req, res) => {
   try {

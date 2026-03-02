@@ -740,7 +740,7 @@ exports.getWorkHistory = async (req, res) => {
       roleId: { $in: freelancerIds },
       role: "Freelancer"
     })
-      .select("userId roleId name email phone picture rating")
+      .select("userId roleId name email phone picture rating location")
       .lean();
 
     console.log('Work history - users by roleId found:', usersByRoleId.length);
@@ -765,6 +765,7 @@ exports.getWorkHistory = async (req, res) => {
         name: user?.name || "Unknown",
         email: user?.email || "",
         phone: user?.phone || "",
+        location: user?.location || "",
         picture: user?.picture || "",
         rating: user?.rating || 0,
         jobId: job.jobId,
