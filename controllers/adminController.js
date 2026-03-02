@@ -874,6 +874,12 @@ exports.getModeratorActivity = async (req, res) => {
           priority: c.priority,
           createdAt: c.createdAt,
           updatedAt: c.updatedAt,
+          complainantName: c.complainantName,
+          complainantType: c.complainantType,
+          freelancerName: c.freelancerName,
+          employerName: c.employerName,
+          jobTitle: c.jobTitle,
+          complaintType: c.complaintType,
         })),
       },
     });
@@ -919,10 +925,48 @@ exports.getAllUsers = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    const userIds = users.map((u) => u.userId);
+    const [freelancers, employers, moderators] = await Promise.all([
+      Freelancer.find({ userId: { $in: userIds } })
+        .select("userId freelancerId")
+        .lean(),
+      Employer.find({ userId: { $in: userIds } })
+        .select("userId employerId")
+        .lean(),
+      Moderator.find({ userId: { $in: userIds } })
+        .select("userId moderatorId")
+        .lean(),
+    ]);
+    const flMap = Object.fromEntries(
+      freelancers.map((f) => [f.userId, f.freelancerId]),
+    );
+    const empMap = Object.fromEntries(
+      employers.map((e) => [e.userId, e.employerId]),
+    );
+    const modMap = Object.fromEntries(
+      moderators.map((m) => [m.userId, m.moderatorId]),
+    );
+
+    const usersWithRoleId = users.map((u) => {
+      let roleId = null;
+      let profilePath = null;
+      if (u.role === "Freelancer" && flMap[u.userId]) {
+        roleId = flMap[u.userId];
+        profilePath = `/admin/freelancers/${roleId}`;
+      } else if (u.role === "Employer" && empMap[u.userId]) {
+        roleId = empMap[u.userId];
+        profilePath = `/admin/employers/${roleId}`;
+      } else if (u.role === "Moderator" && modMap[u.userId]) {
+        roleId = modMap[u.userId];
+        profilePath = `/admin/moderators/${roleId}`;
+      }
+      return { ...u, roleId, profilePath };
+    });
+
     res.json({
       success: true,
-      users,
-      total: users.length,
+      users: usersWithRoleId,
+      total: usersWithRoleId.length,
     });
   } catch (error) {
     console.error("Error fetching all users:", error.message);
@@ -1264,6 +1308,214 @@ exports.getAllEmployers = async (req, res) => {
     res
       .status(500)
       .json({ success: false, error: "Failed to fetch employers" });
+  }
+};
+
+// ============ FREELANCER / EMPLOYER DETAIL ============
+
+exports.getFreelancerDetail = async (req, res) => {
+  try {
+    const { freelancerId } = req.params;
+    const freelancer = await Freelancer.findOne({ freelancerId }).lean();
+    if (!freelancer)
+      return res
+        .status(404)
+        .json({ success: false, error: "Freelancer not found" });
+
+    const user = await User.findOne({ userId: freelancer.userId })
+      .select(
+        "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate aboutMe",
+      )
+      .lean();
+
+    const applications = await JobApplication.find({ freelancerId }).lean();
+    const jobIds = applications.map((a) => a.jobId);
+    const jobs = await JobListing.find({ jobId: { $in: jobIds } })
+      .select("jobId title budget status employerId postedDate")
+      .lean();
+    const empIds = jobs.map((j) => j.employerId);
+    const empDocs = await Employer.find({ employerId: { $in: empIds } })
+      .select("employerId companyName userId")
+      .lean();
+    const empUserIds = empDocs.map((e) => e.userId);
+    const empUsers = await User.find({ userId: { $in: empUserIds } })
+      .select("userId name")
+      .lean();
+
+    const activeJob = await JobListing.findOne({
+      "assignedFreelancer.freelancerId": freelancerId,
+      "assignedFreelancer.status": "working",
+    })
+      .select("jobId title employerId")
+      .lean();
+
+    const applicationsWithDetails = applications.map((app) => {
+      const job = jobs.find((j) => j.jobId === app.jobId);
+      const emp = empDocs.find((e) => e.employerId === job?.employerId);
+      const empUser = empUsers.find((u) => u.userId === emp?.userId);
+      return {
+        applicationId: app.applicationId,
+        jobTitle: job?.title || "N/A",
+        companyName: emp?.companyName || "N/A",
+        employerName: empUser?.name || "N/A",
+        budget: job?.budget || 0,
+        status: app.status,
+        appliedDate: app.appliedDate,
+      };
+    });
+
+    const acceptedCount = applications.filter(
+      (a) => a.status === "Accepted",
+    ).length;
+    const rejectedCount = applications.filter(
+      (a) => a.status === "Rejected",
+    ).length;
+    const pendingCount = applications.filter(
+      (a) => a.status === "Pending",
+    ).length;
+
+    res.json({
+      success: true,
+      freelancer: {
+        freelancerId: freelancer.freelancerId,
+        userId: freelancer.userId,
+        name: user?.name || "N/A",
+        email: user?.email || "N/A",
+        phone: user?.phone || "N/A",
+        picture: user?.picture || "",
+        location: user?.location || "N/A",
+        aboutMe: user?.aboutMe || "",
+        rating: user?.rating || 0,
+        subscription: user?.subscription || "Basic",
+        subscriptionDuration: user?.subscriptionDuration || null,
+        subscriptionExpiryDate: user?.subscriptionExpiryDate || null,
+        joinedDate: user?.createdAt || freelancer.createdAt,
+        skills: freelancer.skills || [],
+        experience: freelancer.experience || [],
+        education: freelancer.education || [],
+        portfolio: freelancer.portfolio || [],
+        resume: freelancer.resume || "",
+        isCurrentlyWorking: !!activeJob,
+        currentJobTitle: activeJob?.title || null,
+        applicationsCount: applications.length,
+        acceptedCount,
+        rejectedCount,
+        pendingCount,
+        recentApplications: applicationsWithDetails.slice(0, 10),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching freelancer detail:", error.message);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch freelancer detail" });
+  }
+};
+
+exports.getEmployerDetail = async (req, res) => {
+  try {
+    const { employerId } = req.params;
+    const employer = await Employer.findOne({ employerId }).lean();
+    if (!employer)
+      return res
+        .status(404)
+        .json({ success: false, error: "Employer not found" });
+
+    const user = await User.findOne({ userId: employer.userId })
+      .select(
+        "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate aboutMe",
+      )
+      .lean();
+
+    const jobs = await JobListing.find({ employerId })
+      .select(
+        "jobId title budget status jobType experienceLevel postedDate applicationDeadline location assignedFreelancer",
+      )
+      .lean();
+
+    const jobIds = jobs.map((j) => j.jobId);
+    const appCounts = await JobApplication.aggregate([
+      { $match: { jobId: { $in: jobIds } } },
+      { $group: { _id: "$jobId", count: { $sum: 1 } } },
+    ]);
+    const appCountMap = {};
+    appCounts.forEach((item) => {
+      appCountMap[item._id] = item.count;
+    });
+
+    const currentFLIds = (employer.currentFreelancers || []).map(
+      (f) => f.freelancerId,
+    );
+    const pastFLIds = employer.previouslyWorkedFreelancers || [];
+    const allFLIds = [...new Set([...currentFLIds, ...pastFLIds])];
+
+    const flDocs = await Freelancer.find({ freelancerId: { $in: allFLIds } })
+      .select("freelancerId userId")
+      .lean();
+    const flUserIds = flDocs.map((f) => f.userId);
+    const flUsers = await User.find({ userId: { $in: flUserIds } })
+      .select("userId name email picture rating")
+      .lean();
+
+    const buildFL = (id) => {
+      const fl = flDocs.find((f) => f.freelancerId === id);
+      const u = flUsers.find((u) => u.userId === fl?.userId);
+      const currentEntry = (employer.currentFreelancers || []).find(
+        (f) => f.freelancerId === id,
+      );
+      return {
+        freelancerId: id,
+        name: u?.name || "N/A",
+        email: u?.email || "",
+        picture: u?.picture || "",
+        rating: u?.rating || 0,
+        startDate: currentEntry?.startDate || null,
+      };
+    };
+
+    res.json({
+      success: true,
+      employer: {
+        employerId: employer.employerId,
+        userId: employer.userId,
+        name: user?.name || "N/A",
+        email: user?.email || "N/A",
+        phone: user?.phone || "N/A",
+        picture: user?.picture || "",
+        location: user?.location || "N/A",
+        aboutMe: user?.aboutMe || "",
+        companyName: employer.companyName || "N/A",
+        websiteLink: employer.websiteLink || "",
+        rating: user?.rating || 0,
+        subscription: user?.subscription || "Basic",
+        subscriptionDuration: user?.subscriptionDuration || null,
+        subscriptionExpiryDate: user?.subscriptionExpiryDate || null,
+        joinedDate: user?.createdAt || employer.createdAt,
+        jobListingsCount: jobs.length,
+        currentHiresCount: currentFLIds.length,
+        pastHiresCount: pastFLIds.length,
+        jobs: jobs.map((j) => ({
+          jobId: j.jobId,
+          title: j.title,
+          budget: j.budget,
+          status: j.status,
+          jobType: j.jobType,
+          experienceLevel: j.experienceLevel,
+          location: j.location,
+          postedDate: j.postedDate,
+          applicationDeadline: j.applicationDeadline,
+          applicantsCount: appCountMap[j.jobId] || 0,
+          hasAssignedFreelancer: !!j.assignedFreelancer?.freelancerId,
+        })),
+        currentFreelancers: currentFLIds.map(buildFL),
+        pastFreelancers: pastFLIds.map(buildFL),
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching employer detail:", error.message);
+    res
+      .status(500)
+      .json({ success: false, error: "Failed to fetch employer detail" });
   }
 };
 
@@ -1804,7 +2056,7 @@ exports.adjustUserRating = async (req, res) => {
     if (!targetUserId || adjustment === undefined || !reason) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: targetUserId, adjustment, reason'
+        error: "Missing required fields: targetUserId, adjustment, reason",
       });
     }
 
@@ -1813,15 +2065,15 @@ exports.adjustUserRating = async (req, res) => {
     if (isNaN(adjustmentNum) || adjustmentNum < -4.0 || adjustmentNum > 0.5) {
       return res.status(400).json({
         success: false,
-        error: 'Adjustment must be between -4.0 and +0.5'
+        error: "Adjustment must be between -4.0 and +0.5",
       });
     }
 
     // Check if adjustment is multiple of 0.1
-    if (Math.abs(adjustmentNum * 10 % 1) > 0.001) {
+    if (Math.abs((adjustmentNum * 10) % 1) > 0.001) {
       return res.status(400).json({
         success: false,
-        error: 'Adjustment must be in increments of 0.1'
+        error: "Adjustment must be in increments of 0.1",
       });
     }
 
@@ -1829,7 +2081,7 @@ exports.adjustUserRating = async (req, res) => {
     if (reason.trim().length < 20 || reason.trim().length > 500) {
       return res.status(400).json({
         success: false,
-        error: 'Reason must be between 20 and 500 characters'
+        error: "Reason must be between 20 and 500 characters",
       });
     }
 
@@ -1838,7 +2090,7 @@ exports.adjustUserRating = async (req, res) => {
     if (!targetUser) {
       return res.status(404).json({
         success: false,
-        error: 'Target user not found'
+        error: "Target user not found",
       });
     }
 
@@ -1848,26 +2100,27 @@ exports.adjustUserRating = async (req, res) => {
     if (!moderator) {
       return res.status(404).json({
         success: false,
-        error: 'Moderator not found'
+        error: "Moderator not found",
       });
     }
 
     // Calculate new rating
-    const currentRating = targetUser.useModeratorRating 
-      ? targetUser.moderatorRating 
-      : (targetUser.calculatedRating || targetUser.rating);
-    
+    const currentRating = targetUser.useModeratorRating
+      ? targetUser.moderatorRating
+      : targetUser.calculatedRating || targetUser.rating;
+
     let newRating = currentRating + adjustmentNum;
-    
+
     // Apply floor and ceiling
     newRating = Math.max(1.0, Math.min(5.0, newRating));
     newRating = Math.round(newRating * 10) / 10; // Round to 1 decimal
 
     // Get IP address
-    const ipAddress = req.headers['x-forwarded-for'] || 
-                     req.connection.remoteAddress || 
-                     req.socket.remoteAddress ||
-                     null;
+    const ipAddress =
+      req.headers["x-forwarded-for"] ||
+      req.connection.remoteAddress ||
+      req.socket.remoteAddress ||
+      null;
 
     // Create audit log
     const auditLog = new RatingAudit({
@@ -1882,7 +2135,7 @@ exports.adjustUserRating = async (req, res) => {
       adjustedBy: moderator.userId,
       adjustedByName: moderator.name,
       adjustedByRole: moderator.role,
-      ipAddress: ipAddress
+      ipAddress: ipAddress,
     });
 
     await auditLog.save();
@@ -1899,7 +2152,7 @@ exports.adjustUserRating = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Rating adjusted successfully',
+      message: "Rating adjusted successfully",
       data: {
         userId: targetUser.userId,
         name: targetUser.name,
@@ -1908,15 +2161,14 @@ exports.adjustUserRating = async (req, res) => {
         adjustment: adjustmentNum,
         adjustedBy: moderator.name,
         adjustedAt: targetUser.adjustedAt,
-        auditId: auditLog.auditId
-      }
+        auditId: auditLog.auditId,
+      },
     });
-
   } catch (error) {
-    console.error('Error adjusting user rating:', error);
+    console.error("Error adjusting user rating:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to adjust rating'
+      error: "Failed to adjust rating",
     });
   }
 };
@@ -1924,7 +2176,7 @@ exports.adjustUserRating = async (req, res) => {
 exports.getRatingAuditHistory = async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
     const auditLogs = await RatingAudit.find({ targetUserId: userId })
       .sort({ createdAt: -1 })
       .lean();
@@ -1932,14 +2184,13 @@ exports.getRatingAuditHistory = async (req, res) => {
     res.json({
       success: true,
       history: auditLogs,
-      total: auditLogs.length
+      total: auditLogs.length,
     });
-
   } catch (error) {
-    console.error('Error fetching rating audit history:', error);
+    console.error("Error fetching rating audit history:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch audit history'
+      error: "Failed to fetch audit history",
     });
   }
 };
@@ -1952,7 +2203,7 @@ exports.revertToCalculatedRating = async (req, res) => {
     if (!reason || reason.trim().length < 20) {
       return res.status(400).json({
         success: false,
-        error: 'Reason must be at least 20 characters'
+        error: "Reason must be at least 20 characters",
       });
     }
 
@@ -1960,14 +2211,14 @@ exports.revertToCalculatedRating = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: 'User not found'
+        error: "User not found",
       });
     }
 
     if (!user.useModeratorRating) {
       return res.status(400).json({
         success: false,
-        error: 'User is already using calculated rating'
+        error: "User is already using calculated rating",
       });
     }
 
@@ -1989,7 +2240,8 @@ exports.revertToCalculatedRating = async (req, res) => {
       adjustedBy: moderator.userId,
       adjustedByName: moderator.name,
       adjustedByRole: moderator.role,
-      ipAddress: req.headers['x-forwarded-for'] || req.connection.remoteAddress || null
+      ipAddress:
+        req.headers["x-forwarded-for"] || req.connection.remoteAddress || null,
     });
 
     await auditLog.save();
@@ -1998,7 +2250,7 @@ exports.revertToCalculatedRating = async (req, res) => {
     user.useModeratorRating = false;
     user.rating = calculatedRating;
     user.moderatorRating = null;
-    user.moderatorAdjustmentReason = '';
+    user.moderatorAdjustmentReason = "";
     user.adjustedBy = null;
     user.adjustedAt = null;
 
@@ -2006,20 +2258,19 @@ exports.revertToCalculatedRating = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Reverted to calculated rating',
+      message: "Reverted to calculated rating",
       data: {
         userId: user.userId,
         name: user.name,
         previousRating: previousRating,
-        newRating: calculatedRating
-      }
+        newRating: calculatedRating,
+      },
     });
-
   } catch (error) {
-    console.error('Error reverting rating:', error);
+    console.error("Error reverting rating:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to revert rating'
+      error: "Failed to revert rating",
     });
   }
 };
