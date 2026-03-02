@@ -122,6 +122,24 @@ router.delete(
   moderatorController.deleteJobListing,
 );
 
+// Employer Approval routes
+router.get(
+  "/approvals/pending",
+  requireModerator,
+  moderatorController.getPendingApprovals,
+);
+
+router.post(
+  "/approvals/:userId/approve",
+  requireModerator,
+  moderatorController.approveEmployer,
+);
+
+router.post(
+  "/approvals/:userId/reject",
+  requireModerator,
+  moderatorController.rejectEmployer,
+);
 // Rating adjustment routes
 router.put(
   "/users/:targetUserId/rating",
