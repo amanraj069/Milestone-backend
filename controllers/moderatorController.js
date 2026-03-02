@@ -435,6 +435,51 @@ exports.getDashboardStats = async (req, res) => {
     // Calculate uptime percentage (mock calculation)
     const uptime = 98;
 
+    // Calculate average user rating (across users that have a rating)
+    // Calculate average rating separately for freelancers and employers, then combine
+    const freelancerRatingAgg = await User.aggregate([
+      { $match: { role: 'Freelancer', rating: { $exists: true, $ne: null } } },
+      { $group: { _id: null, avgRating: { $avg: '$rating' } } },
+    ]);
+    const employerRatingAgg = await User.aggregate([
+      { $match: { role: 'Employer', rating: { $exists: true, $ne: null } } },
+      { $group: { _id: null, avgRating: { $avg: '$rating' } } },
+    ]);
+
+    const avgFreelancerRating = freelancerRatingAgg && freelancerRatingAgg[0] && freelancerRatingAgg[0].avgRating
+      ? Number(freelancerRatingAgg[0].avgRating)
+      : null;
+    const avgEmployerRating = employerRatingAgg && employerRatingAgg[0] && employerRatingAgg[0].avgRating
+      ? Number(employerRatingAgg[0].avgRating)
+      : null;
+
+    // Combine the two averages: if both present average them, else use whichever exists, else 0
+    let avgRating = 0;
+    if (Number.isFinite(avgFreelancerRating) && Number.isFinite(avgEmployerRating)) {
+      avgRating = Number(((avgFreelancerRating + avgEmployerRating) / 2).toFixed(1));
+    } else if (Number.isFinite(avgFreelancerRating)) {
+      avgRating = Number(avgFreelancerRating.toFixed(1));
+    } else if (Number.isFinite(avgEmployerRating)) {
+      avgRating = Number(avgEmployerRating.toFixed(1));
+    } else {
+      avgRating = 0;
+    }
+
+    // Calculate success rate aligned with moderator freelancers view:
+    // successRate = (currently working freelancers / total freelancers) * 100
+    const totalFreelancers = await Freelancer.countDocuments({});
+    let currentlyWorkingCount = 0;
+    if (totalFreelancers > 0) {
+      const activeJobsForFreelancers = await JobListing.find({
+        'assignedFreelancer.freelancerId': { $exists: true, $ne: null },
+        'assignedFreelancer.status': 'working',
+      }).select('assignedFreelancer.freelancerId').lean();
+
+      const workingSet = new Set(activeJobsForFreelancers.map(j => j.assignedFreelancer.freelancerId));
+      currentlyWorkingCount = workingSet.size;
+    }
+    const successRate = totalFreelancers > 0 ? Math.round((currentlyWorkingCount / totalFreelancers) * 100) : 0;
+
     res.json({
       success: true,
       data: {
@@ -442,6 +487,8 @@ exports.getDashboardStats = async (req, res) => {
         activeJobs,
         completedTasks,
         uptime,
+        avgRating,
+        successRate,
       },
     });
   } catch (error) {
@@ -738,12 +785,50 @@ exports.getAllEmployers = async (req, res) => {
       jobCountMap[item._id] = item.count;
     });
 
+    // Get hired freelancers from job listings as source of truth
+    // (covers cases where Employer.currentFreelancers arrays are stale)
+    const hiredAgg = await JobListing.aggregate([
+      { $match: { employerId: { $in: empIds }, "assignedFreelancer.freelancerId": { $exists: true, $ne: null } } },
+      {
+        $group: {
+          _id: "$employerId",
+          hiredFreelancers: { $addToSet: "$assignedFreelancer.freelancerId" },
+          activeFreelancers: {
+            $addToSet: {
+              $cond: [
+                { $eq: ["$assignedFreelancer.status", "working"] },
+                "$assignedFreelancer.freelancerId",
+                null,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const hiredMap = {};
+    hiredAgg.forEach((item) => {
+      const hiredSet = (item.hiredFreelancers || []).filter(Boolean);
+      const activeSet = (item.activeFreelancers || []).filter(Boolean);
+      hiredMap[item._id] = {
+        hiredCount: hiredSet.length,
+        currentHires: activeSet.length,
+      };
+    });
+
     // Get hired freelancers count (current + previously worked)
     const employersWithDetails = employers.map((employer) => {
       const user = users.find((u) => u.userId === employer.userId);
       const isPremium = user?.subscription === "Premium";
-      const currentHires = employer.currentFreelancers?.length || 0;
-      const pastHires = employer.previouslyWorkedFreelancers?.length || 0;
+      const fallbackCurrentHires = employer.currentFreelancers?.length || 0;
+      const fallbackPastHires = employer.previouslyWorkedFreelancers?.length || 0;
+
+      const hiredFromJobs = hiredMap[employer.employerId];
+      const currentHires = hiredFromJobs ? hiredFromJobs.currentHires : fallbackCurrentHires;
+      const hiredCount = hiredFromJobs
+        ? hiredFromJobs.hiredCount
+        : fallbackCurrentHires + fallbackPastHires;
+      const pastHires = Math.max(0, hiredCount - currentHires);
 
       return {
         employerId: employer.employerId,
@@ -760,7 +845,7 @@ exports.getAllEmployers = async (req, res) => {
         subscriptionDuration: user?.subscriptionDuration || null,
         subscriptionExpiryDate: user?.subscriptionExpiryDate || null,
         jobListingsCount: jobCountMap[employer.employerId] || 0,
-        hiredCount: currentHires + pastHires,
+        hiredCount,
         currentHires,
         pastHires,
         joinedDate: user?.createdAt || employer.createdAt,
