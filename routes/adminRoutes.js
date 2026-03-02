@@ -75,13 +75,35 @@ router.get("/statistics", requireAdmin, adminController.getPlatformStats);
 router.get("/complaints", requireAdmin, adminController.getAllComplaints);
 
 // Rating Adjustments
-router.put("/users/:targetUserId/rating", requireAdmin, adminController.adjustUserRating);
-router.get("/users/:userId/rating-history", requireAdmin, adminController.getRatingAuditHistory);
-router.post("/users/:userId/revert-rating", requireAdmin, adminController.revertToCalculatedRating);
+router.put(
+  "/users/:targetUserId/rating",
+  requireAdmin,
+  adminController.adjustUserRating,
+);
+router.get(
+  "/users/:userId/rating-history",
+  requireAdmin,
+  adminController.getRatingAuditHistory,
+);
+router.post(
+  "/users/:userId/revert-rating",
+  requireAdmin,
+  adminController.revertToCalculatedRating,
+);
 
 // Freelancers & Employers
 router.get("/freelancers", requireAdmin, adminController.getAllFreelancers);
+router.get(
+  "/freelancers/:freelancerId",
+  requireAdmin,
+  adminController.getFreelancerDetail,
+);
 router.get("/employers", requireAdmin, adminController.getAllEmployers);
+router.get(
+  "/employers/:employerId",
+  requireAdmin,
+  adminController.getEmployerDetail,
+);
 
 // Job Listings
 router.get("/jobs", requireAdmin, adminController.getAllJobListings);
