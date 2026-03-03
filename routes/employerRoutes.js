@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const employerController = require("../controllers/employerController");
-const { uploadLocalImage } = require("../middleware/imageUpload");
+const { upload, uploadLocalImage } = require("../middleware/imageUpload");
 const { upload: uploadPdf, uploadCloud: uploadPdfCloud, uploadVerification } = require("../middleware/pdfUpload");
 const { subscriptionRateLimiter, jobApplicationRateLimiter, uploadRateLimiter, jobPostingLimiter } = require("../middleware/rateLimiter");
 const asyncHandler = require("../middleware/asyncHandler");
@@ -12,10 +12,10 @@ const requireEmployer = (req, res, next) => {
   console.log("Session role:", req.session.user?.role);
   if (!req.session.user || req.session.user.role !== "Employer") {
     console.log("Access denied for employer route");
-    console.error('UNAUTHORIZED ACCESS ATTEMPT - EMPLOYER ROUTE');
+    console.error("UNAUTHORIZED ACCESS ATTEMPT - EMPLOYER ROUTE");
     console.error(`Path: ${req.method} ${req.originalUrl}`);
-    console.error(`User: ${req.session?.user?.name || 'Not logged in'}`);
-    console.error(`Role: ${req.session?.user?.role || 'None'}`);
+    console.error(`User: ${req.session?.user?.name || "Not logged in"}`);
+    console.error(`Role: ${req.session?.user?.role || "None"}`);
     return res.status(403).json({
       success: false,
       error: "Access denied. Employer access required.",
@@ -26,82 +26,92 @@ const requireEmployer = (req, res, next) => {
 
 // Job listing routes
 router.get("/job-listings", requireEmployer, employerController.getJobListings);
+router.get(
+  "/job-listings/fee-preview",
+  requireEmployer,
+  employerController.getFeePreview,
+);
 router.post(
   "/job-listings",
   requireEmployer,
   jobPostingLimiter,
-  employerController.createJobListing
+  employerController.createJobListing,
 );
 router.put(
   "/job-listings/:jobId",
   requireEmployer,
-  employerController.updateJobListing
+  employerController.updateJobListing,
 );
 router.delete(
   "/job-listings/:jobId",
   requireEmployer,
-  employerController.deleteJobListing
+  employerController.deleteJobListing,
 );
 router.get(
   "/job-listings/:jobId",
   requireEmployer,
-  employerController.getJobById
+  employerController.getJobById,
+);
+router.post(
+  "/job-listings/:jobId/boost",
+  requireEmployer,
+  employerController.boostJobListing,
 );
 
 // Job Applications - with rate limiter
 router.get(
   "/job_applications",
   requireEmployer,
-  asyncHandler(employerController.getJobApplications)
+  asyncHandler(employerController.getJobApplications),
 );
 router.get(
   "/job_applications/api/data",
   requireEmployer,
-  asyncHandler(employerController.getJobApplicationsAPI)
+  asyncHandler(employerController.getJobApplicationsAPI),
 );
 router.post(
   "/job_applications/:applicationId/accept",
   requireEmployer,
   jobApplicationRateLimiter,
-  asyncHandler(employerController.acceptJobApplication)
+  asyncHandler(employerController.acceptJobApplication),
 );
 router.post(
   "/job_applications/:applicationId/reject",
   requireEmployer,
   jobApplicationRateLimiter,
-  asyncHandler(employerController.rejectJobApplication)
+  asyncHandler(employerController.rejectJobApplication),
 );
 
 // Subscription - with rate limiter
 router.get(
   "/subscription",
   requireEmployer,
-  asyncHandler(employerController.getSubscription)
+  asyncHandler(employerController.getSubscription),
 );
 router.post(
   "/subscription/purchase",
   requireEmployer,
   subscriptionRateLimiter,
-  asyncHandler(employerController.purchaseSubscription)
+  asyncHandler(employerController.purchaseSubscription),
 );
 router.post(
   "/upgrade_subscription",
   requireEmployer,
   subscriptionRateLimiter,
-  asyncHandler(employerController.upgradeSubscription)
+  asyncHandler(employerController.upgradeSubscription),
 );
 router.post(
   "/downgrade_subscription",
   requireEmployer,
   subscriptionRateLimiter,
-  asyncHandler(employerController.downgradeSubscription)
+  asyncHandler(employerController.downgradeSubscription),
 );
 
 // Current Freelancers and Work History
 router.get(
   "/current-freelancers",
   requireEmployer,
-  employerController.getCurrentFreelancers
+  employerController.getCurrentFreelancers,
 );
 router.get("/work-history", requireEmployer, employerController.getWorkHistory);
 
@@ -110,7 +120,7 @@ router.post("/complaints", requireEmployer, employerController.createComplaint);
 router.get(
   "/complaints",
   requireEmployer,
-  employerController.getEmployerComplaints
+  employerController.getEmployerComplaints,
 );
 
 // Profile routes
@@ -118,13 +128,13 @@ router.get("/profile", requireEmployer, employerController.getEmployerProfile);
 router.put(
   "/profile",
   requireEmployer,
-  employerController.updateEmployerProfile
+  employerController.updateEmployerProfile,
 );
 router.post(
   "/upload-image",
   requireEmployer,
   uploadRateLimiter,
-  uploadLocalImage.single("picture"),
+  upload.single("picture"),
   employerController.uploadEmployerImage
 );
 router.get(
@@ -156,24 +166,24 @@ router.post(
 router.get(
   "/dashboard/stats",
   requireEmployer,
-  employerController.getEmployerDashboardStats
+  employerController.getEmployerDashboardStats,
 );
 
 // Transactions routes
 router.get(
   "/transactions",
   requireEmployer,
-  employerController.getTransactions
+  employerController.getTransactions,
 );
 router.get(
   "/transactions/:jobId",
   requireEmployer,
-  employerController.getTransactionDetails
+  employerController.getTransactionDetails,
 );
 router.post(
   "/transactions/:jobId/milestones/:milestoneId/pay",
   requireEmployer,
-  employerController.payMilestone
+  employerController.payMilestone,
 );
 
 module.exports = router;

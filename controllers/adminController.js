@@ -1974,22 +1974,20 @@ exports.getDashboardRevenue = async (req, res) => {
         },
         recentPlatformFees: recentFeeJobs,
         feeStructure: {
-          baseRate: 5,
+          baseRate: 2,
           description:
-            "Platform fee varies from 2% to 8% based on listing duration and applicant volume",
+            "Platform fee is 2% for standard jobs and 4% for boosted jobs, plus an application cap fee of 0%–2%",
+          range: "2.5% – 6%",
           tiers: {
-            duration: [
-              { range: "1-7 days", modifier: "+2%", label: "Rush" },
-              { range: "8-15 days", modifier: "+1%", label: "Short" },
-              { range: "16-30 days", modifier: "0%", label: "Standard" },
-              { range: "31-60 days", modifier: "-0.5%", label: "Extended" },
-              { range: "60+ days", modifier: "-1%", label: "Long-term" },
+            platform: [
+              { range: "Standard job", modifier: "2%", label: "Standard" },
+              { range: "Boosted job", modifier: "4%", label: "Boosted" },
             ],
-            applicants: [
-              { range: "1-5", modifier: "-0.5%", label: "Limited" },
-              { range: "6-15", modifier: "0%", label: "Standard" },
-              { range: "16-30", modifier: "+0.5%", label: "Moderate" },
-              { range: "30+", modifier: "+1%", label: "High" },
+            applicationCap: [
+              { range: "≤ 10 applicants", modifier: "0%", label: "Strict" },
+              { range: "≤ 25 applicants", modifier: "+0.5%", label: "Limited" },
+              { range: "≤ 50 applicants", modifier: "+1%", label: "Moderate" },
+              { range: "Unlimited", modifier: "+2%", label: "Open" },
             ],
           },
         },
