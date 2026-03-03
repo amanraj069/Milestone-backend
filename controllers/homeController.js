@@ -25,7 +25,15 @@ exports.getHome = (req, res) => {
 
 exports.getPublicJobs = async (req, res) => {
   try {
-    const jobs = await JobListing.find({ status: "open" })
+    const now = new Date();
+    const jobs = await JobListing.find({
+      status: "open",
+      $or: [
+        { applicationCap: null },
+        { applicationCap: { $exists: false } },
+        { $expr: { $lt: ["$applicants", "$applicationCap"] } },
+      ],
+    })
       .sort({ postedDate: -1 })
       .lean();
 
@@ -47,26 +55,47 @@ exports.getPublicJobs = async (req, res) => {
       subscriptionMap[emp.employerId] = user?.subscription === "Premium";
     });
 
-    const formattedJobs = jobs.map((job) => ({
-      jobId: job.jobId,
-      employerId: job.employerId,
-      title: job.title,
-      imageUrl: job.imageUrl || "/assets/company_logo.jpg",
-      budget: {
-        amount: job.budget,
-        period: job.jobType === "contract" ? "fixed" : "monthly",
-      },
-      location: job.location || "Remote",
-      jobType: job.jobType,
-      experienceLevel: job.experienceLevel,
-      remote: job.remote,
-      postedDate: job.postedDate,
-      description: {
-        skills: job.description?.skills || [],
-      },
-      applicationCount: job.applicants || 0,
-      isSponsored: subscriptionMap[job.employerId] || false,
-    }));
+    const formattedJobs = jobs.map((job) => {
+      const isPremium = subscriptionMap[job.employerId] || false;
+      // Boost is permanent for the job's lifetime (no expiry)
+      const isBoostedActive = job.isBoosted === true;
+
+      // Tier: 4 = prem+boosted, 3 = boosted, 2 = prem, 1 = normal
+      let tier = 1;
+      if (isPremium && isBoostedActive) tier = 4;
+      else if (isBoostedActive) tier = 3;
+      else if (isPremium) tier = 2;
+
+      return {
+        jobId: job.jobId,
+        employerId: job.employerId,
+        title: job.title,
+        imageUrl: job.imageUrl || "/assets/company_logo.jpg",
+        budget: {
+          amount: job.budget,
+          period: job.jobType === "contract" ? "fixed" : "monthly",
+        },
+        location: job.location || "Remote",
+        jobType: job.jobType,
+        experienceLevel: job.experienceLevel,
+        remote: job.remote,
+        postedDate: job.postedDate,
+        description: {
+          skills: job.description?.skills || [],
+        },
+        applicationCount: job.applicants || 0,
+        applicationCap: job.applicationCap || null,
+        isSponsored: isPremium, // has premium subscription
+        isBoosted: isBoostedActive, // has active boost (permanent for job lifetime)
+        tier, // for client-side sorting if needed
+      };
+    });
+
+    // Sort by tier DESC (4→1), then newest first within same tier
+    formattedJobs.sort((a, b) => {
+      if (b.tier !== a.tier) return b.tier - a.tier;
+      return new Date(b.postedDate) - new Date(a.postedDate);
+    });
 
     return res.json({ success: true, jobs: formattedJobs });
   } catch (error) {
@@ -104,7 +133,10 @@ exports.getJobDetail = async (req, res) => {
     let hasApplied = false;
     if (req.session?.user && req.session.user.role === "Freelancer") {
       const freelancerId = req.session.user.roleId;
-      const existing = await JobApplication.findOne({ jobId, freelancerId }).lean();
+      const existing = await JobApplication.findOne({
+        jobId,
+        freelancerId,
+      }).lean();
       hasApplied = !!existing;
     }
 
@@ -133,6 +165,14 @@ exports.getJobDetail = async (req, res) => {
       },
       milestones: job.milestones || [],
       applicationCount: job.applicants || 0,
+      applicationCap: job.applicationCap || null,
+      applicationCapReached: job.applicationCap
+        ? (job.applicants || 0) >= job.applicationCap
+        : false,
+      isBoosted:
+        job.isBoosted &&
+        job.boostExpiresAt &&
+        new Date(job.boostExpiresAt) > new Date(),
       questionsCount,
       hasApplied,
     };
@@ -277,4 +317,3 @@ exports.getJobApplicants = async (req, res) => {
     });
   }
 };
-
