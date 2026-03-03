@@ -482,6 +482,44 @@ exports.getJobApplicationsAPI = async (req, res) => {
   }
 };
 
+exports.getPendingApplicationsCount = async (req, res) => {
+  try {
+    const employerId = req.session?.user?.roleId;
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Employer roleId not found in session",
+      });
+    }
+
+    const jobs = await JobListing.find({ employerId }).select("jobId").lean();
+    const jobIds = jobs.map((job) => job.jobId);
+
+    if (jobIds.length === 0) {
+      return res.json({
+        success: true,
+        count: 0,
+      });
+    }
+
+    const count = await JobApplication.countDocuments({
+      jobId: { $in: jobIds },
+      status: "Pending",
+    });
+
+    return res.json({
+      success: true,
+      count,
+    });
+  } catch (error) {
+    console.error("Error fetching pending applications count:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching pending applications count: " + error.message,
+    });
+  }
+};
+
 exports.acceptJobApplication = async (req, res) => {
   try {
     const { applicationId } = req.params;

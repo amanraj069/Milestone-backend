@@ -73,6 +73,11 @@ router.get(
   requireEmployer,
   asyncHandler(employerController.getJobApplicationsAPI),
 );
+router.get(
+  "/job_applications/pending-count",
+  requireEmployer,
+  asyncHandler(employerController.getPendingApplicationsCount),
+);
 router.post(
   "/job_applications/:applicationId/accept",
   requireEmployer,
