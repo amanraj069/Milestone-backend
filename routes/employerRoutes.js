@@ -1,7 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const employerController = require("../controllers/employerController");
-const { upload } = require("../middleware/imageUpload");
+const { uploadLocalImage } = require("../middleware/imageUpload");
+const { upload: uploadPdf, uploadCloud: uploadPdfCloud, uploadVerification } = require("../middleware/pdfUpload");
 const { subscriptionRateLimiter, jobApplicationRateLimiter, uploadRateLimiter, jobPostingLimiter } = require("../middleware/rateLimiter");
 const asyncHandler = require("../middleware/asyncHandler");
 
@@ -123,8 +124,32 @@ router.post(
   "/upload-image",
   requireEmployer,
   uploadRateLimiter,
-  upload.single("picture"),
+  uploadLocalImage.single("picture"),
   employerController.uploadEmployerImage
+);
+router.get(
+  "/company-details",
+  requireEmployer,
+  employerController.getEmployerCompanyDetails
+);
+router.put(
+  "/company-details",
+  requireEmployer,
+  employerController.updateEmployerCompanyDetails
+);
+router.post(
+  "/company-details/logo/upload",
+  requireEmployer,
+  uploadRateLimiter,
+  uploadLocalImage.single("companyLogo"),
+  employerController.uploadCompanyLogo
+);
+router.post(
+  "/company-details/proof/upload",
+  requireEmployer,
+  uploadRateLimiter,
+  uploadVerification.single("proofDocument"),
+  employerController.uploadCompanyProofDocument
 );
 
 // Dashboard stats

@@ -1,68 +1,104 @@
 const multer = require('multer');
+const { Readable } = require('stream');
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary (expects env vars to be set)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Disk storage (used for resume uploads) - keep compatibility
 const path = require('path');
 const fs = require('fs');
-
-// Create uploads directory if it doesn't exist
 const uploadDir = path.join(__dirname, '..', 'uploads', 'resumes');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-// Configure disk storage for multer
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
+const diskStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
-    // Create unique filename: timestamp-randomstring-originalname
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
     cb(null, uniqueSuffix + '-' + sanitizedName);
-  }
+  },
 });
 
-// Create multer upload middleware for PDF files
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit for PDFs
+// Disk storage for verification documents
+const verificationDir = path.join(__dirname, '..', 'uploads', 'verification_doc');
+if (!fs.existsSync(verificationDir)) fs.mkdirSync(verificationDir, { recursive: true });
+
+const verificationStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, verificationDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const sanitizedName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    cb(null, uniqueSuffix + '-' + sanitizedName);
   },
+});
+
+const uploadVerification = multer({
+  storage: verificationStorage,
+  limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    // Check if file is a PDF
-    if (file.mimetype === 'application/pdf') {
+    // Accept standard PDF mimetype or files with .pdf extension (some browsers/os may set generic mimetype)
+    const nameLower = (file.originalname || '').toLowerCase();
+    if (file.mimetype === 'application/pdf' || nameLower.endsWith('.pdf') || file.mimetype === 'application/octet-stream') {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF files are allowed!'), false);
+      cb(new Error('Only PDF files are allowed for verification documents!'), false);
     }
   },
 });
 
-// Function to save PDF to local file system (replacing uploadToCloudinary since cloudinary limit reached for free tier)
-const uploadToLocalStorage = (file) => {
-  return new Promise((resolve, reject) => {
-    if (!file) {
-      reject(new Error('No file provided'));
-      return;
-    }
+// Memory storage for files that will be uploaded to Cloudinary directly
+const memoryStorage = multer.memoryStorage();
 
-    // The file is already saved by multer, just return the URL path
-    // Use absolute URL with localhost for proper access
-    const fileUrl = `/uploads/resumes/${file.filename}`;
-    
-    resolve({
-      secure_url: fileUrl,
-      url: fileUrl,
-      public_id: file.filename,
-      original_filename: file.originalname,
-      bytes: file.size,
-      format: 'pdf',
-      resource_type: 'raw'
-    });
+// Create multer upload middleware for disk-based resumes
+const upload = multer({
+  storage: diskStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Only PDF files are allowed!'), false);
+  },
+});
+
+// Create multer upload middleware for memory uploads (Cloudinary)
+const uploadCloud = multer({
+  storage: memoryStorage,
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Only PDF files are allowed!'), false);
+  },
+});
+
+// Upload buffer to Cloudinary as raw file (for PDF proof documents)
+const uploadBufferToCloudinary = (buffer, filename) => {
+  return new Promise((resolve, reject) => {
+    // Normalize public_id (strip .pdf if present) and set format: 'pdf'
+    const provided = filename ? filename.toString() : `proof_${Date.now()}`;
+    const publicIdBase = provided.replace(/\.pdf$/i, '');
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { resource_type: 'raw', folder: 'company-proofs', public_id: publicIdBase, format: 'pdf' },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+
+    const readable = new Readable();
+    readable._read = () => {};
+    readable.push(buffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
   });
 };
 
 module.exports = {
   upload,
-  uploadToCloudinary: uploadToLocalStorage, // Keep same export name for compatibility
-  uploadToLocalStorage,
+  uploadCloud,
+  uploadVerification,
+  uploadToCloudinary: uploadBufferToCloudinary,
 };

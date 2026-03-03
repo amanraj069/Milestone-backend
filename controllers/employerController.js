@@ -1160,6 +1160,18 @@ exports.getEmployerProfile = async (req, res) => {
       employer: {
         companyName: employer?.companyName || "",
         websiteLink: employer?.websiteLink || "",
+        companyDetails: employer?.companyDetails || {
+          companyName: "",
+          companyPAN: "",
+          billingAddress: "",
+          accountsPayableEmail: "",
+          taxIdentificationNumber: "",
+          proofOfAddressUrl: "",
+          officialBusinessEmail: "",
+          companyLogoUrl: "",
+          isSubmitted: false,
+          submittedAt: null,
+        },
       },
     });
   } catch (error) {
@@ -1189,7 +1201,6 @@ exports.updateEmployerProfile = async (req, res) => {
       email,
       phone,
       location,
-      companyName,
       websiteLink,
       aboutMe,
       picture,
@@ -1219,7 +1230,6 @@ exports.updateEmployerProfile = async (req, res) => {
     await Employer.findOneAndUpdate(
       { employerId },
       {
-        companyName,
         websiteLink,
       },
       { new: true, runValidators: true }
@@ -1247,6 +1257,224 @@ exports.updateEmployerProfile = async (req, res) => {
   }
 };
 
+// Get employer company verification details
+exports.getEmployerCompanyDetails = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    const employer = await Employer.findOne({ employerId }).lean();
+
+    if (!employer) {
+      return res.status(404).json({
+        success: false,
+        error: "Employer profile not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: employer.companyDetails || {
+        companyName: "",
+        companyPAN: "",
+        billingAddress: "",
+        accountsPayableEmail: "",
+        taxIdentificationNumber: "",
+        proofOfAddressUrl: "",
+        officialBusinessEmail: "",
+        companyLogoUrl: "",
+        isSubmitted: false,
+        submittedAt: null,
+      },
+      isApproved: req.session.user?.isApproved === true,
+    });
+  } catch (error) {
+    console.error("Get employer company details error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch company details",
+    });
+  }
+};
+
+// Save employer company verification details
+exports.updateEmployerCompanyDetails = async (req, res) => {
+  try {
+    const userId = req.session.user?.id;
+    const employerId = req.session.user?.roleId;
+
+    if (!userId || !employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    const user = await User.findOne({ userId }).lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    if (user.isApproved) {
+      return res.status(403).json({
+        success: false,
+        error: "Company details cannot be edited after approval",
+      });
+    }
+
+    const {
+      companyName,
+      companyPAN,
+      billingAddress,
+      accountsPayableEmail,
+      taxIdentificationNumber,
+      proofOfAddressUrl,
+      officialBusinessEmail,
+      companyLogoUrl,
+    } = req.body;
+
+    const requiredFields = [
+      companyName,
+      companyPAN,
+      billingAddress,
+      accountsPayableEmail,
+      taxIdentificationNumber,
+      proofOfAddressUrl,
+      officialBusinessEmail,
+      companyLogoUrl,
+    ];
+
+    if (requiredFields.some((value) => !String(value || "").trim())) {
+      return res.status(400).json({
+        success: false,
+        error: "All company details are required",
+      });
+    }
+
+    const updatedEmployer = await Employer.findOneAndUpdate(
+      { employerId },
+      {
+        companyName: String(companyName || "").trim(),
+        companyDetails: {
+          companyName: String(companyName || "").trim(),
+          companyPAN: String(companyPAN || "").trim(),
+          billingAddress: String(billingAddress || "").trim(),
+          accountsPayableEmail: String(accountsPayableEmail || "").trim(),
+          taxIdentificationNumber: String(taxIdentificationNumber || "").trim(),
+          proofOfAddressUrl: String(proofOfAddressUrl || "").trim(),
+          officialBusinessEmail: String(officialBusinessEmail || "").trim(),
+          companyLogoUrl: String(companyLogoUrl || "").trim(),
+          isSubmitted: true,
+          submittedAt: new Date(),
+        },
+      },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updatedEmployer) {
+      return res.status(404).json({
+        success: false,
+        error: "Employer profile not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Company details saved successfully",
+      data: updatedEmployer.companyDetails,
+    });
+  } catch (error) {
+    console.error("Update employer company details error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to update company details",
+    });
+  }
+};
+
+// Upload employer company logo
+exports.uploadCompanyLogo = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded",
+      });
+    }
+
+    // Store locally under /uploads/verification_doc
+    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
+
+    return res.json({
+      success: true,
+      imageUrl,
+      message: "Company logo uploaded successfully",
+    });
+  } catch (error) {
+    console.error("Upload company logo error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to upload company logo",
+    });
+  }
+};
+
+// Upload proof of address document (PDF)
+exports.uploadCompanyProofDocument = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded",
+      });
+    }
+
+    // The file has been written to disk by multer (uploadVerification).
+    // Return a local URL served from /uploads/verification_doc
+    console.log('Uploaded proof file:', req.file);
+    const fileUrl = `/uploads/verification_doc/${req.file.filename}`;
+
+    return res.json({
+      success: true,
+      fileUrl,
+      message: "Proof of address uploaded successfully",
+    });
+  } catch (error) {
+    console.error("Upload company proof document error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to upload proof of address",
+    });
+  }
+};
+
 // Upload employer profile image
 exports.uploadEmployerImage = async (req, res) => {
   try {
@@ -1266,11 +1494,9 @@ exports.uploadEmployerImage = async (req, res) => {
       });
     }
 
-    // Upload to cloudinary
-    const result = await uploadImageToCloudinary(req.file.buffer);
-    const imageUrl = result.secure_url;
-
     // Update user picture
+    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
+
     await User.findOneAndUpdate(
       { userId },
       { picture: imageUrl },
