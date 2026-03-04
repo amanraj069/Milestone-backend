@@ -1134,6 +1134,18 @@ exports.getPendingApprovals = async (req, res) => {
           location: user.location,
           companyName: employer?.companyName || "",
           websiteLink: employer?.websiteLink || "",
+          companyDetails: employer?.companyDetails || {
+            companyName: "",
+            companyPAN: "",
+            billingAddress: "",
+            accountsPayableEmail: "",
+            taxIdentificationNumber: "",
+            proofOfAddressUrl: "",
+            officialBusinessEmail: "",
+            companyLogoUrl: "",
+            isSubmitted: false,
+            submittedAt: null,
+          },
           registeredAt: user.createdAt,
           isApproved: user.isApproved,
           isRejected: user.isRejected || false,
@@ -1173,6 +1185,14 @@ exports.approveEmployer = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: "User is not an employer",
+      });
+    }
+
+    const employer = await Employer.findOne({ userId }).lean();
+    if (!employer?.companyDetails?.isSubmitted) {
+      return res.status(400).json({
+        success: false,
+        error: "Company verification details are not submitted yet",
       });
     }
 
