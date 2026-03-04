@@ -626,8 +626,8 @@ exports.uploadProfilePicture = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
-    const result = await uploadToCloudinary(req.file.buffer);
+    // Store image locally under /uploads/verification_doc
+    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
 
     // Update user profile picture
     const updatedUser = await User.findOneAndUpdate(
@@ -644,7 +644,7 @@ exports.uploadProfilePicture = async (req, res) => {
     }
 
     // Update session
-    req.session.user.picture = result.secure_url;
+    req.session.user.picture = imageUrl;
 
     res.json({
       success: true,
@@ -672,14 +672,14 @@ exports.uploadPortfolioImage = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
-    const result = await uploadToCloudinary(req.file.buffer);
+    // Store image locally under /uploads/verification_doc
+    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
 
     res.json({
       success: true,
       message: "Portfolio image uploaded successfully",
       data: {
-        imageUrl: result.secure_url,
+        imageUrl: imageUrl,
       },
     });
   } catch (error) {

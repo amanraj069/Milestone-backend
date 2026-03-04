@@ -1,13 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const employerController = require("../controllers/employerController");
-const { upload } = require("../middleware/imageUpload");
-const {
-  subscriptionRateLimiter,
-  jobApplicationRateLimiter,
-  uploadRateLimiter,
-  jobPostingLimiter,
-} = require("../middleware/rateLimiter");
+const { upload, uploadLocalImage } = require("../middleware/imageUpload");
+const { upload: uploadPdf, uploadCloud: uploadPdfCloud, uploadVerification } = require("../middleware/pdfUpload");
+const { subscriptionRateLimiter, jobApplicationRateLimiter, uploadRateLimiter, jobPostingLimiter } = require("../middleware/rateLimiter");
 const asyncHandler = require("../middleware/asyncHandler");
 
 // Middleware to check if user is authenticated and is an employer
@@ -144,7 +140,31 @@ router.post(
   requireEmployer,
   uploadRateLimiter,
   upload.single("picture"),
-  employerController.uploadEmployerImage,
+  employerController.uploadEmployerImage
+);
+router.get(
+  "/company-details",
+  requireEmployer,
+  employerController.getEmployerCompanyDetails
+);
+router.put(
+  "/company-details",
+  requireEmployer,
+  employerController.updateEmployerCompanyDetails
+);
+router.post(
+  "/company-details/logo/upload",
+  requireEmployer,
+  uploadRateLimiter,
+  uploadLocalImage.single("companyLogo"),
+  employerController.uploadCompanyLogo
+);
+router.post(
+  "/company-details/proof/upload",
+  requireEmployer,
+  uploadRateLimiter,
+  uploadVerification.single("proofDocument"),
+  employerController.uploadCompanyProofDocument
 );
 
 // Dashboard stats
