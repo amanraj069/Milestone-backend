@@ -6,6 +6,8 @@ const JobApplication = require("../models/job_application");
 const Freelancer = require("../models/freelancer");
 const Employer = require("../models/employer");
 const RatingAudit = require("../models/RatingAudit");
+const Notification = require("../models/Notification");
+const { v4: uuidv4 } = require("uuid");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
 // Get moderator profile data
@@ -1349,6 +1351,32 @@ exports.adjustUserRating = async (req, res) => {
 
     await targetUser.save();
 
+    //Send notification to the affected user
+    try {
+      const direction = adjustmentNum < 0 ? 'decreased' : 'increased';
+      const notification = new Notification({
+        notificationId: uuidv4(),
+        userId: targetUser.userId,
+        type: 'rating_adjusted',
+        title: `Your rating has been ${direction}`,
+        message: `Your rating has been ${direction} from ${currentRating} to ${newRating}. Reason: ${reason.trim()}`,
+        jobId: null,
+        questionId: null,
+        fromUserId: moderator.userId,
+        fromUserName: moderator.name,
+        read: false,
+      });
+
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${targetUser.userId}`).emit('notification:new', notification);
+      }
+    } catch (notifErr) {
+      console.error('Error sending rating adjustment notification:', notifErr);
+    }
+
     res.json({
       success: true,
       message: "Rating adjusted successfully",
@@ -1454,6 +1482,31 @@ exports.revertToCalculatedRating = async (req, res) => {
     user.adjustedAt = null;
 
     await user.save();
+
+    //Send notification to the affected user
+    try {
+      const notification = new Notification({
+        notificationId: uuidv4(),
+        userId: user.userId,
+        type: 'rating_adjusted',
+        title: 'Your rating has been reverted',
+        message: `Your rating has been reverted from ${previousRating} to the calculated value (${calculatedRating}). Reason: ${reason.trim()}`,
+        jobId: null,
+        questionId: null,
+        fromUserId: moderator.userId,
+        fromUserName: moderator.name,
+        read: false,
+      });
+
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${user.userId}`).emit('notification:new', notification);
+      }
+    } catch (notifErr) {
+      console.error('Error sending rating revert notification:', notifErr);
+    }
 
     res.json({
       success: true,

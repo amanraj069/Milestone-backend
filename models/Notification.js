@@ -16,7 +16,7 @@ const notificationSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["question_posted", "question_answered"],
+      enum: ["question_posted", "question_answered", "rating_received", "rating_adjusted"],
       required: true,
     },
     title: {
@@ -30,12 +30,12 @@ const notificationSchema = new Schema(
     jobId: {
       type: String,
       ref: "Job_Listing",
-      required: true,
+      default: null,
     },
     questionId: {
       type: String,
       ref: "Question",
-      required: true,
+      default: null,
     },
     fromUserId: {
       type: String,
