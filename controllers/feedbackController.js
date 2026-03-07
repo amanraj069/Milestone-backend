@@ -1,6 +1,8 @@
 const Feedback = require('../models/Feedback');
 const JobListing = require('../models/job_listing');
 const User = require('../models/user');
+const Notification = require('../models/Notification');
+const { v4: uuidv4 } = require('uuid');
 
 // Create feedback
 exports.createFeedback = async (req, res) => {
@@ -118,6 +120,35 @@ exports.createFeedback = async (req, res) => {
         updateData,
         { new: true }
       );
+    }
+
+    //Send notification to the rated user
+    try {
+      const fromName = anonymous ? 'Anonymous' : (req.session.user.name || 'Someone');
+      const fromId = anonymous ? null : req.session.user.id;
+
+      const notification = new Notification({
+        notificationId: uuidv4(),
+        userId: toUserId,
+        type: 'rating_received',
+        title: 'You received a new rating',
+        message: `${fromName} rated you ${rating}/5 on "${job.title}"`,
+        jobId: jobId,
+        questionId: null,
+        fromUserId: fromId,
+        fromUserName: fromName,
+        read: false,
+      });
+
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user:${toUserId}`).emit('notification:new', notification);
+      }
+    } catch (notifErr) {
+      console.error('Error sending rating notification:', notifErr);
+      // Don't fail the whole request if notification fails
     }
 
     res.status(201).json({ 
