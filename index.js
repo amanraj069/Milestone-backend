@@ -435,6 +435,8 @@ connectDB
         }`,
       );
       console.log(`Socket.IO server ready`);
+      console.log(`API Documentation available at /api-docs`);
+
     });
   })
   .catch((err) => {
