@@ -1,5 +1,4 @@
 const multer = require('multer');
-const { Readable } = require('stream');
 const cloudinary = require('cloudinary').v2;
 
 // Configure Cloudinary (expects env vars to be set)
@@ -59,7 +58,8 @@ const upload = multer({
   storage: diskStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') cb(null, true);
+    const nameLower = (file.originalname || '').toLowerCase();
+    if (file.mimetype === 'application/pdf' || nameLower.endsWith('.pdf') || file.mimetype === 'application/octet-stream') cb(null, true);
     else cb(new Error('Only PDF files are allowed!'), false);
   },
 });
@@ -69,16 +69,36 @@ const uploadCloud = multer({
   storage: memoryStorage,
   limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') cb(null, true);
+    const nameLower = (file.originalname || '').toLowerCase();
+    if (file.mimetype === 'application/pdf' || nameLower.endsWith('.pdf') || file.mimetype === 'application/octet-stream') cb(null, true);
     else cb(new Error('Only PDF files are allowed!'), false);
   },
 });
 
+const resolvePdfBuffer = async (fileOrBuffer) => {
+  if (Buffer.isBuffer(fileOrBuffer)) {
+    return fileOrBuffer;
+  }
+
+  if (fileOrBuffer && Buffer.isBuffer(fileOrBuffer.buffer)) {
+    return fileOrBuffer.buffer;
+  }
+
+  if (fileOrBuffer && typeof fileOrBuffer.path === 'string') {
+    return fs.promises.readFile(fileOrBuffer.path);
+  }
+
+  throw new Error('Invalid PDF payload. Expected buffer or multer file object.');
+};
+
 // Upload buffer to Cloudinary as raw file (for PDF proof documents)
-const uploadBufferToCloudinary = (buffer, filename) => {
+const uploadBufferToCloudinary = async (fileOrBuffer, filename) => {
+  const buffer = await resolvePdfBuffer(fileOrBuffer);
+
   return new Promise((resolve, reject) => {
     // Normalize public_id (strip .pdf if present) and set format: 'pdf'
-    const provided = filename ? filename.toString() : `proof_${Date.now()}`;
+    const derivedName = fileOrBuffer?.originalname || fileOrBuffer?.filename;
+    const provided = filename ? filename.toString() : (derivedName || `proof_${Date.now()}`);
     const publicIdBase = provided.replace(/\.pdf$/i, '');
     const uploadStream = cloudinary.uploader.upload_stream(
       { resource_type: 'raw', folder: 'company-proofs', public_id: publicIdBase, format: 'pdf' },
@@ -88,11 +108,7 @@ const uploadBufferToCloudinary = (buffer, filename) => {
       }
     );
 
-    const readable = new Readable();
-    readable._read = () => {};
-    readable.push(buffer);
-    readable.push(null);
-    readable.pipe(uploadStream);
+    uploadStream.end(buffer);
   });
 };
 
