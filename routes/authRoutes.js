@@ -17,11 +17,11 @@ const {
  * @swagger
  * tags:
  *   - name: Auth
- *     description: Authentication and account management
+ *     description: Authentication and account recovery
  *
  * /api/auth/send-otp:
  *   post:
- *     summary: Send OTP for signup verification
+ *     summary: Send signup OTP to email
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -34,17 +34,24 @@ const {
  *               email:
  *                 type: string
  *                 format: email
+ *               name:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [Employer, Freelancer, Moderator, Admin]
  *     responses:
  *       200:
- *         description: OTP sent successfully
+ *         description: OTP sent
  *       400:
- *         description: Invalid email or user already exists
- *       429:
- *         description: Too many requests
+ *         description: Validation error
+ *       409:
+ *         description: Email already exists
  *
  * /api/auth/verify-otp:
  *   post:
- *     summary: Verify OTP for signup
+ *     summary: Verify signup OTP
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -61,15 +68,15 @@ const {
  *                 type: string
  *     responses:
  *       200:
- *         description: OTP verified successfully
+ *         description: OTP verified
  *       400:
  *         description: Invalid or expired OTP
- *       429:
- *         description: Too many requests
+ *       404:
+ *         description: User not found
  *
  * /api/auth/signup:
  *   post:
- *     summary: Register a new user
+ *     summary: Complete signup and create role profile
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -77,7 +84,7 @@ const {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name, email, password, role]
+ *             required: [email, role]
  *             properties:
  *               name:
  *                 type: string
@@ -86,21 +93,20 @@ const {
  *                 format: email
  *               password:
  *                 type: string
- *                 format: password
  *               role:
  *                 type: string
- *                 enum: [Freelancer, Employer]
+ *                 enum: [Employer, Freelancer, Moderator, Admin]
  *     responses:
  *       201:
- *         description: User registered successfully
+ *         description: Account created
  *       400:
- *         description: Validation error or email already in use
- *       429:
- *         description: Too many requests
+ *         description: Verification or validation failed
+ *       409:
+ *         description: Email already exists
  *
  * /api/auth/login:
  *   post:
- *     summary: Log in a user
+ *     summary: Login and create session
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -108,47 +114,41 @@ const {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [email, password]
+ *             required: [email, password, role]
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
  *               password:
  *                 type: string
- *                 format: password
+ *               role:
+ *                 type: string
+ *                 enum: [Employer, Freelancer, Moderator, Admin]
  *     responses:
  *       200:
- *         description: Login successful, session created
- *       401:
- *         description: Invalid credentials
- *       429:
- *         description: Too many requests
+ *         description: Logged in successfully
+ *       400:
+ *         description: Invalid credentials or input
  *
  * /api/auth/logout:
  *   post:
- *     summary: Log out the current user
+ *     summary: Logout and destroy session
  *     tags: [Auth]
  *     security:
  *       - cookieAuth: []
  *     responses:
  *       200:
  *         description: Logged out successfully
- *       429:
- *         description: Too many requests
  *
  * /api/auth/me:
  *   get:
- *     summary: Get current logged-in user info
+ *     summary: Get current session user
  *     tags: [Auth]
  *     security:
  *       - cookieAuth: []
  *     responses:
  *       200:
- *         description: User info returned
- *       401:
- *         description: Not authenticated
- *       429:
- *         description: Too many requests
+ *         description: Session user or null user
  *
  * /api/auth/forgot-password/send-otp:
  *   post:
@@ -167,11 +167,9 @@ const {
  *                 format: email
  *     responses:
  *       200:
- *         description: OTP sent for password reset
- *       400:
- *         description: Email not found
- *       429:
- *         description: Too many requests
+ *         description: Reset OTP sent
+ *       404:
+ *         description: Account not found
  *
  * /api/auth/forgot-password/verify-otp:
  *   post:
@@ -192,15 +190,13 @@ const {
  *                 type: string
  *     responses:
  *       200:
- *         description: OTP verified for password reset
+ *         description: OTP verified
  *       400:
  *         description: Invalid or expired OTP
- *       429:
- *         description: Too many requests
  *
  * /api/auth/forgot-password/reset:
  *   post:
- *     summary: Reset password with verified OTP
+ *     summary: Reset password using OTP
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -208,21 +204,22 @@ const {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [email, newPassword]
+ *             required: [email, otp, newPassword]
  *             properties:
  *               email:
  *                 type: string
  *                 format: email
+ *               otp:
+ *                 type: string
  *               newPassword:
  *                 type: string
- *                 format: password
  *     responses:
  *       200:
- *         description: Password reset successfully
+ *         description: Password reset successful
  *       400:
- *         description: Validation error
- *       429:
- *         description: Too many requests
+ *         description: Validation failed
+ *       404:
+ *         description: User not found
  */
 
 // Signup flow with rate limiting
