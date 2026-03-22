@@ -6,9 +6,6 @@ const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
 const Feedback = require("../models/Feedback");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
-const {
-  uploadToCloudinary: uploadPdfToCloudinary,
-} = require("../middleware/pdfUpload");
 
 exports.getFreelancerActiveJobs = async (req, res) => {
   try {
@@ -703,14 +700,20 @@ exports.uploadResume = async (req, res) => {
       });
     }
 
-    // File is already saved to local storage by multer
-    // Get the file URL
-    const result = await uploadPdfToCloudinary(req.file);
+    if (!req.file.filename) {
+      return res.status(500).json({
+        success: false,
+        error: "Resume upload failed. File metadata missing.",
+      });
+    }
+
+    // Multer stores the PDF in /uploads/resumes; keep URL local so it can be served directly.
+    const resumeUrl = `/uploads/resumes/${req.file.filename}`;
 
     // Update freelancer resume link
     const updatedFreelancer = await Freelancer.findOneAndUpdate(
       { freelancerId },
-      { resume: result.secure_url },
+      { resume: resumeUrl },
       { new: true },
     ).lean();
 
