@@ -12,6 +12,11 @@ const swaggerJsdoc = require("swagger-jsdoc");
 const rfs = require("rotating-file-stream");
 const hpp = require("hpp");
 const mongoSanitize = require("express-mongo-sanitize");
+const { ApolloServer } = require("@apollo/server");
+const { expressMiddleware } = require("@apollo/server/express4");
+const typeDefs = require("./graphql/typeDefs");
+const resolvers = require("./graphql/resolvers");
+const { createLoaders } = require("./graphql/loaders");
 
 dotenv.config();
 
@@ -110,8 +115,10 @@ app.use(
 
 // Only sanitize req.body and req.params,
 // skip req.query to avoid read-only property error
-
+// Skip sanitization for /graphql — GraphQL queries contain $ variable refs
+// that are safe (not MongoDB operators) and would be wrongly stripped.
 app.use((req, res, next) => {
+  if (req.path === "/graphql") return next();
   if (req.body) {
     req.body = mongoSanitize.sanitize(req.body);
   }
@@ -121,7 +128,11 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(hpp());
+// hpp can strip fields from req.body — skip for /graphql
+app.use((req, res, next) => {
+  if (req.path === "/graphql") return next();
+  hpp()(req, res, next);
+});
 
 app.use(
   "/uploads",
@@ -336,110 +347,126 @@ io.on("connection", (socket) => {
 // Make io accessible to routes
 app.set("io", io);
 
-// Error handling - must be after all routes
-app.use(notFound);
-app.use(errorHandler);
+// NOTE: Error handlers are registered inside startServer() below
+// so they come AFTER the GraphQL middleware.
 
-// 404 handler - Must be after all routes
-app.use(notFound);
+// Initialize Apollo Server and start the HTTP server
+async function startServer() {
+  await connectDB;
 
-// Global error handler - Must be last
-app.use(errorHandler);
-
-// Global Error Handling Middleware
-// This must be defined after all other routes and middleware
-app.use((err, req, res, next) => {
-  console.error("Global Error Handler:", {
-    message: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-    timestamp: new Date().toISOString(),
+  // Create and start Apollo Server
+  const apolloServer = new ApolloServer({
+    typeDefs,
+    resolvers,
+    introspection: true,
   });
+  await apolloServer.start();
 
-  // Handle Multer errors
-  if (err.name === "MulterError") {
-    if (err.code === "LIMIT_FILE_SIZE") {
+  // Mount GraphQL middleware — json() runs before expressMiddleware as a safety net.
+  // Session is already established globally via app.use(sessionMiddleware) above,
+  // so we do NOT apply sessionMiddleware again here (double-init breaks Express 5).
+  app.use(
+    "/graphql",
+    express.json(),
+    expressMiddleware(apolloServer, {
+      context: async ({ req }) => ({
+        session: req.session,
+        loaders: createLoaders(),
+      }),
+    })
+  );
+
+  // Register error handlers AFTER GraphQL middleware
+  app.use(notFound);
+  app.use(errorHandler);
+
+  // Global Error Handling Middleware
+  app.use((err, req, res, next) => {
+    console.error("Global Error Handler:", {
+      message: err.message,
+      stack: err.stack,
+      path: req.path,
+      method: req.method,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (err.name === "MulterError") {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({
+          success: false,
+          message: "File too large. Maximum size is 5MB.",
+        });
+      }
       return res.status(400).json({
         success: false,
-        message: "File too large. Maximum size is 5MB.",
+        message: `File upload error: ${err.message}`,
       });
     }
-    return res.status(400).json({
+
+    if (err.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: Object.values(err.errors).map((e) => e.message),
+      });
+    }
+
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Duplicate entry. This record already exists.",
+      });
+    }
+
+    if (err.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token. Please log in again.",
+      });
+    }
+
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        message: "Token expired. Please log in again.",
+      });
+    }
+
+    const statusCode = err.statusCode || err.status || 500;
+    const message =
+      process.env.NODE_ENV === "production"
+        ? "An unexpected error occurred"
+        : err.message || "Internal server error";
+
+    res.status(statusCode).json({
       success: false,
-      message: `File upload error: ${err.message}`,
+      message,
+      ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
     });
-  }
-
-  // Handle validation errors
-  if (err.name === "ValidationError") {
-    return res.status(400).json({
-      success: false,
-      message: "Validation error",
-      errors: Object.values(err.errors).map((e) => e.message),
-    });
-  }
-
-  // Handle MongoDB duplicate key errors
-  if (err.code === 11000) {
-    return res.status(409).json({
-      success: false,
-      message: "Duplicate entry. This record already exists.",
-    });
-  }
-
-  // Handle JWT errors
-  if (err.name === "JsonWebTokenError") {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid token. Please log in again.",
-    });
-  }
-
-  if (err.name === "TokenExpiredError") {
-    return res.status(401).json({
-      success: false,
-      message: "Token expired. Please log in again.",
-    });
-  }
-
-  // Default error response
-  const statusCode = err.statusCode || err.status || 500;
-  const message =
-    process.env.NODE_ENV === "production"
-      ? "An unexpected error occurred"
-      : err.message || "Internal server error";
-
-  res.status(statusCode).json({
-    success: false,
-    message,
-    ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
   });
+
+  // 404 handler for unmatched routes
+  app.use((req, res) => {
+    res.status(404).json({
+      success: false,
+      message: `Route not found: ${req.method} ${req.path}`,
+    });
+  });
+
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`Backend running at http://localhost:${PORT}`);
+    console.log(
+      `CORS enabled for: ${
+        process.env.FRONTEND_ORIGIN || "http://localhost:3000"
+      }`,
+    );
+    console.log(`Socket.IO server ready`);
+    console.log(`API Documentation available at /api-docs`);
+    console.log(`GraphQL endpoint available at /graphql`);
+  });
+}
+
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
+  process.exit(1);
 });
-
-// 404 handler for unmatched routes
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `Route not found: ${req.method} ${req.path}`,
-  });
-});
-
-connectDB
-  .then(() => {
-    server.listen(PORT, "0.0.0.0", () => {
-      console.log(`Backend running at http://localhost:${PORT}`);
-      console.log(
-        `CORS enabled for: ${
-          process.env.FRONTEND_ORIGIN || "http://localhost:3000"
-        }`,
-      );
-      console.log(`Socket.IO server ready`);
-      console.log(`API Documentation available at /api-docs`);
-
-    });
-  })
-  .catch((err) => {
-    console.error("Failed to start server due to DB error:", err);
-    process.exit(1);
-  });
