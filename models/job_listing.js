@@ -162,6 +162,10 @@ const jobListingSchema = new Schema(
   },
 );
 
+jobListingSchema.index({ employerId: 1, postedDate: -1 });
+jobListingSchema.index({ status: 1, postedDate: -1 });
+jobListingSchema.index({ "assignedFreelancer.freelancerId": 1, "assignedFreelancer.status": 1 });
+
 const JobListing = mongoose.model("Job_Listing", jobListingSchema);
 
 module.exports = JobListing;

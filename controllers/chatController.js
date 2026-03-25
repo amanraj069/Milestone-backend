@@ -13,35 +13,43 @@ exports.getConversations = async (req, res) => {
       .sort({ updatedAt: -1 })
       .lean();
 
-    // Populate participant details
-    const conversationsWithDetails = await Promise.all(
-      conversations.map(async (conv) => {
-        const otherUserId = conv.participants.find((p) => p !== userId);
-        const otherUser = await User.findOne({ userId: otherUserId })
-          .select("userId name picture role")
-          .lean();
+    const otherUserIds = [
+      ...new Set(
+        conversations
+          .map((conv) => conv.participants.find((p) => p !== userId))
+          .filter(Boolean),
+      ),
+    ];
 
-        // Handle unreadCount properly - it's an object when using lean()
-        let unreadCount = 0;
-        if (conv.unreadCount && typeof conv.unreadCount === 'object') {
-          unreadCount = conv.unreadCount[userId] || 0;
-        }
+    const users = await User.find({ userId: { $in: otherUserIds } })
+      .select("userId name picture role")
+      .lean();
 
-        return {
-          conversationId: conv.conversationId,
-          participant: otherUser || {
-            userId: otherUserId,
-            name: "Unknown User",
-            picture:
-              "https://cdn.pixabay.com/photo/2018/04/18/18/56/user-3331256_1280.png",
-            role: "Unknown",
-          },
-          lastMessage: conv.lastMessage,
-          unreadCount: unreadCount,
-          updatedAt: conv.updatedAt,
-        };
-      })
-    );
+    const userMap = new Map(users.map((user) => [user.userId, user]));
+
+    const conversationsWithDetails = conversations.map((conv) => {
+      const otherUserId = conv.participants.find((p) => p !== userId);
+      const otherUser = userMap.get(otherUserId);
+
+      let unreadCount = 0;
+      if (conv.unreadCount && typeof conv.unreadCount === "object") {
+        unreadCount = conv.unreadCount[userId] || 0;
+      }
+
+      return {
+        conversationId: conv.conversationId,
+        participant: otherUser || {
+          userId: otherUserId,
+          name: "Unknown User",
+          picture:
+            "https://cdn.pixabay.com/photo/2018/04/18/18/56/user-3331256_1280.png",
+          role: "Unknown",
+        },
+        lastMessage: conv.lastMessage,
+        unreadCount,
+        updatedAt: conv.updatedAt,
+      };
+    });
 
     res.json({
       success: true,
@@ -61,6 +69,16 @@ exports.getMessages = async (req, res) => {
   try {
     const { userId: otherUserId } = req.params;
     const currentUserId = req.session.user.id;
+    const rawLimit = Number.parseInt(req.query.limit, 10);
+    const rawPage = Number.parseInt(req.query.page, 10);
+    const hasPagination = Number.isInteger(rawLimit) && rawLimit > 0;
+    const limit = hasPagination ? Math.min(rawLimit, 100) : null;
+    const page = hasPagination
+      ? Number.isInteger(rawPage) && rawPage > 0
+        ? rawPage
+        : 1
+      : null;
+    const skip = hasPagination ? (page - 1) * limit : 0;
 
     // Find or create conversation
     let conversation = await Conversation.findOne({
@@ -75,12 +93,22 @@ exports.getMessages = async (req, res) => {
       });
     }
 
-    // Fetch messages
-    const messages = await Message.find({
+    const messageQuery = Message.find({
       conversationId: conversation.conversationId,
-    })
-      .sort({ createdAt: 1 })
-      .lean();
+    }).sort({ createdAt: 1 });
+
+    if (hasPagination) {
+      messageQuery.skip(skip).limit(limit);
+    }
+
+    const messages = await messageQuery.lean();
+
+    let totalMessages = messages.length;
+    if (hasPagination) {
+      totalMessages = await Message.countDocuments({
+        conversationId: conversation.conversationId,
+      });
+    }
 
     // Mark messages as read
     await Message.updateMany(
@@ -105,6 +133,14 @@ exports.getMessages = async (req, res) => {
       success: true,
       messages,
       conversationId: conversation.conversationId,
+      pagination: hasPagination
+        ? {
+            page,
+            limit,
+            total: totalMessages,
+            hasMore: skip + messages.length < totalMessages,
+          }
+        : undefined,
     });
   } catch (error) {
     console.error("Error fetching messages:", error);
