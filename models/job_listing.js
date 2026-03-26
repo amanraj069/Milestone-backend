@@ -31,6 +31,10 @@ const jobListingSchema = new Schema(
       type: String,
       default: "",
     },
+    locationCoordinates: {
+      lat: { type: Number, min: -90, max: 90, default: null },
+      lng: { type: Number, min: -180, max: 180, default: null },
+    },
     jobType: {
       type: String,
       enum: ["full-time", "part-time", "contract", "freelance"],
