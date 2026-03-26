@@ -1,8 +1,4 @@
 const setupGraphql = (app) => {
-  if (process.env.ENABLE_GRAPHQL !== "true") {
-    return;
-  }
-
   let createHandler;
   try {
     ({ createHandler } = require("graphql-http/lib/use/express"));
