@@ -5,6 +5,24 @@ const User = require("../models/user");
 const JobApplication = require("../models/job_application");
 const Question = require("../models/Question");
 
+const NOMINATIM_BASE_URL = "https://nominatim.openstreetmap.org";
+const APP_USER_AGENT = "milestone-app/1.0";
+
+async function fetchNominatim(path) {
+  const response = await fetch(`${NOMINATIM_BASE_URL}${path}`, {
+    headers: {
+      "User-Agent": APP_USER_AGENT,
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Geocoder error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 exports.getHome = (req, res) => {
   let dashboardRoute = "";
   if (req.session && req.session.user) {
@@ -21,6 +39,44 @@ exports.getHome = (req, res) => {
     }
   }
   return res.json({ user: req.session?.user || null, dashboardRoute });
+};
+
+exports.geocode = async (req, res) => {
+  try {
+    const q = (req.query.q || "").toString().trim();
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "1", 10), 1), 5);
+
+    if (!q) {
+      return res.status(400).json({ success: false, error: "Query parameter 'q' is required" });
+    }
+
+    const data = await fetchNominatim(
+      `/search?format=jsonv2&addressdetails=1&limit=${limit}&q=${encodeURIComponent(q)}`,
+    );
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error("Geocode proxy error:", error.message);
+    return res.status(500).json({ success: false, error: "Failed to geocode location" });
+  }
+};
+
+exports.reverseGeocode = async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lon = Number(req.query.lon);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      return res.status(400).json({ success: false, error: "Query parameters 'lat' and 'lon' are required" });
+    }
+
+    const data = await fetchNominatim(
+      `/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`,
+    );
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error("Reverse geocode proxy error:", error.message);
+    return res.status(500).json({ success: false, error: "Failed to reverse geocode location" });
+  }
 };
 
 exports.getPublicJobs = async (req, res) => {
@@ -76,6 +132,7 @@ exports.getPublicJobs = async (req, res) => {
           period: job.jobType === "contract" ? "fixed" : "monthly",
         },
         location: job.location || "Remote",
+        locationCoordinates: job.locationCoordinates || null,
         jobType: job.jobType,
         experienceLevel: job.experienceLevel,
         remote: job.remote,
@@ -152,6 +209,7 @@ exports.getJobDetail = async (req, res) => {
         period: job.jobType === "contract" ? "fixed" : "monthly",
       },
       location: job.location || "Remote",
+      locationCoordinates: job.locationCoordinates || null,
       jobType: job.jobType,
       experienceLevel: job.experienceLevel,
       remote: job.remote,
