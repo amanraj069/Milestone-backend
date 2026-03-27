@@ -6,9 +6,6 @@ const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
 const Feedback = require("../models/Feedback");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
-const {
-  uploadToCloudinary: uploadPdfToCloudinary,
-} = require("../middleware/pdfUpload");
 
 exports.getFreelancerActiveJobs = async (req, res) => {
   try {
@@ -56,7 +53,7 @@ exports.leaveActiveJob = async (req, res) => {
         "assignedFreelancer.freelancerId": freelancerId,
         "assignedFreelancer.status": "working",
       },
-      { $set: { "assignedFreelancer.status": "left" } }
+      { $set: { "assignedFreelancer.status": "left" } },
     );
 
     if (result.modifiedCount === 0) {
@@ -190,7 +187,7 @@ exports.upgradeSubscription = async (req, res) => {
           subscriptionDuration: duration || null,
           subscriptionExpiryDate: expiryDate,
         },
-      }
+      },
     );
 
     req.session.user.subscription = "Premium";
@@ -220,7 +217,7 @@ exports.downgradeSubscription = async (req, res) => {
       {
         $set: { subscription: "Basic" },
         $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" },
-      }
+      },
     );
 
     req.session.user.subscription = "Basic";
@@ -260,7 +257,7 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
           .filter((milestone) => milestone.status === "paid")
           .reduce(
             (sum, milestone) => sum + (parseFloat(milestone.payment) || 0),
-            0
+            0,
           );
 
         const totalBudget = parseFloat(job.budget) || 0;
@@ -282,7 +279,7 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
         const daysSinceStart = startDate
           ? Math.floor(
               (Date.now() - new Date(startDate).getTime()) /
-                (1000 * 60 * 60 * 24)
+                (1000 * 60 * 60 * 24),
             )
           : 0;
 
@@ -305,14 +302,16 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
           description: job.description?.text || job.description || "",
           milestones: job.milestones || [],
           milestonesCount: (job.milestones || []).length,
-          completedMilestones: (job.milestones || []).filter(m => m.status === "paid").length,
+          completedMilestones: (job.milestones || []).filter(
+            (m) => m.status === "paid",
+          ).length,
           daysSinceStart: daysSinceStart,
           startDate: startDate
             ? new Date(startDate).toLocaleDateString()
             : "Not set",
           startDateRaw: startDate || null,
         };
-      })
+      }),
     );
 
     res.json({
@@ -354,14 +353,16 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
 
     // Bulk-fetch feedback ratings for this freelancer across all history jobs
     const userId = req.session.user.id;
-    const jobIds = historyJobs.map(j => j.jobId);
+    const jobIds = historyJobs.map((j) => j.jobId);
     const feedbacks = await Feedback.find({
       jobId: { $in: jobIds },
       toUserId: userId,
-      toRole: 'Freelancer',
+      toRole: "Freelancer",
     }).lean();
     const feedbackByJob = {};
-    feedbacks.forEach(fb => { feedbackByJob[fb.jobId] = fb.rating; });
+    feedbacks.forEach((fb) => {
+      feedbackByJob[fb.jobId] = fb.rating;
+    });
 
     const formattedJobs = await Promise.all(
       historyJobs.map(async (job) => {
@@ -369,7 +370,7 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
           .filter((milestone) => milestone.status === "paid")
           .reduce(
             (sum, milestone) => sum + parseFloat(milestone.payment) || 0,
-            0
+            0,
           );
 
         const employer = await Employer.findOne({
@@ -379,21 +380,26 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
 
         // Get employerUserId - try from Employer record first, then fallback to User by roleId
         let employerUserId = employer?.userId || "";
-        
+
         if (!employerUserId) {
-          console.log('Job history - No userId in Employer record, using fallback for:', job.employerId);
+          console.log(
+            "Job history - No userId in Employer record, using fallback for:",
+            job.employerId,
+          );
           const employerUser = await User.findOne({
             roleId: job.employerId,
-            role: "Employer"
-          }).select("userId").lean();
+            role: "Employer",
+          })
+            .select("userId")
+            .lean();
           employerUserId = employerUser?.userId || "";
-          console.log('Job history - Fallback employerUserId:', employerUserId);
+          console.log("Job history - Fallback employerUserId:", employerUserId);
         }
 
-        console.log('Job history - employer data:', {
+        console.log("Job history - employer data:", {
           employerId: job.employerId,
           employerUserId: employerUserId,
-          companyName
+          companyName,
         });
 
         // Calculate days since start
@@ -401,7 +407,7 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
         const daysSinceStart = startDate
           ? Math.floor(
               (Date.now() - new Date(startDate).getTime()) /
-                (1000 * 60 * 60 * 24)
+                (1000 * 60 * 60 * 24),
             )
           : 0;
 
@@ -426,7 +432,10 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
           price: paidAmount ? `Rs.${paidAmount.toFixed(2)}` : "Not paid",
           paidAmount: paidAmount,
           totalBudget: totalBudget,
-          rating: feedbackByJob[job.jobId] || job.assignedFreelancer.employerRating || null,
+          rating:
+            feedbackByJob[job.jobId] ||
+            job.assignedFreelancer.employerRating ||
+            null,
           startDate: startDate
             ? new Date(startDate).toLocaleDateString()
             : "Not set",
@@ -436,17 +445,19 @@ exports.getFreelancerJobHistoryAPI = async (req, res) => {
           description: job.description?.text || job.description || "",
           milestones: job.milestones || [],
           milestonesCount: (job.milestones || []).length,
-          completedMilestones: (job.milestones || []).filter(m => m.status === "paid").length,
+          completedMilestones: (job.milestones || []).filter(
+            (m) => m.status === "paid",
+          ).length,
           progress: Math.round(
             job.milestones.length > 0
               ? (job.milestones.filter((m) => m.status === "paid").length /
                   job.milestones.length) *
                   100
-              : 0
+              : 0,
           ),
           cancelReason: job.assignedFreelancer.cancelReason || null,
         };
-      })
+      }),
     );
 
     res.json({
@@ -558,7 +569,7 @@ exports.updateFreelancerProfile = async (req, res) => {
     const updatedFreelancer = await Freelancer.findOneAndUpdate(
       { freelancerId },
       freelancerUpdate,
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).lean();
 
     if (!updatedFreelancer) {
@@ -612,14 +623,14 @@ exports.uploadProfilePicture = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
-    const result = await uploadToCloudinary(req.file.buffer);
+    // Store image locally under /uploads/verification_doc
+    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
 
     // Update user profile picture
     const updatedUser = await User.findOneAndUpdate(
       { userId },
       { picture: result.secure_url },
-      { new: true }
+      { new: true },
     ).lean();
 
     if (!updatedUser) {
@@ -630,7 +641,7 @@ exports.uploadProfilePicture = async (req, res) => {
     }
 
     // Update session
-    req.session.user.picture = result.secure_url;
+    req.session.user.picture = imageUrl;
 
     res.json({
       success: true,
@@ -658,14 +669,14 @@ exports.uploadPortfolioImage = async (req, res) => {
       });
     }
 
-    // Upload to Cloudinary
-    const result = await uploadToCloudinary(req.file.buffer);
+    // Store image locally under /uploads/verification_doc
+    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
 
     res.json({
       success: true,
       message: "Portfolio image uploaded successfully",
       data: {
-        imageUrl: result.secure_url,
+        imageUrl: imageUrl,
       },
     });
   } catch (error) {
@@ -689,15 +700,21 @@ exports.uploadResume = async (req, res) => {
       });
     }
 
-    // File is already saved to local storage by multer
-    // Get the file URL
-    const result = await uploadPdfToCloudinary(req.file);
+    if (!req.file.filename) {
+      return res.status(500).json({
+        success: false,
+        error: "Resume upload failed. File metadata missing.",
+      });
+    }
+
+    // Multer stores the PDF in /uploads/resumes; keep URL local so it can be served directly.
+    const resumeUrl = `/uploads/resumes/${req.file.filename}`;
 
     // Update freelancer resume link
     const updatedFreelancer = await Freelancer.findOneAndUpdate(
       { freelancerId },
-      { resume: result.secure_url },
-      { new: true }
+      { resume: resumeUrl },
+      { new: true },
     ).lean();
 
     if (!updatedFreelancer) {
@@ -759,6 +776,17 @@ exports.applyForJob = async (req, res) => {
       });
     }
 
+    // Enforce application cap if set
+    if (job.applicationCap !== null && job.applicationCap !== undefined) {
+      const currentCount = await JobApplication.countDocuments({ jobId });
+      if (currentCount >= job.applicationCap) {
+        return res.status(400).json({
+          success: false,
+          error: `This job has reached its application limit of ${job.applicationCap}. No more applications are being accepted.`,
+        });
+      }
+    }
+
     // Get freelancer's resume and email
     const freelancer = await Freelancer.findOne({ freelancerId }).lean();
     if (!freelancer) {
@@ -793,7 +821,7 @@ exports.applyForJob = async (req, res) => {
     // Update user's last cover message for future use
     await User.findOneAndUpdate(
       { roleId: freelancerId },
-      { lastCoverMessage: coverMessage }
+      { lastCoverMessage: coverMessage },
     );
 
     res.json({
@@ -843,39 +871,41 @@ exports.getFreelancerApplications = async (req, res) => {
       .sort({ appliedDate: -1 })
       .lean();
 
-    const jobIds = applications.map(app => app.jobId);
+    const jobIds = applications.map((app) => app.jobId);
     const jobs = await JobListing.find({ jobId: { $in: jobIds } }).lean();
     const jobMap = {};
-    jobs.forEach(job => {
+    jobs.forEach((job) => {
       jobMap[job.jobId] = job;
     });
 
-    const employerIds = jobs.map(job => job.employerId).filter(Boolean);
-    const employers = await Employer.find({ employerId: { $in: employerIds } }).lean();
+    const employerIds = jobs.map((job) => job.employerId).filter(Boolean);
+    const employers = await Employer.find({
+      employerId: { $in: employerIds },
+    }).lean();
     const employerMap = {};
-    employers.forEach(emp => {
+    employers.forEach((emp) => {
       employerMap[emp.employerId] = emp;
     });
 
-    const result = applications.map(app => {
+    const result = applications.map((app) => {
       const job = jobMap[app.jobId] || {};
       const employer = employerMap[job.employerId] || {};
-      
+
       return {
         applicationId: app.applicationId,
         jobId: app.jobId,
-        jobTitle: job.title || 'N/A',
-        company: employer.companyName || 'Unknown',
+        jobTitle: job.title || "N/A",
+        company: employer.companyName || "Unknown",
         logo: employer.logo || null,
         appliedDate: app.appliedDate,
         status: app.status,
         coverMessage: app.coverMessage,
         resumeLink: app.resumeLink,
         budget: job.budget || 0,
-        location: job.location || 'N/A',
-        jobType: job.jobType || 'N/A',
+        location: job.location || "N/A",
+        jobType: job.jobType || "N/A",
         skillsRequired: job.skillsRequired || [],
-        experienceLevel: job.experienceLevel || 'N/A',
+        experienceLevel: job.experienceLevel || "N/A",
       };
     });
 
@@ -884,16 +914,16 @@ exports.getFreelancerApplications = async (req, res) => {
       applications: result,
       stats: {
         total: result.length,
-        pending: result.filter(a => a.status === 'Pending').length,
-        accepted: result.filter(a => a.status === 'Accepted').length,
-        rejected: result.filter(a => a.status === 'Rejected').length,
+        pending: result.filter((a) => a.status === "Pending").length,
+        accepted: result.filter((a) => a.status === "Accepted").length,
+        rejected: result.filter((a) => a.status === "Rejected").length,
       },
     });
   } catch (error) {
-    console.error('Error fetching applications:', error);
+    console.error("Error fetching applications:", error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch applications',
+      error: "Failed to fetch applications",
     });
   }
 };
@@ -1066,7 +1096,7 @@ exports.getFreelancerPayments = async (req, res) => {
 
       // Calculate project completion
       const completedMilestones = milestones.filter(
-        (m) => m.status === "paid"
+        (m) => m.status === "paid",
       ).length;
       const projectCompletion =
         milestones.length > 0
@@ -1152,7 +1182,7 @@ exports.getFreelancerPaymentDetails = async (req, res) => {
 
     // Calculate project completion
     const completedMilestones = milestones.filter(
-      (m) => m.status === "paid"
+      (m) => m.status === "paid",
     ).length;
     const projectCompletion =
       milestones.length > 0
@@ -1224,7 +1254,7 @@ exports.requestMilestonePayment = async (req, res) => {
 
     // Find the milestone
     const milestoneIndex = job.milestones.findIndex(
-      (m) => m.milestoneId === milestoneId
+      (m) => m.milestoneId === milestoneId,
     );
     if (milestoneIndex === -1) {
       return res.status(404).json({

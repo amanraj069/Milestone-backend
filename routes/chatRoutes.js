@@ -18,6 +18,121 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
+/**
+ * @swagger
+ * tags:
+ *   - name: Chat
+ *     description: Real-time chat and messaging (requires authentication)
+ *
+ * /api/chat/conversations:
+ *   get:
+ *     summary: Get all conversations for the logged-in user
+ *     tags: [Chat]
+ *     security:
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: List of conversations
+ *       401:
+ *         description: Authentication required
+ *
+ * /api/chat/messages/{userId}:
+ *   get:
+ *     summary: Get messages with a specific user
+ *     tags: [Chat]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Messages returned
+ *       401:
+ *         description: Authentication required
+ *   post:
+ *     summary: Send a message to a user
+ *     tags: [Chat]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Message sent
+ *       401:
+ *         description: Authentication required
+ *
+ * /api/chat/messages/{messageId}:
+ *   delete:
+ *     summary: Delete a message
+ *     tags: [Chat]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: messageId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Message deleted
+ *       404:
+ *         description: Message not found
+ *
+ * /api/chat/conversations/{conversationId}/read:
+ *   put:
+ *     summary: Mark a conversation as read
+ *     tags: [Chat]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: conversationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Conversation marked as read
+ *
+ * /api/chat/search-users:
+ *   get:
+ *     summary: Search users to start a chat
+ *     tags: [Chat]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Search query
+ *     responses:
+ *       200:
+ *         description: Matching users returned
+ *       401:
+ *         description: Authentication required
+ */
+
 // Get all conversations for the logged-in user
 router.get("/conversations", requireAuth, asyncHandler(chatController.getConversations));
 

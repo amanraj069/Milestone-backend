@@ -8,6 +8,18 @@ const employerSchema = new Schema(
     userId: { type: String, ref: "User", required: true },
     companyName: { type: String, default: "" },
     websiteLink: { type: String, default: "" },
+    companyDetails: {
+      companyName: { type: String, default: "" },
+      companyPAN: { type: String, default: "" },
+      billingAddress: { type: String, default: "" },
+      accountsPayableEmail: { type: String, default: "" },
+      taxIdentificationNumber: { type: String, default: "" },
+      proofOfAddressUrl: { type: String, default: "" },
+      officialBusinessEmail: { type: String, default: "" },
+      companyLogoUrl: { type: String, default: "" },
+      isSubmitted: { type: Boolean, default: false },
+      submittedAt: { type: Date, default: null },
+    },
     jobsPosted: [{ type: String, ref: "Job_Listing", default: [] }],
     currentFreelancers: [
       {
