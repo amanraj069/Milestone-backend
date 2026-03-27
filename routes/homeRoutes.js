@@ -78,6 +78,8 @@ const home = require("../controllers/homeController");
  */
 
 router.get("/home", home.getHome);
+router.get("/geocode", home.geocode);
+router.get("/geocode/reverse", home.reverseGeocode);
 router.get("/jobs/api", home.getPublicJobs);
 router.get("/jobs/api/:jobId", home.getJobDetail);
 router.get("/jobs/:jobId/applicants", home.getJobApplicants);

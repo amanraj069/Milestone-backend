@@ -10,6 +10,15 @@ const {
   uploadToCloudinary: uploadImageToCloudinary,
 } = require("../middleware/imageUpload");
 
+function parseLocationCoordinates(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const lat = Number(raw.lat);
+  const lng = Number(raw.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
 // Get all job listings for the logged-in employer
 exports.getJobListings = async (req, res) => {
   try {
@@ -68,6 +77,7 @@ exports.createJobListing = async (req, res) => {
       title,
       budget,
       location,
+      locationCoordinates,
       jobType,
       experienceLevel,
       remote,
@@ -120,6 +130,7 @@ exports.createJobListing = async (req, res) => {
       title,
       budget,
       location: location || "",
+      locationCoordinates: parseLocationCoordinates(locationCoordinates),
       jobType,
       experienceLevel,
       remote: remote || false,
@@ -234,6 +245,7 @@ exports.updateJobListing = async (req, res) => {
       title,
       budget,
       location,
+      locationCoordinates,
       jobType,
       experienceLevel,
       remote,
@@ -265,6 +277,7 @@ exports.updateJobListing = async (req, res) => {
         title,
         budget,
         location: location || "",
+        locationCoordinates: parseLocationCoordinates(locationCoordinates),
         jobType,
         experienceLevel,
         remote: remote || false,
