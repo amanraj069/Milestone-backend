@@ -114,6 +114,31 @@ const jobListingSchema = new Schema(
       type: Number,
       default: 0,
     },
+    // Platform fee & boost fields
+    platformFeeRate: {
+      type: Number,
+      default: 2, // 2% for normal, 4% for boosted
+    },
+    applicationCap: {
+      type: Number,
+      default: null, // null = unlimited
+    },
+    applicationCapFeeRate: {
+      type: Number,
+      default: 2, // 0.5% | 1% | 1.5% | 2% based on cap tier
+    },
+    platformFeeAmount: {
+      type: Number,
+      default: 0, // calculated at creation: (platformFeeRate + applicationCapFeeRate) / 100 * budget
+    },
+    isBoosted: {
+      type: Boolean,
+      default: false,
+    },
+    boostExpiresAt: {
+      type: Date,
+      default: null,
+    },
     assignedFreelancer: {
       freelancerId: { type: String, ref: "Freelancer", default: null },
       startDate: { type: Date, default: null },
@@ -130,7 +155,7 @@ const jobListingSchema = new Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const JobListing = mongoose.model("Job_Listing", jobListingSchema);

@@ -187,6 +187,8 @@ exports.signup = async (req, res) => {
     existingUser.role = normalizedRole;
     existingUser.roleId = roleId;
     existingUser.name = name || existingUser.name;
+    // Employers need moderator approval before they can access the platform
+    existingUser.isApproved = normalizedRole !== "Employer";
     await existingUser.save();
 
     let roleEntity;
@@ -230,6 +232,7 @@ exports.signup = async (req, res) => {
       roleId: existingUser.roleId,
       subscription: existingUser.subscription || "Basic",
       picture: existingUser.picture,
+      isApproved: existingUser.isApproved,
       authenticated: true,
     };
 
@@ -284,6 +287,7 @@ exports.login = async (req, res) => {
       roleId: user.roleId,
       subscription: user.subscription || "Basic",
       picture: user.picture,
+      isApproved: user.isApproved,
       authenticated: true,
     };
     req.session.save(() => res.json({ success: true }));
@@ -441,7 +445,7 @@ exports.me = async (req, res) => {
     const User = require("../models/user");
 
     const user = await User.findOne({ userId: req.session.user.id })
-      .select("userId name email role roleId picture subscription")
+      .select("userId name email role roleId picture subscription isApproved")
       .lean();
 
     if (!user) {
@@ -460,6 +464,7 @@ exports.me = async (req, res) => {
         roleId: user.roleId,
         picture: user.picture, // Fresh from database
         subscription: user.subscription,
+        isApproved: user.isApproved,
       },
     });
   } catch (error) {

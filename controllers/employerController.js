@@ -75,6 +75,8 @@ exports.createJobListing = async (req, res) => {
       description,
       imageUrl,
       milestones,
+      isBoosted,
+      applicationCap,
     } = req.body;
 
     // Validate required fields
@@ -92,6 +94,26 @@ exports.createJobListing = async (req, res) => {
       });
     }
 
+    // --- Fee calculation ---
+    // Platform fee: 2% normal, 4% if boosted
+    const platformFeeRate = isBoosted ? 4 : 2;
+
+    // Application cap fee: based on cap tier
+    // null/unlimited -> 2%, <=50 -> 1.5%, <=25 -> 1%, <=10 -> 0.5%
+    let applicationCapFeeRate = 2;
+    if (applicationCap !== null && applicationCap !== undefined) {
+      const cap = parseInt(applicationCap);
+      if (cap <= 10) applicationCapFeeRate = 0.5;
+      else if (cap <= 25) applicationCapFeeRate = 1;
+      else if (cap <= 50) applicationCapFeeRate = 1.5;
+      else applicationCapFeeRate = 2;
+    }
+
+    const totalFeeRate = platformFeeRate + applicationCapFeeRate;
+    const platformFeeAmount = parseFloat(
+      ((totalFeeRate / 100) * parseFloat(budget)).toFixed(2),
+    );
+
     const newJob = new JobListing({
       jobId: uuidv4(),
       employerId,
@@ -107,6 +129,12 @@ exports.createJobListing = async (req, res) => {
       milestones: milestones || [],
       postedDate: new Date(),
       status: "open",
+      platformFeeRate,
+      applicationCap: applicationCap !== undefined ? applicationCap : null,
+      applicationCapFeeRate,
+      platformFeeAmount,
+      isBoosted: isBoosted || false,
+      boostExpiresAt: null, // boost lasts the full duration of the job posting
     });
 
     await newJob.save();
@@ -245,7 +273,7 @@ exports.updateJobListing = async (req, res) => {
         imageUrl: imageUrl || "/assets/company_logo.jpg",
         milestones: milestones || [],
       },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     );
 
     if (!updatedJob) {
@@ -266,6 +294,111 @@ exports.updateJobListing = async (req, res) => {
       success: false,
       error: "Failed to update job listing",
     });
+  }
+};
+
+// ────────────────────────────────────────────────────────────
+// Helper: compute cap fee rate from cap value
+// ────────────────────────────────────────────────────────────
+function computeCapFeeRate(applicationCap) {
+  if (applicationCap === null || applicationCap === undefined) return 2;
+  const cap = parseInt(applicationCap);
+  if (cap <= 10) return 0;
+  if (cap <= 25) return 0.5;
+  if (cap <= 50) return 1;
+  return 2;
+}
+
+// Preview fee before posting/boosting (no auth side-effects)
+exports.getFeePreview = async (req, res) => {
+  try {
+    const { budget, isBoosted, applicationCap } = req.query;
+
+    if (!budget || isNaN(parseFloat(budget))) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Valid budget is required" });
+    }
+
+    const platformFeeRate = isBoosted === "true" ? 4 : 2;
+    const applicationCapFeeRate = computeCapFeeRate(
+      applicationCap === "null" ? null : applicationCap,
+    );
+    const totalFeeRate = platformFeeRate + applicationCapFeeRate;
+    const platformFeeAmount = parseFloat(
+      ((totalFeeRate / 100) * parseFloat(budget)).toFixed(2),
+    );
+
+    return res.json({
+      success: true,
+      platformFeeRate,
+      applicationCapFeeRate,
+      totalFeeRate,
+      platformFeeAmount,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Boost an existing job listing (charges the extra 2% on top of base fee)
+exports.boostJobListing = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+    const { jobId } = req.params;
+    const { paymentDetails } = req.body;
+
+    if (!employerId) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const job = await JobListing.findOne({ jobId, employerId });
+    if (!job) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Job listing not found" });
+    }
+
+    if (job.isBoosted) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "This job is already boosted. The boost is active for the full lifetime of the job posting.",
+      });
+    }
+
+    // Recalculate fees with boost
+    const platformFeeRate = 4;
+    const applicationCapFeeRate = computeCapFeeRate(job.applicationCap);
+    const totalFeeRate = platformFeeRate + applicationCapFeeRate;
+    const platformFeeAmount = parseFloat(
+      ((totalFeeRate / 100) * job.budget).toFixed(2),
+    );
+
+    job.isBoosted = true;
+    job.boostExpiresAt = null; // boost lasts for the full duration of the job posting
+    job.platformFeeRate = platformFeeRate;
+    job.platformFeeAmount = platformFeeAmount;
+    await job.save();
+
+    return res.json({
+      success: true,
+      message: "Job listing boosted successfully",
+      data: {
+        jobId: job.jobId,
+        isBoosted: true,
+        boostExpiresAt: null,
+        platformFeeRate,
+        applicationCapFeeRate,
+        totalFeeRate,
+        platformFeeAmount,
+      },
+    });
+  } catch (error) {
+    console.error("Boost job listing error:", error);
+    return res
+      .status(500)
+      .json({ success: false, error: "Failed to boost job listing" });
   }
 };
 
@@ -330,7 +463,7 @@ exports.getJobApplicationsAPI = async (req, res) => {
       // First separate by premium status
       if (a.isPremium && !b.isPremium) return -1;
       if (!a.isPremium && b.isPremium) return 1;
-      
+
       // Within same tier, oldest first (ascending order)
       return new Date(a.appliedDate) - new Date(b.appliedDate);
     });
@@ -342,13 +475,13 @@ exports.getJobApplicationsAPI = async (req, res) => {
         stats: {
           total: applicationsWithDetails.length,
           pending: applicationsWithDetails.filter(
-            (app) => app.status === "Pending"
+            (app) => app.status === "Pending",
           ).length,
           accepted: applicationsWithDetails.filter(
-            (app) => app.status === "Accepted"
+            (app) => app.status === "Accepted",
           ).length,
           rejected: applicationsWithDetails.filter(
-            (app) => app.status === "Rejected"
+            (app) => app.status === "Rejected",
           ).length,
         },
       },
@@ -358,6 +491,44 @@ exports.getJobApplicationsAPI = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching job applications: " + error.message,
+    });
+  }
+};
+
+exports.getPendingApplicationsCount = async (req, res) => {
+  try {
+    const employerId = req.session?.user?.roleId;
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Employer roleId not found in session",
+      });
+    }
+
+    const jobs = await JobListing.find({ employerId }).select("jobId").lean();
+    const jobIds = jobs.map((job) => job.jobId);
+
+    if (jobIds.length === 0) {
+      return res.json({
+        success: true,
+        count: 0,
+      });
+    }
+
+    const count = await JobApplication.countDocuments({
+      jobId: { $in: jobIds },
+      status: "Pending",
+    });
+
+    return res.json({
+      success: true,
+      count,
+    });
+  } catch (error) {
+    console.error("Error fetching pending applications count:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Error fetching pending applications count: " + error.message,
     });
   }
 };
@@ -382,7 +553,7 @@ exports.acceptJobApplication = async (req, res) => {
 
     await JobApplication.findOneAndUpdate(
       { applicationId },
-      { $set: { status: "Accepted" } }
+      { $set: { status: "Accepted" } },
     );
 
     await JobListing.findOneAndUpdate(
@@ -394,7 +565,7 @@ exports.acceptJobApplication = async (req, res) => {
           "assignedFreelancer.status": "working",
           status: "closed",
         },
-      }
+      },
     );
 
     res.json({ success: true, message: "Application accepted successfully" });
@@ -424,7 +595,7 @@ exports.rejectJobApplication = async (req, res) => {
 
     await JobApplication.findOneAndUpdate(
       { applicationId },
-      { $set: { status: "Rejected" } }
+      { $set: { status: "Rejected" } },
     );
 
     res.json({ success: true, message: "Application rejected successfully" });
@@ -466,36 +637,36 @@ exports.upgradeSubscription = async (req, res) => {
     const user = req.session.user;
     const userId = req.session.user.id;
     const { duration, paymentDetails } = req.body;
-    
+
     if (!userId) {
       return res.status(401).json({ success: false, message: "Not logged in" });
     }
-    
+
     // Calculate expiry date
     const expiryDate = new Date();
     expiryDate.setMonth(expiryDate.getMonth() + (duration || 1));
-    
+
     // Update the user's subscription to "Premium" with duration
     await User.updateOne(
-      { userId }, 
-      { 
-        $set: { 
+      { userId },
+      {
+        $set: {
           subscription: "Premium",
           subscriptionDuration: duration || null,
-          subscriptionExpiryDate: expiryDate
-        } 
-      }
+          subscriptionExpiryDate: expiryDate,
+        },
+      },
     );
-    
+
     req.session.user.subscription = "Premium";
     req.session.user.subscriptionDuration = duration || null;
     req.session.user.subscriptionExpiryDate = expiryDate;
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: "Successfully upgraded to Premium",
       duration: duration,
-      expiryDate: expiryDate
+      expiryDate: expiryDate,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -510,17 +681,17 @@ exports.downgradeSubscription = async (req, res) => {
     }
     // Update the user's subscription to "Basic" and clear duration
     await User.updateOne(
-      { userId }, 
-      { 
+      { userId },
+      {
         $set: { subscription: "Basic" },
-        $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" }
-      }
+        $unset: { subscriptionDuration: "", subscriptionExpiryDate: "" },
+      },
     );
-    
+
     req.session.user.subscription = "Basic";
     delete req.session.user.subscriptionDuration;
     delete req.session.user.subscriptionExpiryDate;
-    
+
     res.json({ success: true, message: "Successfully downgraded to Basic" });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -603,7 +774,7 @@ exports.getCurrentFreelancers = async (req, res) => {
 
     const freelancerIds = jobs
       .filter(
-        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId
+        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId,
       )
       .map((job) => job.assignedFreelancer.freelancerId);
 
@@ -640,14 +811,14 @@ exports.getCurrentFreelancers = async (req, res) => {
     // Build response with job details
     const freelancersData = jobs.map((job) => {
       const freelancerRecord = freelancerRecords.find(
-        (f) => f.freelancerId === job.assignedFreelancer.freelancerId
+        (f) => f.freelancerId === job.assignedFreelancer.freelancerId,
       );
       const user = users.find((u) => u.userId === freelancerRecord?.userId);
       const daysSinceStart = job.assignedFreelancer.startDate
         ? Math.floor(
             (Date.now() -
               new Date(job.assignedFreelancer.startDate).getTime()) /
-              (1000 * 60 * 60 * 24)
+              (1000 * 60 * 60 * 24),
           )
         : 0;
 
@@ -718,7 +889,7 @@ exports.getWorkHistory = async (req, res) => {
 
     const freelancerIds = jobs
       .filter(
-        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId
+        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId,
       )
       .map((job) => job.assignedFreelancer.freelancerId);
 
@@ -737,7 +908,7 @@ exports.getWorkHistory = async (req, res) => {
       });
     }
 
-    console.log('Work history - freelancerIds:', freelancerIds);
+    console.log("Work history - freelancerIds:", freelancerIds);
 
     // Get Freelancer records to fetch userId
     const freelancerRecords = await Freelancer.find({
@@ -746,27 +917,29 @@ exports.getWorkHistory = async (req, res) => {
       .select("freelancerId userId")
       .lean();
 
-    console.log('Work history - freelancerRecords:', freelancerRecords);
+    console.log("Work history - freelancerRecords:", freelancerRecords);
 
     // Get all users by roleId (most reliable way to fetch freelancer user data)
-    const usersByRoleId = await User.find({ 
+    const usersByRoleId = await User.find({
       roleId: { $in: freelancerIds },
-      role: "Freelancer"
+      role: "Freelancer",
     })
-      .select("userId roleId name email phone picture rating")
+      .select("userId roleId name email phone picture rating location")
       .lean();
 
-    console.log('Work history - users by roleId found:', usersByRoleId.length);
+    console.log("Work history - users by roleId found:", usersByRoleId.length);
 
     // Build response with job details
     const freelancersData = jobs.map((job) => {
       const freelancerRecord = freelancerRecords.find(
-        (f) => f.freelancerId === job.assignedFreelancer.freelancerId
+        (f) => f.freelancerId === job.assignedFreelancer.freelancerId,
       );
-      
+
       // Try to find user by roleId (most reliable)
-      let user = usersByRoleId.find((u) => u.roleId === job.assignedFreelancer.freelancerId);
-      
+      let user = usersByRoleId.find(
+        (u) => u.roleId === job.assignedFreelancer.freelancerId,
+      );
+
       // If not found by roleId, try by userId from freelancer record
       if (!user && freelancerRecord?.userId) {
         user = usersByRoleId.find((u) => u.userId === freelancerRecord.userId);
@@ -778,6 +951,7 @@ exports.getWorkHistory = async (req, res) => {
         name: user?.name || "Unknown",
         email: user?.email || "",
         phone: user?.phone || "",
+        location: user?.location || "",
         picture: user?.picture || "",
         rating: user?.rating || 0,
         jobId: job.jobId,
@@ -789,10 +963,10 @@ exports.getWorkHistory = async (req, res) => {
         status: job.assignedFreelancer.status,
       };
 
-      console.log('Work history - freelancer data:', {
+      console.log("Work history - freelancer data:", {
         freelancerId: result.freelancerId,
         userId: result.userId,
-        name: result.name
+        name: result.name,
       });
 
       return result;
@@ -887,7 +1061,7 @@ exports.rateFreelancer = async (req, res) => {
     if (allRatedJobs.length > 0) {
       const totalRating = allRatedJobs.reduce(
         (sum, job) => sum + job.assignedFreelancer.employerRating,
-        0
+        0,
       );
       const averageRating = totalRating / allRatedJobs.length;
 
@@ -895,7 +1069,7 @@ exports.rateFreelancer = async (req, res) => {
       await User.findOneAndUpdate(
         { roleId: freelancerId },
         { rating: parseFloat(averageRating.toFixed(1)) },
-        { new: true }
+        { new: true },
       );
     }
 
@@ -974,7 +1148,7 @@ exports.rateFreelancer = async (req, res) => {
     if (allRatedJobs.length > 0) {
       const totalRating = allRatedJobs.reduce(
         (sum, job) => sum + job.assignedFreelancer.employerRating,
-        0
+        0,
       );
       const averageRating = totalRating / allRatedJobs.length;
 
@@ -982,7 +1156,7 @@ exports.rateFreelancer = async (req, res) => {
       await User.findOneAndUpdate(
         { roleId: freelancerId },
         { rating: parseFloat(averageRating.toFixed(1)) },
-        { new: true }
+        { new: true },
       );
     }
 
@@ -1172,6 +1346,18 @@ exports.getEmployerProfile = async (req, res) => {
       employer: {
         companyName: employer?.companyName || "",
         websiteLink: employer?.websiteLink || "",
+        companyDetails: employer?.companyDetails || {
+          companyName: "",
+          companyPAN: "",
+          billingAddress: "",
+          accountsPayableEmail: "",
+          taxIdentificationNumber: "",
+          proofOfAddressUrl: "",
+          officialBusinessEmail: "",
+          companyLogoUrl: "",
+          isSubmitted: false,
+          submittedAt: null,
+        },
       },
     });
   } catch (error) {
@@ -1201,7 +1387,6 @@ exports.updateEmployerProfile = async (req, res) => {
       email,
       phone,
       location,
-      companyName,
       websiteLink,
       aboutMe,
       picture,
@@ -1231,10 +1416,9 @@ exports.updateEmployerProfile = async (req, res) => {
     await Employer.findOneAndUpdate(
       { employerId },
       {
-        companyName,
         websiteLink,
       },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     );
 
     // Update session
@@ -1259,6 +1443,224 @@ exports.updateEmployerProfile = async (req, res) => {
   }
 };
 
+// Get employer company verification details
+exports.getEmployerCompanyDetails = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    const employer = await Employer.findOne({ employerId }).lean();
+
+    if (!employer) {
+      return res.status(404).json({
+        success: false,
+        error: "Employer profile not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: employer.companyDetails || {
+        companyName: "",
+        companyPAN: "",
+        billingAddress: "",
+        accountsPayableEmail: "",
+        taxIdentificationNumber: "",
+        proofOfAddressUrl: "",
+        officialBusinessEmail: "",
+        companyLogoUrl: "",
+        isSubmitted: false,
+        submittedAt: null,
+      },
+      isApproved: req.session.user?.isApproved === true,
+    });
+  } catch (error) {
+    console.error("Get employer company details error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to fetch company details",
+    });
+  }
+};
+
+// Save employer company verification details
+exports.updateEmployerCompanyDetails = async (req, res) => {
+  try {
+    const userId = req.session.user?.id;
+    const employerId = req.session.user?.roleId;
+
+    if (!userId || !employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    const user = await User.findOne({ userId }).lean();
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: "User not found",
+      });
+    }
+
+    if (user.isApproved) {
+      return res.status(403).json({
+        success: false,
+        error: "Company details cannot be edited after approval",
+      });
+    }
+
+    const {
+      companyName,
+      companyPAN,
+      billingAddress,
+      accountsPayableEmail,
+      taxIdentificationNumber,
+      proofOfAddressUrl,
+      officialBusinessEmail,
+      companyLogoUrl,
+    } = req.body;
+
+    const requiredFields = [
+      companyName,
+      companyPAN,
+      billingAddress,
+      accountsPayableEmail,
+      taxIdentificationNumber,
+      proofOfAddressUrl,
+      officialBusinessEmail,
+      companyLogoUrl,
+    ];
+
+    if (requiredFields.some((value) => !String(value || "").trim())) {
+      return res.status(400).json({
+        success: false,
+        error: "All company details are required",
+      });
+    }
+
+    const updatedEmployer = await Employer.findOneAndUpdate(
+      { employerId },
+      {
+        companyName: String(companyName || "").trim(),
+        companyDetails: {
+          companyName: String(companyName || "").trim(),
+          companyPAN: String(companyPAN || "").trim(),
+          billingAddress: String(billingAddress || "").trim(),
+          accountsPayableEmail: String(accountsPayableEmail || "").trim(),
+          taxIdentificationNumber: String(taxIdentificationNumber || "").trim(),
+          proofOfAddressUrl: String(proofOfAddressUrl || "").trim(),
+          officialBusinessEmail: String(officialBusinessEmail || "").trim(),
+          companyLogoUrl: String(companyLogoUrl || "").trim(),
+          isSubmitted: true,
+          submittedAt: new Date(),
+        },
+      },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!updatedEmployer) {
+      return res.status(404).json({
+        success: false,
+        error: "Employer profile not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Company details saved successfully",
+      data: updatedEmployer.companyDetails,
+    });
+  } catch (error) {
+    console.error("Update employer company details error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to update company details",
+    });
+  }
+};
+
+// Upload employer company logo
+exports.uploadCompanyLogo = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded",
+      });
+    }
+
+    // Store locally under /uploads/verification_doc
+    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
+
+    return res.json({
+      success: true,
+      imageUrl,
+      message: "Company logo uploaded successfully",
+    });
+  } catch (error) {
+    console.error("Upload company logo error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to upload company logo",
+    });
+  }
+};
+
+// Upload proof of address document (PDF)
+exports.uploadCompanyProofDocument = async (req, res) => {
+  try {
+    const employerId = req.session.user?.roleId;
+
+    if (!employerId) {
+      return res.status(401).json({
+        success: false,
+        error: "Unauthorized",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded",
+      });
+    }
+
+    // The file has been written to disk by multer (uploadVerification).
+    // Return a local URL served from /uploads/verification_doc
+    console.log('Uploaded proof file:', req.file);
+    const fileUrl = `/uploads/verification_doc/${req.file.filename}`;
+
+    return res.json({
+      success: true,
+      fileUrl,
+      message: "Proof of address uploaded successfully",
+    });
+  } catch (error) {
+    console.error("Upload company proof document error:", error);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to upload proof of address",
+    });
+  }
+};
+
 // Upload employer profile image
 exports.uploadEmployerImage = async (req, res) => {
   try {
@@ -1278,25 +1680,36 @@ exports.uploadEmployerImage = async (req, res) => {
       });
     }
 
-    // Upload to cloudinary
-    const result = await uploadImageToCloudinary(req.file.buffer);
-    const imageUrl = result.secure_url;
+    // Upload image buffer to Cloudinary (memory upload)
+    try {
+      const result = await uploadImageToCloudinary(req.file.buffer);
+      const imageUrl = result.secure_url;
 
-    // Update user picture
-    await User.findOneAndUpdate(
-      { userId },
-      { picture: imageUrl },
-      { new: true }
-    );
+      await User.findOneAndUpdate(
+        { userId },
+        { picture: imageUrl },
+        { new: true },
+      );
 
-    // Update session
-    req.session.user.picture = imageUrl;
+      // Update session
+      req.session.user.picture = imageUrl;
 
-    return res.json({
-      success: true,
-      imageUrl,
-      message: "Image uploaded successfully",
-    });
+      return res.json({
+        success: true,
+        imageUrl,
+        message: "Image uploaded successfully",
+      });
+    } catch (err) {
+      console.error('Cloudinary image upload failed, falling back to local storage:', err?.message || err);
+      // fallback: if multer saved file locally (unlikely for profile upload), return local path
+      if (req.file && req.file.filename) {
+        const fallbackUrl = `/uploads/verification_doc/${req.file.filename}`;
+        req.session.user.picture = fallbackUrl;
+        await User.findOneAndUpdate({ userId }, { picture: fallbackUrl }, { new: true });
+        return res.json({ success: true, imageUrl: fallbackUrl, message: 'Image uploaded (local fallback)' });
+      }
+      return res.status(500).json({ success: false, error: 'Failed to upload image' });
+    }
   } catch (error) {
     console.error("Upload employer image error:", error);
     return res.status(500).json({
@@ -1374,7 +1787,7 @@ exports.getTransactions = async (req, res) => {
 
     // Get freelancer details
     const freelancerIds = jobs.map(
-      (job) => job.assignedFreelancer.freelancerId
+      (job) => job.assignedFreelancer.freelancerId,
     );
     const users = await User.find({ roleId: { $in: freelancerIds } })
       .select("roleId name email picture")
@@ -1383,7 +1796,7 @@ exports.getTransactions = async (req, res) => {
     // Build transaction data
     const transactions = jobs.map((job) => {
       const user = users.find(
-        (u) => u.roleId === job.assignedFreelancer.freelancerId
+        (u) => u.roleId === job.assignedFreelancer.freelancerId,
       );
 
       // Calculate payment progress
@@ -1397,7 +1810,7 @@ exports.getTransactions = async (req, res) => {
 
       // Calculate project completion
       const completedMilestones = milestones.filter(
-        (m) => m.status === "paid"
+        (m) => m.status === "paid",
       ).length;
       const projectCompletion =
         milestones.length > 0
@@ -1406,7 +1819,7 @@ exports.getTransactions = async (req, res) => {
 
       // Count pending requests
       const pendingRequests = milestones.filter(
-        (m) => m.requested && m.status !== "paid"
+        (m) => m.requested && m.status !== "paid",
       ).length;
 
       return {
@@ -1493,7 +1906,7 @@ exports.getTransactionDetails = async (req, res) => {
 
     // Calculate project completion
     const completedMilestones = milestones.filter(
-      (m) => m.status === "paid"
+      (m) => m.status === "paid",
     ).length;
     const projectCompletion =
       milestones.length > 0
@@ -1564,7 +1977,7 @@ exports.payMilestone = async (req, res) => {
 
     // Find the milestone
     const milestoneIndex = job.milestones.findIndex(
-      (m) => m.milestoneId === milestoneId
+      (m) => m.milestoneId === milestoneId,
     );
     if (milestoneIndex === -1) {
       return res.status(404).json({
@@ -1599,7 +2012,7 @@ exports.payMilestone = async (req, res) => {
     const paymentPercentage =
       totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
     const completedMilestones = milestones.filter(
-      (m) => m.status === "paid"
+      (m) => m.status === "paid",
     ).length;
     const projectCompletion =
       milestones.length > 0

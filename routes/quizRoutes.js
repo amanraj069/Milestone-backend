@@ -2,6 +2,152 @@ const express = require('express');
 const quizController = require('../controllers/quizController');
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   - name: Quiz
+ *     description: Public quiz endpoints for users
+ *
+ * /api/quizzes:
+ *   get:
+ *     summary: List all published quizzes
+ *     tags: [Quiz]
+ *     responses:
+ *       200:
+ *         description: Quizzes listed
+ *
+ * /api/quizzes/{id}:
+ *   get:
+ *     summary: Get a quiz for taking (no correct answers)
+ *     tags: [Quiz]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Quiz returned
+ *       404:
+ *         description: Quiz not found
+ *
+ * /api/quizzes/{id}/eligibility:
+ *   get:
+ *     summary: Check if user is eligible to attempt quiz
+ *     tags: [Quiz]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Eligibility status returned
+ *
+ * /api/quizzes/{id}/start:
+ *   post:
+ *     summary: Start a quiz attempt (server-side timer)
+ *     tags: [Quiz]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Attempt started
+ *       400:
+ *         description: Not eligible or already in progress
+ *
+ * /api/quizzes/report-violation:
+ *   post:
+ *     summary: Report a violation during an active attempt
+ *     tags: [Quiz]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               attemptId:
+ *                 type: string
+ *               violationType:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Violation reported
+ *
+ * /api/quizzes/{id}/attempt:
+ *   post:
+ *     summary: Submit a quiz attempt
+ *     tags: [Quiz]
+ *     security:
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [answers]
+ *             properties:
+ *               attemptId:
+ *                 type: string
+ *               answers:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *     responses:
+ *       200:
+ *         description: Attempt submitted and scored
+ *       400:
+ *         description: Validation error
+ *
+ * /api/quizzes/users/{userId}/attempts:
+ *   get:
+ *     summary: List user quiz attempts
+ *     tags: [Quiz]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Attempts listed
+ *
+ * /api/quizzes/users/{userId}/badges:
+ *   get:
+ *     summary: List user quiz badges
+ *     tags: [Quiz]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Badges listed
+ */
+
 // List quizzes
 router.get('/', quizController.publicListQuizzes);
 

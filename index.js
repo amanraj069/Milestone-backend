@@ -7,6 +7,8 @@ const { Server } = require("socket.io");
 const path = require("path");
 const helmet = require("helmet");
 const morgan = require("morgan");
+const swaggerUi = require("swagger-ui-express");
+const swaggerJsdoc = require("swagger-jsdoc");
 const rfs = require("rotating-file-stream");
 const hpp = require("hpp");
 const mongoSanitize = require("express-mongo-sanitize");
@@ -76,6 +78,35 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Swagger setup (non-invasive; only serves docs at /api-docs)
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "Milestone API",
+      version: "1.0.0",
+      description: "API documentation for Milestone backend",
+    },
+    servers: [
+      {
+        url: "/",
+      },
+    ],
+  },
+  apis: [path.join(__dirname, "routes", "*.js"), path.join(__dirname, "controllers", "*.js")],
+};
+
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    swaggerOptions: {
+      withCredentials: true,
+    },
+  }),
+);
 
 // Only sanitize req.body and req.params,
 // skip req.query to avoid read-only property error
@@ -404,6 +435,8 @@ connectDB
         }`,
       );
       console.log(`Socket.IO server ready`);
+      console.log(`API Documentation available at /api-docs`);
+
     });
   })
   .catch((err) => {
