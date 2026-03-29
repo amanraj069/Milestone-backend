@@ -431,13 +431,22 @@ exports.getDashboardStats = async (req, res) => {
     const activeJobs = await JobListing.countDocuments({ status: "open" });
 
     // Get completed tasks/applications count
+    // JobApplication.status enum is ["Pending", "Accepted", "Rejected"],
+    // so use "Accepted" as the completed applications metric.
     const completedTasks = await JobApplication.countDocuments({
-      status: "completed",
+      status: "Accepted",
     });
 
-    // Calculate total read time from all blogs
-    const blogs = await Blog.find({}, 'readTime').lean();
-    const totalReadTime = blogs.reduce((sum, blog) => sum + (blog.readTime || 0), 0);
+    // Calculate total read time via aggregation to avoid loading all blog docs
+    const readTimeAgg = await Blog.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalReadTime: { $sum: { $ifNull: ["$readTime", 0] } },
+        },
+      },
+    ]);
+    const totalReadTime = readTimeAgg[0]?.totalReadTime || 0;
 
     // Calculate uptime percentage (mock calculation)
     const uptime = 98;
