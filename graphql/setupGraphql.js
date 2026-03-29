@@ -12,7 +12,7 @@ const setupGraphql = (app) => {
   const { schema, resolvers } = require("./schema");
 
   app.all(
-    "/api/graphql",
+    "/graphql",
     createHandler({
       schema,
       rootValue: resolvers,
@@ -20,7 +20,7 @@ const setupGraphql = (app) => {
     }),
   );
 
-  console.log("GraphQL endpoint enabled at /api/graphql");
+  console.log("GraphQL endpoint enabled at /graphql");
 };
 
 module.exports = setupGraphql;
