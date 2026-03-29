@@ -4,6 +4,7 @@ const User = require("../models/user");
 const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
+const Payment = require("../models/Payment");
 const { v4: uuidv4 } = require("uuid");
 const { uploadToCloudinary } = require("../middleware/pdfUpload");
 const {
@@ -74,6 +75,7 @@ exports.createJobListing = async (req, res) => {
       milestones,
       isBoosted,
       applicationCap,
+      paymentDetails,
     } = req.body;
 
     // Validate required fields
@@ -136,6 +138,15 @@ exports.createJobListing = async (req, res) => {
     });
 
     await newJob.save();
+
+    // Link payment record to this user/job if Razorpay details provided
+    if (paymentDetails?.razorpayOrderId) {
+      const userId = req.session.user?.id;
+      await Payment.findOneAndUpdate(
+        { razorpayOrderId: paymentDetails.razorpayOrderId },
+        { $set: { userId, "metadata.jobId": newJob.jobId } },
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -380,6 +391,15 @@ exports.boostJobListing = async (req, res) => {
     job.platformFeeRate = platformFeeRate;
     job.platformFeeAmount = platformFeeAmount;
     await job.save();
+
+    // Link payment record to this user/job if Razorpay details provided
+    if (paymentDetails?.razorpayOrderId) {
+      const userId = req.session.user?.id;
+      await Payment.findOneAndUpdate(
+        { razorpayOrderId: paymentDetails.razorpayOrderId },
+        { $set: { userId, "metadata.jobId": jobId } },
+      );
+    }
 
     return res.json({
       success: true,
@@ -657,6 +677,14 @@ exports.upgradeSubscription = async (req, res) => {
         },
       },
     );
+
+    // Link payment record to this user if Razorpay details provided
+    if (paymentDetails?.razorpayOrderId) {
+      await Payment.findOneAndUpdate(
+        { razorpayOrderId: paymentDetails.razorpayOrderId },
+        { $set: { userId } },
+      );
+    }
 
     req.session.user.subscription = "Premium";
     req.session.user.subscriptionDuration = duration || null;
@@ -1563,7 +1591,7 @@ exports.updateEmployerCompanyDetails = async (req, res) => {
           submittedAt: new Date(),
         },
       },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).lean();
 
     if (!updatedEmployer) {
@@ -1644,7 +1672,7 @@ exports.uploadCompanyProofDocument = async (req, res) => {
 
     // The file has been written to disk by multer (uploadVerification).
     // Return a local URL served from /uploads/verification_doc
-    console.log('Uploaded proof file:', req.file);
+    console.log("Uploaded proof file:", req.file);
     const fileUrl = `/uploads/verification_doc/${req.file.filename}`;
 
     return res.json({
@@ -1700,15 +1728,28 @@ exports.uploadEmployerImage = async (req, res) => {
         message: "Image uploaded successfully",
       });
     } catch (err) {
-      console.error('Cloudinary image upload failed, falling back to local storage:', err?.message || err);
+      console.error(
+        "Cloudinary image upload failed, falling back to local storage:",
+        err?.message || err,
+      );
       // fallback: if multer saved file locally (unlikely for profile upload), return local path
       if (req.file && req.file.filename) {
         const fallbackUrl = `/uploads/verification_doc/${req.file.filename}`;
         req.session.user.picture = fallbackUrl;
-        await User.findOneAndUpdate({ userId }, { picture: fallbackUrl }, { new: true });
-        return res.json({ success: true, imageUrl: fallbackUrl, message: 'Image uploaded (local fallback)' });
+        await User.findOneAndUpdate(
+          { userId },
+          { picture: fallbackUrl },
+          { new: true },
+        );
+        return res.json({
+          success: true,
+          imageUrl: fallbackUrl,
+          message: "Image uploaded (local fallback)",
+        });
       }
-      return res.status(500).json({ success: false, error: 'Failed to upload image' });
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to upload image" });
     }
   } catch (error) {
     console.error("Upload employer image error:", error);

@@ -33,6 +33,7 @@ const quizRoutes = require("./routes/quizRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const questionRoutes = require("./routes/questionRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const paymentRoutes = require("./routes/paymentRoutes");
 const { errorHandler, notFound } = require("./middleware/errorHandler");
 const chatLogger = require("./utils/chatLogger");
 
@@ -99,7 +100,10 @@ const swaggerOptions = {
       },
     ],
   },
-  apis: [path.join(__dirname, "routes", "*.js"), path.join(__dirname, "controllers", "*.js")],
+  apis: [
+    path.join(__dirname, "routes", "*.js"),
+    path.join(__dirname, "controllers", "*.js"),
+  ],
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
@@ -178,6 +182,7 @@ app.use("/api/quizzes", quizRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/questions", questionRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/payment", paymentRoutes);
 
 // Socket.IO connection handling with better error handling
 const userSockets = new Map(); // Map userId to socket.id
@@ -373,7 +378,7 @@ async function startServer() {
         session: req.session,
         loaders: createLoaders(),
       }),
-    })
+    }),
   );
 
   // Register error handlers AFTER GraphQL middleware
