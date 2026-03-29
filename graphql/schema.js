@@ -4,6 +4,8 @@ const Message = require("../models/message");
 const User = require("../models/user");
 const JobListing = require("../models/job_listing");
 const JobApplication = require("../models/job_application");
+const Freelancer = require("../models/freelancer");
+const Feedback = require("../models/Feedback");
 
 const schema = buildSchema(`
   type Query {
@@ -11,6 +13,8 @@ const schema = buildSchema(`
     chatConversations(limit: Int = 20, offset: Int = 0): [ChatConversation!]!
     messagesWithUser(userId: String!, limit: Int = 50, offset: Int = 0): MessageResult!
     employerApplications(status: String = "all", sort: String = "premium_oldest", limit: Int = 50, offset: Int = 0): EmployerApplicationResult!
+    employerTransactionDetail(jobId: String!): EmployerTransactionDetail
+    employerApplicationDetail(applicationId: String!): EmployerApplicationDetail
   }
 
   type ChatConversation {
@@ -83,6 +87,94 @@ const schema = buildSchema(`
     stats: ApplicationStats!
     total: Int!
     hasMore: Boolean!
+  }
+
+  type TransactionMilestone {
+    milestoneId: String!
+    sno: Int!
+    description: String
+    payment: Float!
+    deadline: String
+    status: String
+    requested: Boolean!
+  }
+
+  type EmployerTransactionDetail {
+    jobId: String!
+    jobTitle: String
+    freelancerId: String
+    freelancerName: String
+    freelancerPicture: String
+    freelancerEmail: String
+    status: String
+    startDate: String
+    endDate: String
+    totalBudget: Float!
+    paidAmount: Float!
+    paymentPercentage: Int!
+    projectCompletion: Int!
+    milestones: [TransactionMilestone!]!
+  }
+
+  type PortfolioItem {
+    title: String
+    description: String
+    image: String
+    link: String
+  }
+
+  type FeedbackReview {
+    feedbackId: String
+    fromUserId: String
+    fromUserName: String
+    fromUserPicture: String
+    rating: Int
+    comment: String
+    tags: [String!]!
+    createdAt: String
+  }
+
+  type JobDescriptionDetail {
+    text: String
+    responsibilities: [String!]!
+    requirements: [String!]!
+    skills: [String!]!
+  }
+
+  type JobMatchSignals {
+    matchScore: Int!
+    matchedSkills: [String!]!
+    missingSkills: [String!]!
+    hasPortfolio: Boolean!
+    hasResume: Boolean!
+    feedbackCount: Int!
+    averageFeedbackRating: Float!
+  }
+
+  type EmployerApplicationDetail {
+    applicationId: String!
+    jobId: String!
+    freelancerId: String!
+    freelancerUserId: String
+    status: String!
+    appliedDate: String
+    coverMessage: String
+    resumeLink: String
+    freelancerName: String
+    freelancerPicture: String
+    freelancerEmail: String
+    freelancerPhone: String
+    freelancerRating: Float
+    skillRating: Float
+    isPremium: Boolean!
+    freelancerAbout: String
+    freelancerSkills: [String!]!
+    freelancerPortfolio: [PortfolioItem!]!
+    jobTitle: String
+    jobDescription: JobDescriptionDetail
+    feedbackReviews: [FeedbackReview!]!
+    feedbackTotal: Int!
+    jobMatch: JobMatchSignals!
   }
 `);
 
@@ -358,6 +450,225 @@ const resolvers = {
       },
       total,
       hasMore: safeOffset + paginated.length < total,
+    };
+  },
+
+  employerTransactionDetail: async ({ jobId }, context) => {
+    const user = getSessionUser(context);
+    const employerId = user.roleId;
+    if (!employerId) {
+      throw new Error("Unauthorized");
+    }
+
+    const job = await JobListing.findOne({ jobId, employerId }).lean();
+    if (!job) {
+      throw new Error("Job not found");
+    }
+
+    if (!job.assignedFreelancer || !job.assignedFreelancer.freelancerId) {
+      throw new Error("No freelancer assigned to this job");
+    }
+
+    const freelancerUser = await User.findOne({
+      roleId: job.assignedFreelancer.freelancerId,
+    })
+      .select("roleId name email picture")
+      .lean();
+
+    const totalBudget = Number(job.budget) || 0;
+    const milestones = Array.isArray(job.milestones) ? job.milestones : [];
+    const paidAmount = milestones
+      .filter((milestone) => milestone.status === "paid")
+      .reduce(
+        (sum, milestone) => sum + (Number.parseFloat(milestone.payment) || 0),
+        0,
+      );
+    const paymentPercentage =
+      totalBudget > 0 ? Math.round((paidAmount / totalBudget) * 100) : 0;
+    const completedMilestones = milestones.filter(
+      (milestone) => milestone.status === "paid",
+    ).length;
+    const projectCompletion =
+      milestones.length > 0
+        ? Math.round((completedMilestones / milestones.length) * 100)
+        : 0;
+
+    return {
+      jobId: job.jobId,
+      jobTitle: job.title,
+      freelancerId: job.assignedFreelancer.freelancerId,
+      freelancerName: freelancerUser?.name || "Unknown",
+      freelancerPicture: freelancerUser?.picture || "",
+      freelancerEmail: freelancerUser?.email || "",
+      status: job.assignedFreelancer.status,
+      startDate: toIsoString(job.assignedFreelancer.startDate),
+      endDate: toIsoString(job.assignedFreelancer.endDate),
+      totalBudget,
+      paidAmount,
+      paymentPercentage,
+      projectCompletion,
+      milestones: milestones.map((milestone, index) => ({
+        milestoneId: milestone.milestoneId,
+        sno: index + 1,
+        description: milestone.description,
+        payment: Number.parseFloat(milestone.payment) || 0,
+        deadline: milestone.deadline,
+        status: milestone.status,
+        requested: Boolean(milestone.requested),
+      })),
+    };
+  },
+
+  employerApplicationDetail: async ({ applicationId }, context) => {
+    const user = getSessionUser(context);
+    const employerId = user.roleId;
+    if (!employerId) {
+      throw new Error("Unauthorized");
+    }
+
+    const application = await JobApplication.findOne({ applicationId }).lean();
+    if (!application) {
+      throw new Error("Application not found");
+    }
+
+    const job = await JobListing.findOne({
+      jobId: application.jobId,
+      employerId,
+    }).lean();
+
+    if (!job) {
+      throw new Error("Application does not belong to this employer");
+    }
+
+    const freelancerUser = await User.findOne({ roleId: application.freelancerId })
+      .select("userId roleId name picture email phone rating subscription aboutMe")
+      .lean();
+
+    const freelancerProfile = await Freelancer.findOne({
+      freelancerId: application.freelancerId,
+    })
+      .select("skills portfolio resume")
+      .lean();
+
+    const feedbacks = freelancerUser?.userId
+      ? await Feedback.find({ toUserId: freelancerUser.userId })
+          .sort({ createdAt: -1 })
+          .limit(10)
+          .lean()
+      : [];
+
+    const feedbackTotal = freelancerUser?.userId
+      ? await Feedback.countDocuments({ toUserId: freelancerUser.userId })
+      : 0;
+
+    const feedbackStats = freelancerUser?.userId
+      ? await Feedback.aggregate([
+          { $match: { toUserId: freelancerUser.userId } },
+          {
+            $group: {
+              _id: null,
+              averageRating: { $avg: "$rating" },
+            },
+          },
+        ])
+      : [];
+
+    const reviewerIds = [...new Set(feedbacks.map((entry) => entry.fromUserId))];
+    const reviewers = reviewerIds.length
+      ? await User.find({ userId: { $in: reviewerIds } })
+          .select("userId name picture")
+          .lean()
+      : [];
+    const reviewerMap = new Map(reviewers.map((entry) => [entry.userId, entry]));
+
+    const jobSkills = Array.isArray(job.description?.skills)
+      ? job.description.skills
+      : [];
+    const freelancerSkills = Array.isArray(freelancerProfile?.skills)
+      ? freelancerProfile.skills
+      : [];
+
+    const normalizedFreelancerSkillSet = new Set(
+      freelancerSkills.map((skill) => String(skill).trim().toLowerCase()),
+    );
+
+    const matchedSkills = jobSkills.filter((skill) =>
+      normalizedFreelancerSkillSet.has(String(skill).trim().toLowerCase()),
+    );
+
+    const missingSkills = jobSkills.filter(
+      (skill) =>
+        !normalizedFreelancerSkillSet.has(String(skill).trim().toLowerCase()),
+    );
+
+    const matchScore =
+      jobSkills.length > 0
+        ? Math.round((matchedSkills.length / jobSkills.length) * 100)
+        : 0;
+
+    const avgFeedbackRating =
+      feedbackStats.length > 0
+        ? Number((feedbackStats[0].averageRating || 0).toFixed(1))
+        : 0;
+
+    return {
+      applicationId: application.applicationId,
+      jobId: application.jobId,
+      freelancerId: application.freelancerId,
+      freelancerUserId: freelancerUser?.userId || null,
+      status: application.status,
+      appliedDate: toIsoString(application.appliedDate),
+      coverMessage: application.coverMessage || "",
+      resumeLink: application.resumeLink || freelancerProfile?.resume || "",
+      freelancerName: freelancerUser?.name || "Unknown Freelancer",
+      freelancerPicture: freelancerUser?.picture || null,
+      freelancerEmail: freelancerUser?.email || null,
+      freelancerPhone: freelancerUser?.phone || null,
+      freelancerRating: Number(freelancerUser?.rating || 0),
+      skillRating: Number(freelancerUser?.rating || 0),
+      isPremium: freelancerUser?.subscription === "Premium",
+      freelancerAbout: freelancerUser?.aboutMe || "",
+      freelancerSkills,
+      freelancerPortfolio: Array.isArray(freelancerProfile?.portfolio)
+        ? freelancerProfile.portfolio
+        : [],
+      jobTitle: job.title,
+      jobDescription: {
+        text: job.description?.text || "",
+        responsibilities: Array.isArray(job.description?.responsibilities)
+          ? job.description.responsibilities
+          : [],
+        requirements: Array.isArray(job.description?.requirements)
+          ? job.description.requirements
+          : [],
+        skills: jobSkills,
+      },
+      feedbackReviews: feedbacks.map((entry) => ({
+        feedbackId: entry.feedbackId,
+        fromUserId: entry.fromUserId,
+        fromUserName: entry.anonymous
+          ? "Anonymous"
+          : reviewerMap.get(entry.fromUserId)?.name || "Unknown User",
+        fromUserPicture: entry.anonymous
+          ? null
+          : reviewerMap.get(entry.fromUserId)?.picture || null,
+        rating: entry.rating,
+        comment: entry.comment || "",
+        tags: Array.isArray(entry.tags) ? entry.tags : [],
+        createdAt: toIsoString(entry.createdAt),
+      })),
+      feedbackTotal,
+      jobMatch: {
+        matchScore,
+        matchedSkills,
+        missingSkills,
+        hasPortfolio: Array.isArray(freelancerProfile?.portfolio)
+          ? freelancerProfile.portfolio.length > 0
+          : false,
+        hasResume: Boolean(application.resumeLink || freelancerProfile?.resume),
+        feedbackCount: feedbackTotal,
+        averageFeedbackRating: avgFeedbackRating,
+      },
     };
   },
 };
