@@ -35,18 +35,22 @@ exports.getJobListings = async (req, res) => {
       postedDate: -1,
     });
 
-    // Add application count for each job
-    const jobListingsWithCount = await Promise.all(
-      jobListings.map(async (job) => {
-        const applicationCount = await JobApplication.countDocuments({
-          jobId: job.jobId,
-        });
-        return {
-          ...job.toObject(),
-          applicationCount,
-        };
-      })
-    );
+    // Add application counts with a single grouped query (avoids N+1)
+    const jobIds = jobListings.map((job) => job.jobId);
+    const applicationCounts = await JobApplication.aggregate([
+      { $match: { jobId: { $in: jobIds } } },
+      { $group: { _id: "$jobId", count: { $sum: 1 } } },
+    ]);
+
+    const applicationCountMap = {};
+    applicationCounts.forEach((item) => {
+      applicationCountMap[item._id] = item.count;
+    });
+
+    const jobListingsWithCount = jobListings.map((job) => ({
+      ...job.toObject(),
+      applicationCount: applicationCountMap[job.jobId] || 0,
+    }));
 
     return res.json({
       success: true,

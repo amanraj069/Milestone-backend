@@ -3,6 +3,8 @@ const JobListing = require("../models/job_listing");
 const JobApplication = require("../models/job_application");
 const UserBadge = require("../models/UserBadge");
 const User = require("../models/user");
+const Employer = require("../models/employer");
+const Blog = require("../models/blog");
 
 const resolvers = {
   Query: {
@@ -469,6 +471,129 @@ const resolvers = {
           accepted: result.filter((a) => a.status === "Accepted").length,
           rejected: result.filter((a) => a.status === "Rejected").length,
         },
+      };
+    },
+
+    // ──────────────────────────────────────────────
+    //  PUBLIC JOB LISTINGS
+    // ──────────────────────────────────────────────
+
+    /**
+     * GET /api/jobs/api
+     * GraphQL version keeps the same prioritization/tier logic,
+     * while letting clients request only required fields.
+     */
+
+    publicJobs: async () => {
+      const jobs = await JobListing.find({
+        status: "open",
+        $or: [
+          { applicationCap: null },
+          { applicationCap: { $exists: false } },
+          { $expr: { $lt: ["$applicants", "$applicationCap"] } },
+        ],
+      })
+        .sort({ postedDate: -1 })
+        .lean();
+
+      const employerIds = [...new Set(jobs.map((job) => job.employerId))];
+
+      const employers = await Employer.find({
+        employerId: { $in: employerIds },
+      }).lean();
+      const employerUserIds = employers.map((emp) => emp.userId);
+      const users = await User.find({ userId: { $in: employerUserIds } }).lean();
+
+      const subscriptionMap = {};
+      employers.forEach((emp) => {
+        const user = users.find((u) => u.userId === emp.userId);
+        subscriptionMap[emp.employerId] = user?.subscription === "Premium";
+      });
+
+      const formattedJobs = jobs.map((job) => {
+        const isPremium = subscriptionMap[job.employerId] || false;
+        const isBoostedActive = job.isBoosted === true;
+
+        let tier = 1;
+        if (isPremium && isBoostedActive) tier = 4;
+        else if (isBoostedActive) tier = 3;
+        else if (isPremium) tier = 2;
+
+        return {
+          jobId: job.jobId,
+          employerId: job.employerId,
+          title: job.title,
+          imageUrl: job.imageUrl || "/assets/company_logo.jpg",
+          budget: {
+            amount: job.budget,
+            period: job.jobType === "contract" ? "fixed" : "monthly",
+          },
+          location: job.location || "Remote",
+          jobType: job.jobType,
+          experienceLevel: job.experienceLevel,
+          remote: job.remote,
+          postedDate: job.postedDate?.toISOString?.() || job.postedDate,
+          description: {
+            skills: job.description?.skills || [],
+          },
+          applicationCount: job.applicants || 0,
+          applicationCap: job.applicationCap || null,
+          isSponsored: isPremium,
+          isBoosted: isBoostedActive,
+          tier,
+        };
+      });
+
+      formattedJobs.sort((a, b) => {
+        if (b.tier !== a.tier) return b.tier - a.tier;
+        return new Date(b.postedDate) - new Date(a.postedDate);
+      });
+
+      return formattedJobs;
+    },
+
+    // ──────────────────────────────────────────────
+    //  PUBLIC BLOG DETAIL
+    // ──────────────────────────────────────────────
+
+    /**
+     * Replaces multiple REST calls used by blog detail page:
+     * - GET /api/blogs/:blogId
+     * - GET /api/blogs/latest
+     * - GET /api/blogs/featured
+     * Returns blog + recentBlogs + featuredBlog in one query.
+     */
+
+    publicBlogDetail: async (_parent, { blogId }) => {
+      const blog = await Blog.findOne({ blogId, status: "published" }).lean();
+      if (!blog) {
+        throw new Error("Blog not found");
+      }
+
+      await Blog.updateOne({ blogId }, { $inc: { views: 1 } });
+
+      const [updatedBlog, recentBlogs, featuredBlog] = await Promise.all([
+        Blog.findOne({ blogId, status: "published" }).lean(),
+        Blog.find({
+          status: "published",
+          blogId: { $ne: blogId },
+        })
+          .sort({ createdAt: -1 })
+          .limit(3)
+          .lean(),
+        Blog.findOne({
+          status: "published",
+          featured: true,
+          blogId: { $ne: blogId },
+        })
+          .sort({ createdAt: -1 })
+          .lean(),
+      ]);
+
+      return {
+        blog: updatedBlog,
+        recentBlogs,
+        featuredBlog: featuredBlog || null,
       };
     },
   },
