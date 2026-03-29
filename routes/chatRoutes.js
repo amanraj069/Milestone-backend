@@ -24,35 +24,7 @@ const requireAuth = (req, res, next) => {
  *   - name: Chat
  *     description: Real-time chat and messaging (requires authentication)
  *
- * /api/chat/conversations:
- *   get:
- *     summary: Get all conversations for the logged-in user
- *     tags: [Chat]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: List of conversations
- *       401:
- *         description: Authentication required
- *
  * /api/chat/messages/{userId}:
- *   get:
- *     summary: Get messages with a specific user
- *     tags: [Chat]
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - in: path
- *         name: userId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Messages returned
- *       401:
- *         description: Authentication required
  *   post:
  *     summary: Send a message to a user
  *     tags: [Chat]
@@ -132,12 +104,6 @@ const requireAuth = (req, res, next) => {
  *       401:
  *         description: Authentication required
  */
-
-// Get all conversations for the logged-in user
-router.get("/conversations", requireAuth, asyncHandler(chatController.getConversations));
-
-// Get messages for a specific conversation
-router.get("/messages/:userId", requireAuth, asyncHandler(chatController.getMessages));
 
 // Send a message
 router.post("/messages/:userId", requireAuth, asyncHandler(chatController.sendMessage));
