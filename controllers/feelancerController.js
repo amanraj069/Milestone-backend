@@ -5,6 +5,7 @@ const Employer = require("../models/employer");
 const Freelancer = require("../models/freelancer");
 const Complaint = require("../models/complaint");
 const Feedback = require("../models/Feedback");
+const Payment = require("../models/Payment");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
 exports.getFreelancerActiveJobs = async (req, res) => {
@@ -189,6 +190,14 @@ exports.upgradeSubscription = async (req, res) => {
         },
       },
     );
+
+    // Link payment record to this user if Razorpay details provided
+    if (paymentDetails?.razorpayOrderId) {
+      await Payment.findOneAndUpdate(
+        { razorpayOrderId: paymentDetails.razorpayOrderId },
+        { $set: { userId } },
+      );
+    }
 
     req.session.user.subscription = "Premium";
     req.session.user.subscriptionDuration = duration || null;
