@@ -594,6 +594,32 @@ const typeDefs = `#graphql
     title: String
     time: String
     icon: String
+  type BlogContentSection {
+    heading: String
+    description: String
+  }
+
+  type PublicBlog {
+    blogId: String
+    slug: String
+    title: String
+    tagline: String
+    category: String
+    imageUrl: String
+    author: String
+    content: [BlogContentSection]
+    readTime: Int
+    featured: Boolean
+    status: String
+    views: Int
+    likes: Int
+    createdAt: String
+  }
+
+  type PublicBlogDetail {
+    blog: PublicBlog
+    recentBlogs: [PublicBlog]
+    featuredBlog: PublicBlog
   }
 
   type Query {
@@ -623,6 +649,8 @@ const typeDefs = `#graphql
     adminEmployerDetail(employerId: String!): AdminEmployerDetail
     adminStatistics: AdminStatistics
     adminActivities: [AdminActivity]
+    # Public blog detail (replaces /api/blogs/:id + latest + featured)
+    publicBlogDetail(blogId: String!): PublicBlogDetail
   }
 `;
 

@@ -4,6 +4,7 @@ const JobApplication = require("../models/job_application");
 const UserBadge = require("../models/UserBadge");
 const User = require("../models/user");
 const adminResolvers = require("./adminResolvers");
+const Blog = require("../models/blog");
 
 const resolvers = {
   Query: {
@@ -473,6 +474,51 @@ const resolvers = {
           accepted: result.filter((a) => a.status === "Accepted").length,
           rejected: result.filter((a) => a.status === "Rejected").length,
         },
+      };
+    },
+
+    // ──────────────────────────────────────────────
+    //  PUBLIC BLOG DETAIL
+    // ──────────────────────────────────────────────
+
+    /**
+     * Replaces multiple REST calls used by blog detail page:
+     * - GET /api/blogs/:blogId
+     * - GET /api/blogs/latest
+     * - GET /api/blogs/featured
+     * Returns blog + recentBlogs + featuredBlog in one query.
+     */
+
+    publicBlogDetail: async (_parent, { blogId }) => {
+      const blog = await Blog.findOne({ blogId, status: "published" }).lean();
+      if (!blog) {
+        throw new Error("Blog not found");
+      }
+
+      await Blog.updateOne({ blogId }, { $inc: { views: 1 } });
+
+      const [updatedBlog, recentBlogs, featuredBlog] = await Promise.all([
+        Blog.findOne({ blogId, status: "published" }).lean(),
+        Blog.find({
+          status: "published",
+          blogId: { $ne: blogId },
+        })
+          .sort({ createdAt: -1 })
+          .limit(3)
+          .lean(),
+        Blog.findOne({
+          status: "published",
+          featured: true,
+          blogId: { $ne: blogId },
+        })
+          .sort({ createdAt: -1 })
+          .lean(),
+      ]);
+
+      return {
+        blog: updatedBlog,
+        recentBlogs,
+        featuredBlog: featuredBlog || null,
       };
     },
   },
