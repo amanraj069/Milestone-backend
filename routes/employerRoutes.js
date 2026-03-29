@@ -181,16 +181,6 @@ const requireEmployer = (req, res, next) => {
  *       200:
  *         description: Job applications returned
  *
- * /api/employer/job_applications/api/data:
- *   get:
- *     summary: Get job applications data (API)
- *     tags: [Employer]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Job applications data returned
- *
  * /api/employer/job_applications/pending-count:
  *   get:
  *     summary: Get pending applications count
@@ -599,11 +589,6 @@ router.get(
   "/job_applications",
   requireEmployer,
   asyncHandler(employerController.getJobApplications),
-);
-router.get(
-  "/job_applications/api/data",
-  requireEmployer,
-  asyncHandler(employerController.getJobApplicationsAPI),
 );
 router.get(
   "/job_applications/pending-count",
