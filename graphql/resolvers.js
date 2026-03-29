@@ -3,6 +3,7 @@ const JobListing = require("../models/job_listing");
 const JobApplication = require("../models/job_application");
 const UserBadge = require("../models/UserBadge");
 const User = require("../models/user");
+const adminResolvers = require("./adminResolvers");
 
 const resolvers = {
   Query: {
@@ -401,6 +402,9 @@ const resolvers = {
      * Before: bulk JobListing.find + bulk Employer.find (already batched in REST)
      * GraphQL version keeps the same batching but lets clients pick fields
      */
+    // ── Admin dashboard queries (delegated to adminResolvers.js) ──
+    ...adminResolvers,
+
     freelancerApplications: async (_parent, _args, { session, loaders }) => {
       if (!session?.user) throw new Error("Unauthorized: Please log in");
       if (session.user.role !== "Freelancer")

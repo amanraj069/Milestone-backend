@@ -218,6 +218,384 @@ const typeDefs = `#graphql
     rejected: Int
   }
 
+  # ── Admin Dashboard Types ────────────────────────
+
+  type AdminUserCounts {
+    total: Int
+    freelancers: Int
+    employers: Int
+    moderators: Int
+    admins: Int
+    premium: Int
+    basic: Int
+  }
+
+  type AdminJobCounts {
+    total: Int
+    active: Int
+    completed: Int
+    closed: Int
+  }
+
+  type AdminApplicationCounts {
+    total: Int
+    pending: Int
+    accepted: Int
+    rejected: Int
+  }
+
+  type AdminComplaintCounts {
+    total: Int
+    pending: Int
+    resolved: Int
+  }
+
+  type AdminRevenueCounts {
+    total: Float
+    totalBudget: Float
+    paidMilestones: Int
+  }
+
+  type AdminQuizCounts {
+    total: Int
+    attempts: Int
+  }
+
+  type AdminBlogCounts {
+    total: Int
+  }
+
+  type AdminFeedbackCounts {
+    total: Int
+    avgRating: Float
+  }
+
+  type AdminDashboardOverview {
+    users: AdminUserCounts
+    jobs: AdminJobCounts
+    applications: AdminApplicationCounts
+    complaints: AdminComplaintCounts
+    revenue: AdminRevenueCounts
+    quizzes: AdminQuizCounts
+    blogs: AdminBlogCounts
+    feedback: AdminFeedbackCounts
+  }
+
+  # ── Admin Dashboard Revenue Types ──────────────
+
+  type AdminMonthlyRevenue {
+    label: String
+    year: Int
+    month: Int
+    subscriptionRevenue: Float
+    platformFeeRevenue: Float
+    totalRevenue: Float
+    jobsPosted: Int
+  }
+
+  type AdminRevenueTotals {
+    totalRevenue: Float
+    subscriptionRevenue: Float
+    platformFees: Float
+    thisMonthRevenue: Float
+    revenueGrowth: Float
+  }
+
+  type AdminEngagement {
+    jobCompletionRate: Int
+    hireRate: Int
+    activeUsers: Int
+    totalUsers: Int
+    premiumUsers: Int
+    conversionRate: Float
+    recentJobs: Int
+    recentApplications: Int
+    avgJobsPerMonth: Int
+  }
+
+  type AdminPlatformFeeJob {
+    jobId: String
+    title: String
+    budget: Float
+    durationDays: Int
+    applicantCount: Int
+    feeRate: Float
+    feeAmount: Float
+    postedDate: String
+    status: String
+    employerName: String
+    companyName: String
+  }
+
+  type AdminFeeTier {
+    range: String
+    modifier: String
+    label: String
+  }
+
+  type AdminFeeTiers {
+    platform: [AdminFeeTier]
+    applicationCap: [AdminFeeTier]
+  }
+
+  type AdminFeeStructure {
+    baseRate: Int
+    description: String
+    range: String
+    tiers: AdminFeeTiers
+  }
+
+  type AdminDashboardRevenue {
+    monthlyRevenue: [AdminMonthlyRevenue]
+    totals: AdminRevenueTotals
+    engagement: AdminEngagement
+    recentPlatformFees: [AdminPlatformFeeJob]
+    feeStructure: AdminFeeStructure
+  }
+
+  # ── Admin Payments Types ───────────────────────
+
+  type AdminPayment {
+    jobId: String
+    jobTitle: String
+    milestoneId: String
+    milestoneDescription: String
+    amount: Float
+    status: String
+    employerName: String
+    companyName: String
+    freelancerName: String
+    date: String
+  }
+
+  type AdminPaymentsResult {
+    payments: [AdminPayment]
+    total: Int
+  }
+
+  # ── Admin Users Types ──────────────────────────
+
+  type AdminUser {
+    userId: String
+    name: String
+    email: String
+    role: String
+    subscription: String
+    picture: String
+    location: String
+    rating: Float
+    createdAt: String
+    subscriptionDuration: Int
+    subscriptionExpiryDate: String
+    roleId: String
+    profilePath: String
+  }
+
+  type AdminUsersResult {
+    users: [AdminUser]
+    total: Int
+  }
+
+  # ── Admin Freelancers Types ────────────────────
+
+  type AdminFreelancerSummary {
+    freelancerId: String
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    location: String
+    rating: Float
+    skills: Int
+    subscription: String
+    isPremium: Boolean
+    subscriptionDuration: Int
+    subscriptionExpiryDate: String
+    applicationsCount: Int
+    isCurrentlyWorking: Boolean
+    joinedDate: String
+  }
+
+  type AdminFreelancersResult {
+    freelancers: [AdminFreelancerSummary]
+    total: Int
+  }
+
+  type AdminFreelancerApplication {
+    applicationId: String
+    jobTitle: String
+    companyName: String
+    employerName: String
+    budget: Float
+    status: String
+    appliedDate: String
+  }
+
+  type AdminFreelancerDetail {
+    freelancerId: String
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    location: String
+    aboutMe: String
+    rating: Float
+    subscription: String
+    subscriptionDuration: Int
+    subscriptionExpiryDate: String
+    joinedDate: String
+    skills: [String]
+    experience: [String]
+    education: [String]
+    portfolio: [String]
+    resume: String
+    isCurrentlyWorking: Boolean
+    currentJobTitle: String
+    applicationsCount: Int
+    acceptedCount: Int
+    rejectedCount: Int
+    pendingCount: Int
+    recentApplications: [AdminFreelancerApplication]
+  }
+
+  # ── Admin Employers Types ──────────────────────
+
+  type AdminEmployerSummary {
+    employerId: String
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    location: String
+    companyName: String
+    rating: Float
+    subscription: String
+    isPremium: Boolean
+    subscriptionDuration: Int
+    subscriptionExpiryDate: String
+    jobListingsCount: Int
+    hiredCount: Int
+    currentHires: Int
+    pastHires: Int
+    joinedDate: String
+  }
+
+  type AdminEmployersResult {
+    employers: [AdminEmployerSummary]
+    total: Int
+  }
+
+  type AdminEmployerJob {
+    jobId: String
+    title: String
+    budget: Float
+    status: String
+    jobType: String
+    experienceLevel: String
+    location: String
+    postedDate: String
+    applicationDeadline: String
+    applicantsCount: Int
+    hasAssignedFreelancer: Boolean
+  }
+
+  type AdminEmployerFreelancer {
+    freelancerId: String
+    name: String
+    email: String
+    picture: String
+    rating: Float
+    startDate: String
+  }
+
+  type AdminEmployerDetail {
+    employerId: String
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    location: String
+    aboutMe: String
+    companyName: String
+    websiteLink: String
+    rating: Float
+    subscription: String
+    subscriptionDuration: Int
+    subscriptionExpiryDate: String
+    joinedDate: String
+    jobListingsCount: Int
+    currentHiresCount: Int
+    pastHiresCount: Int
+    jobs: [AdminEmployerJob]
+    currentFreelancers: [AdminEmployerFreelancer]
+    pastFreelancers: [AdminEmployerFreelancer]
+  }
+
+  # ── Admin Statistics Types ─────────────────────
+
+  type AggBucket {
+    key: String
+    count: Int
+  }
+
+  type AggBucketFloat {
+    key: String
+    avgBudget: Float
+    maxBudget: Float
+    minBudget: Float
+  }
+
+  type SubscriptionDistBucket {
+    role: String
+    subscription: String
+    count: Int
+  }
+
+  type TopRatedUser {
+    userId: String
+    name: String
+    email: String
+    rating: Float
+    picture: String
+    subscription: String
+  }
+
+  type UserGrowthBucket {
+    year: Int
+    month: Int
+    count: Int
+  }
+
+  type AdminStatistics {
+    userGrowth: [UserGrowthBucket]
+    jobsByStatus: [AggBucket]
+    jobsByType: [AggBucket]
+    jobsByExperience: [AggBucket]
+    applicationsByStatus: [AggBucket]
+    complaintsByStatus: [AggBucket]
+    complaintsByType: [AggBucket]
+    complaintsByPriority: [AggBucket]
+    topFreelancers: [TopRatedUser]
+    topEmployers: [TopRatedUser]
+    avgBudgetByType: [AggBucketFloat]
+    subscriptionDist: [SubscriptionDistBucket]
+    recentSignups: Int
+    newJobsThisMonth: Int
+  }
+
+  # ── Admin Activities Types ─────────────────────
+
+  type AdminActivity {
+    type: String
+    title: String
+    time: String
+    icon: String
+  }
+
   type Query {
     # Feedback queries (replaces N+1 REST endpoints)
     feedbacksForJob(jobId: String!): [Feedback]
@@ -233,6 +611,18 @@ const typeDefs = `#graphql
     freelancerActiveJobs: [ActiveJob]
     freelancerJobHistory: [HistoryJob]
     freelancerApplications: ApplicationsResult
+
+    # Admin dashboard queries (replaces over-fetching REST endpoints)
+    adminDashboardOverview: AdminDashboardOverview
+    adminDashboardRevenue: AdminDashboardRevenue
+    adminPayments: AdminPaymentsResult
+    adminUsers: AdminUsersResult
+    adminFreelancers: AdminFreelancersResult
+    adminFreelancerDetail(freelancerId: String!): AdminFreelancerDetail
+    adminEmployers: AdminEmployersResult
+    adminEmployerDetail(employerId: String!): AdminEmployerDetail
+    adminStatistics: AdminStatistics
+    adminActivities: [AdminActivity]
   }
 `;
 
