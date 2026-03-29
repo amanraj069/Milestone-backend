@@ -218,34 +218,6 @@ const typeDefs = `#graphql
     rejected: Int
   }
 
-  type PublicJobBudget {
-    amount: Float
-    period: String
-  }
-
-  type PublicJobDescription {
-    skills: [String]
-  }
-
-  type PublicJob {
-    jobId: String
-    employerId: String
-    title: String
-    imageUrl: String
-    budget: PublicJobBudget
-    location: String
-    jobType: String
-    experienceLevel: String
-    remote: Boolean
-    postedDate: String
-    description: PublicJobDescription
-    applicationCount: Int
-    applicationCap: Int
-    isSponsored: Boolean
-    isBoosted: Boolean
-    tier: Int
-  }
-
   type BlogContentSection {
     heading: String
     description: String
@@ -289,9 +261,6 @@ const typeDefs = `#graphql
     freelancerActiveJobs: [ActiveJob]
     freelancerJobHistory: [HistoryJob]
     freelancerApplications: ApplicationsResult
-
-    # Public jobs (replaces /api/jobs/api)
-    publicJobs: [PublicJob]
 
     # Public blog detail (replaces /api/blogs/:id + latest + featured)
     publicBlogDetail(blogId: String!): PublicBlogDetail
