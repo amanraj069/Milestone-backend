@@ -4,6 +4,7 @@ const JobApplication = require("../models/job_application");
 const UserBadge = require("../models/UserBadge");
 const User = require("../models/user");
 const adminResolvers = require("./adminResolvers");
+const employerResolvers = require("./employerResolvers");
 const Blog = require("../models/blog");
 
 const resolvers = {
@@ -405,6 +406,7 @@ const resolvers = {
      */
     // ── Admin dashboard queries (delegated to adminResolvers.js) ──
     ...adminResolvers,
+    ...employerResolvers,
 
     freelancerApplications: async (_parent, _args, { session, loaders }) => {
       if (!session?.user) throw new Error("Unauthorized: Please log in");

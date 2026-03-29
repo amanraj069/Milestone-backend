@@ -594,9 +594,98 @@ const typeDefs = `#graphql
     title: String
     time: String
     icon: String
+  }
+
   type BlogContentSection {
     heading: String
     description: String
+  }
+
+  # --- EMPLOYER DOMAIN TYPES ---
+
+  type EmployerDashboardStats {
+    activeJobs: Int
+    currentFreelancers: Int
+  }
+
+  type EmployerMilestone {
+    milestoneId: String
+    sno: Int
+    description: String
+    payment: Float
+    deadline: String
+    status: String
+    requested: Boolean
+  }
+
+  type EmployerTransactionRecord {
+    jobId: String
+    jobTitle: String
+    freelancerId: String
+    freelancerName: String
+    freelancerPicture: String
+    freelancerEmail: String
+    status: String
+    startDate: String
+    endDate: String
+    totalBudget: Float
+    paidAmount: Float
+    paymentPercentage: Int
+    projectCompletion: Int
+    milestonesCount: Int
+    completedMilestones: Int
+    pendingRequests: Int
+  }
+
+  type EmployerTransactionsResult {
+    data: [EmployerTransactionRecord]
+  }
+
+  type EmployerTransactionDetail {
+    jobId: String
+    jobTitle: String
+    freelancerId: String
+    freelancerName: String
+    freelancerPicture: String
+    freelancerEmail: String
+    status: String
+    startDate: String
+    endDate: String
+    totalBudget: Float
+    paidAmount: Float
+    paymentPercentage: Int
+    projectCompletion: Int
+    milestones: [EmployerMilestone]
+  }
+
+  type EmployerApplication {
+    applicationId: String
+    jobId: String
+    freelancerId: String
+    status: String
+    appliedDate: String
+    coverMessage: String
+    resumeLink: String
+    freelancerUserId: String
+    freelancerName: String
+    freelancerPicture: String
+    freelancerEmail: String
+    freelancerPhone: String
+    skillRating: Float
+    jobTitle: String
+    isPremium: Boolean
+  }
+
+  type EmployerApplicationsStats {
+    total: Int
+    pending: Int
+    accepted: Int
+    rejected: Int
+  }
+
+  type EmployerApplicationsResult {
+    applications: [EmployerApplication]
+    stats: EmployerApplicationsStats
   }
 
   type PublicBlog {
@@ -638,6 +727,12 @@ const typeDefs = `#graphql
     freelancerJobHistory: [HistoryJob]
     freelancerApplications: ApplicationsResult
 
+    # Employer dashboard queries
+    employerTransactions: EmployerTransactionsResult
+    employerTransactionDetail(jobId: String!): EmployerTransactionDetail
+    employerDashboardStats: EmployerDashboardStats
+    employerApplications(status: String, sort: String, limit: Int, offset: Int): EmployerApplicationsResult
+    
     # Admin dashboard queries (replaces over-fetching REST endpoints)
     adminDashboardOverview: AdminDashboardOverview
     adminDashboardRevenue: AdminDashboardRevenue
