@@ -34,6 +34,7 @@ const feedbackRoutes = require("./routes/feedbackRoutes");
 const questionRoutes = require("./routes/questionRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
+const setupGraphql = require("./graphql/setupGraphql");
 const { errorHandler, notFound } = require("./middleware/errorHandler");
 const chatLogger = require("./utils/chatLogger");
 
@@ -183,6 +184,9 @@ app.use("/api/feedback", feedbackRoutes);
 app.use("/api/questions", questionRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/payment", paymentRoutes);
+
+// Optional GraphQL endpoint (additive to REST, enabled only via env flag)
+setupGraphql(app);
 
 // Socket.IO connection handling with better error handling
 const userSockets = new Map(); // Map userId to socket.id

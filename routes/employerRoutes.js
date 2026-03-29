@@ -181,16 +181,6 @@ const requireEmployer = (req, res, next) => {
  *       200:
  *         description: Job applications returned
  *
- * /api/employer/job_applications/api/data:
- *   get:
- *     summary: Get job applications data (API)
- *     tags: [Employer]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Job applications data returned
- *
  * /api/employer/job_applications/pending-count:
  *   get:
  *     summary: Get pending applications count
@@ -319,24 +309,6 @@ const requireEmployer = (req, res, next) => {
  *     responses:
  *       200:
  *         description: Work history returned
- *
- * /api/employer/complaints:
- *   post:
- *     summary: Create a complaint
- *     tags: [Employer]
- *     security:
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [jobId, complaintType, subject, description]
- *             properties:
- *               jobId:
- *                 type: string
- *               complaintType:
  *                 type: string
  *               priority:
  *                 type: string
@@ -601,11 +573,6 @@ router.get(
   asyncHandler(employerController.getJobApplications),
 );
 router.get(
-  "/job_applications/api/data",
-  requireEmployer,
-  asyncHandler(employerController.getJobApplicationsAPI),
-);
-router.get(
   "/job_applications/pending-count",
   requireEmployer,
   asyncHandler(employerController.getPendingApplicationsCount),
@@ -715,11 +682,6 @@ router.get(
   "/transactions",
   requireEmployer,
   employerController.getTransactions,
-);
-router.get(
-  "/transactions/:jobId",
-  requireEmployer,
-  employerController.getTransactionDetails,
 );
 router.post(
   "/transactions/:jobId/milestones/:milestoneId/pay",

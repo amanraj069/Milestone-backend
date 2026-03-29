@@ -36,9 +36,26 @@ exports.getJobListings = async (req, res) => {
       postedDate: -1,
     });
 
+    // Add application counts with a single grouped query (avoids N+1)
+    const jobIds = jobListings.map((job) => job.jobId);
+    const applicationCounts = await JobApplication.aggregate([
+      { $match: { jobId: { $in: jobIds } } },
+      { $group: { _id: "$jobId", count: { $sum: 1 } } },
+    ]);
+
+    const applicationCountMap = {};
+    applicationCounts.forEach((item) => {
+      applicationCountMap[item._id] = item.count;
+    });
+
+    const jobListingsWithCount = jobListings.map((job) => ({
+      ...job.toObject(),
+      applicationCount: applicationCountMap[job.jobId] || 0,
+    }));
+
     return res.json({
       success: true,
-      data: jobListings,
+      data: jobListingsWithCount,
     });
   } catch (error) {
     console.error("Get job listings error:", error);
@@ -447,23 +464,70 @@ exports.getJobApplicationsAPI = async (req, res) => {
       });
     }
 
-    const jobs = await JobListing.find({ employerId }).lean();
+    const statusFilter = req.query.status || "all";
+    const sortMode = req.query.sort || "premium_oldest";
+    const rawLimit = Number.parseInt(req.query.limit, 10);
+    const rawPage = Number.parseInt(req.query.page, 10);
+    const hasPagination = Number.isInteger(rawLimit) && rawLimit > 0;
+    const limit = hasPagination ? Math.min(rawLimit, 100) : null;
+    const page = hasPagination
+      ? Number.isInteger(rawPage) && rawPage > 0
+        ? rawPage
+        : 1
+      : null;
+
+    const jobs = await JobListing.find({ employerId })
+      .select("jobId title")
+      .lean();
     const jobIds = jobs.map((job) => job.jobId);
 
-    const applications = await JobApplication.find({
+    if (!jobIds.length) {
+      return res.json({
+        success: true,
+        data: {
+          applications: [],
+          stats: {
+            total: 0,
+            pending: 0,
+            accepted: 0,
+            rejected: 0,
+          },
+          pagination: hasPagination
+            ? {
+                page,
+                limit,
+                total: 0,
+                hasMore: false,
+              }
+            : undefined,
+        },
+      });
+    }
+
+    const applicationQuery = {
       jobId: { $in: jobIds },
-    }).lean();
+    };
+
+    if (statusFilter !== "all") {
+      applicationQuery.status = statusFilter;
+    }
+
+    const applications = await JobApplication.find(applicationQuery).lean();
 
     const freelancerIds = [
       ...new Set(applications.map((app) => app.freelancerId)),
     ];
+
     const users = await User.find({ roleId: { $in: freelancerIds } })
       .select("roleId name picture email phone rating subscription")
       .lean();
 
+    const jobMap = new Map(jobs.map((job) => [job.jobId, job]));
+    const userMap = new Map(users.map((user) => [user.roleId, user]));
+
     const applicationsWithDetails = applications.map((application) => {
-      const user = users.find((u) => u.roleId === application.freelancerId);
-      const job = jobs.find((j) => j.jobId === application.jobId);
+      const user = userMap.get(application.freelancerId);
+      const job = jobMap.get(application.jobId);
 
       return {
         ...application,
@@ -478,22 +542,33 @@ exports.getJobApplicationsAPI = async (req, res) => {
       };
     });
 
-    // Sort applications: Premium users first (oldest to newest), then non-premium (oldest to newest)
-    applicationsWithDetails.sort((a, b) => {
-      // First separate by premium status
-      if (a.isPremium && !b.isPremium) return -1;
-      if (!a.isPremium && b.isPremium) return 1;
+    if (sortMode === "newest") {
+      applicationsWithDetails.sort(
+        (a, b) => new Date(b.appliedDate) - new Date(a.appliedDate),
+      );
+    } else if (sortMode === "oldest") {
+      applicationsWithDetails.sort(
+        (a, b) => new Date(a.appliedDate) - new Date(b.appliedDate),
+      );
+    } else {
+      applicationsWithDetails.sort((a, b) => {
+        if (a.isPremium && !b.isPremium) return -1;
+        if (!a.isPremium && b.isPremium) return 1;
+        return new Date(a.appliedDate) - new Date(b.appliedDate);
+      });
+    }
 
-      // Within same tier, oldest first (ascending order)
-      return new Date(a.appliedDate) - new Date(b.appliedDate);
-    });
+    const totalApplications = applicationsWithDetails.length;
+    const paginatedApplications = hasPagination
+      ? applicationsWithDetails.slice((page - 1) * limit, page * limit)
+      : applicationsWithDetails;
 
     res.json({
       success: true,
       data: {
-        applications: applicationsWithDetails,
+        applications: paginatedApplications,
         stats: {
-          total: applicationsWithDetails.length,
+          total: totalApplications,
           pending: applicationsWithDetails.filter(
             (app) => app.status === "Pending",
           ).length,
@@ -504,6 +579,14 @@ exports.getJobApplicationsAPI = async (req, res) => {
             (app) => app.status === "Rejected",
           ).length,
         },
+        pagination: hasPagination
+          ? {
+              page,
+              limit,
+              total: totalApplications,
+              hasMore: page * limit < totalApplications,
+            }
+          : undefined,
       },
     });
   } catch (error) {
