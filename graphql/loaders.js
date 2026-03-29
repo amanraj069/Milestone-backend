@@ -1,6 +1,7 @@
 const DataLoader = require("dataloader");
 const User = require("../models/user");
 const Employer = require("../models/employer");
+const Freelancer = require("../models/freelancer");
 const Badge = require("../models/Badge");
 const JobListing = require("../models/job_listing");
 
@@ -55,7 +56,24 @@ function createLoaders() {
       jobs.forEach((j) => (map[j.jobId] = j));
       return jobIds.map((id) => map[id] || null);
     }),
+
+    // Batch-load freelancers by freelancerId
+    freelancerByFreelancerId: new DataLoader(async (freelancerIds) => {
+      const freelancers = await Freelancer.find({ freelancerId: { $in: freelancerIds } }).lean();
+      const map = {};
+      freelancers.forEach((f) => (map[f.freelancerId] = f));
+      return freelancerIds.map((id) => map[id] || null);
+    }),
+
+    // Batch-load freelancers by userId
+    freelancerByUserId: new DataLoader(async (userIds) => {
+      const freelancers = await Freelancer.find({ userId: { $in: userIds } }).lean();
+      const map = {};
+      freelancers.forEach((f) => (map[f.userId] = f));
+      return userIds.map((id) => map[id] || null);
+    }),
   };
 }
 
 module.exports = { createLoaders };
+
