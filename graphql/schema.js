@@ -94,6 +94,21 @@ const getSessionUser = (context) => {
   return user;
 };
 
+const toIsoString = (value) => {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const objectIdToIsoString = (value) => {
+  if (!value || typeof value.getTimestamp !== "function") {
+    return null;
+  }
+  return toIsoString(value.getTimestamp());
+};
+
 const resolvers = {
   health: () => "ok",
 
@@ -122,7 +137,32 @@ const resolvers = {
       .select("userId name picture role")
       .lean();
 
+    const conversationIds = conversations.map((conv) => conv.conversationId);
+    const latestMessages = conversationIds.length
+      ? await Message.aggregate([
+          { $match: { conversationId: { $in: conversationIds } } },
+          {
+            $addFields: {
+              eventTime: { $ifNull: ["$createdAt", "$timestamp"] },
+            },
+          },
+          { $sort: { eventTime: -1, _id: -1 } },
+          {
+            $group: {
+              _id: "$conversationId",
+              messageId: { $first: "$messageId" },
+              text: { $first: "$messageData" },
+              sender: { $first: "$from" },
+              timestamp: { $first: "$eventTime" },
+            },
+          },
+        ])
+      : [];
+
     const userMap = new Map(users.map((entry) => [entry.userId, entry]));
+    const latestMessageMap = new Map(
+      latestMessages.map((entry) => [entry._id, entry]),
+    );
 
     return conversations.map((conv) => {
       const otherUserId = conv.participants.find((p) => p !== user.id);
@@ -131,6 +171,29 @@ const resolvers = {
         conv.unreadCount && typeof conv.unreadCount === "object"
           ? conv.unreadCount[user.id] || 0
           : 0;
+      const latestMessage = latestMessageMap.get(conv.conversationId);
+      const fallbackLastMessage = conv.lastMessage || null;
+      const normalizedTimestamp =
+        toIsoString(latestMessage?.timestamp) ||
+        toIsoString(fallbackLastMessage?.timestamp) ||
+        toIsoString(conv.updatedAt) ||
+        toIsoString(conv.createdAt);
+      const normalizedLastMessage = conv.lastMessage
+        ? {
+            messageId:
+              latestMessage?.messageId || fallbackLastMessage?.messageId || null,
+            text: latestMessage?.text || fallbackLastMessage?.text || "",
+            sender: latestMessage?.sender || fallbackLastMessage?.sender || null,
+            timestamp: normalizedTimestamp,
+          }
+        : latestMessage
+          ? {
+              messageId: latestMessage.messageId || null,
+              text: latestMessage.text || "",
+              sender: latestMessage.sender || null,
+              timestamp: normalizedTimestamp,
+            }
+          : null;
 
       return {
         conversationId: conv.conversationId,
@@ -141,9 +204,9 @@ const resolvers = {
             "https://cdn.pixabay.com/photo/2018/04/18/18/56/user-3331256_1280.png",
           role: "Unknown",
         },
-        lastMessage: conv.lastMessage || null,
+        lastMessage: normalizedLastMessage,
         unreadCount,
-        updatedAt: conv.updatedAt,
+        updatedAt: normalizedTimestamp || toIsoString(conv.updatedAt),
       };
     });
   },
@@ -178,9 +241,28 @@ const resolvers = {
       .limit(boundedLimit)
       .lean();
 
+    const normalizedMessages = messages.map((message) => {
+      const createdAtIso =
+        toIsoString(message.createdAt) ||
+        toIsoString(message.timestamp) ||
+        toIsoString(message.updatedAt) ||
+        objectIdToIsoString(message._id);
+      const updatedAtIso =
+        toIsoString(message.updatedAt) ||
+        toIsoString(message.createdAt) ||
+        toIsoString(message.timestamp) ||
+        objectIdToIsoString(message._id);
+
+      return {
+        ...message,
+        createdAt: createdAtIso,
+        updatedAt: updatedAtIso,
+      };
+    });
+
     return {
       conversationId: conversation.conversationId,
-      messages,
+      messages: normalizedMessages,
       total,
       hasMore: safeOffset + messages.length < total,
     };
