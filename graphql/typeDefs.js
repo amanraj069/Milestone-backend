@@ -218,6 +218,34 @@ const typeDefs = `#graphql
     rejected: Int
   }
 
+  type BlogContentSection {
+    heading: String
+    description: String
+  }
+
+  type PublicBlog {
+    blogId: String
+    slug: String
+    title: String
+    tagline: String
+    category: String
+    imageUrl: String
+    author: String
+    content: [BlogContentSection]
+    readTime: Int
+    featured: Boolean
+    status: String
+    views: Int
+    likes: Int
+    createdAt: String
+  }
+
+  type PublicBlogDetail {
+    blog: PublicBlog
+    recentBlogs: [PublicBlog]
+    featuredBlog: PublicBlog
+  }
+
   type Query {
     # Feedback queries (replaces N+1 REST endpoints)
     feedbacksForJob(jobId: String!): [Feedback]
@@ -233,6 +261,9 @@ const typeDefs = `#graphql
     freelancerActiveJobs: [ActiveJob]
     freelancerJobHistory: [HistoryJob]
     freelancerApplications: ApplicationsResult
+
+    # Public blog detail (replaces /api/blogs/:id + latest + featured)
+    publicBlogDetail(blogId: String!): PublicBlogDetail
   }
 `;
 
