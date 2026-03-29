@@ -6,6 +6,7 @@ const JobApplication = require("../models/job_application");
 const Freelancer = require("../models/freelancer");
 const Employer = require("../models/employer");
 const RatingAudit = require("../models/RatingAudit");
+const Blog = require("../models/blog");
 const Notification = require("../models/Notification");
 const { v4: uuidv4 } = require("uuid");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
@@ -430,9 +431,22 @@ exports.getDashboardStats = async (req, res) => {
     const activeJobs = await JobListing.countDocuments({ status: "open" });
 
     // Get completed tasks/applications count
+    // JobApplication.status enum is ["Pending", "Accepted", "Rejected"],
+    // so use "Accepted" as the completed applications metric.
     const completedTasks = await JobApplication.countDocuments({
-      status: "completed",
+      status: "Accepted",
     });
+
+    // Calculate total read time via aggregation to avoid loading all blog docs
+    const readTimeAgg = await Blog.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalReadTime: { $sum: { $ifNull: ["$readTime", 0] } },
+        },
+      },
+    ]);
+    const totalReadTime = readTimeAgg[0]?.totalReadTime || 0;
 
     // Calculate uptime percentage (mock calculation)
     const uptime = 98;
@@ -489,6 +503,7 @@ exports.getDashboardStats = async (req, res) => {
         activeJobs,
         completedTasks,
         uptime,
+        totalReadTime,
         avgRating,
         successRate,
       },
