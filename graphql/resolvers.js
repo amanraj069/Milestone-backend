@@ -3,9 +3,23 @@ const JobListing = require("../models/job_listing");
 const JobApplication = require("../models/job_application");
 const UserBadge = require("../models/UserBadge");
 const User = require("../models/user");
+const Freelancer = require("../models/freelancer");
+const Conversation = require("../models/conversation");
+const Message = require("../models/message");
 const adminResolvers = require("./adminResolvers");
 const employerResolvers = require("./employerResolvers");
 const Blog = require("../models/blog");
+
+const toIsoString = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const objectIdToIsoString = (value) => {
+  if (!value || typeof value.getTimestamp !== "function") return null;
+  return toIsoString(value.getTimestamp());
+};
 
 const resolvers = {
   Query: {
@@ -158,6 +172,178 @@ const resolvers = {
         badge: badges[i],
         awardedAt: ub.awardedAt?.toISOString?.() || ub.awardedAt,
       }));
+    },
+
+    // ──────────────────────────────────────────────
+    //  CHAT QUERIES
+    // ──────────────────────────────────────────────
+
+    chatConversations: async (
+      _parent,
+      { limit = 20, offset = 0 },
+      { session }
+    ) => {
+      const user = session?.user;
+      if (!user) throw new Error("Unauthorized: Please log in");
+
+      const boundedLimit = Math.max(1, Math.min(limit, 100));
+      const safeOffset = Math.max(0, offset);
+
+      const conversations = await Conversation.find({
+        participants: user.id,
+      })
+        .sort({ updatedAt: -1 })
+        .skip(safeOffset)
+        .limit(boundedLimit)
+        .lean();
+
+      const otherUserIds = [
+        ...new Set(
+          conversations
+            .map((conv) => conv.participants.find((p) => p !== user.id))
+            .filter(Boolean)
+        ),
+      ];
+
+      const users = await User.find({ userId: { $in: otherUserIds } })
+        .select("userId name picture role")
+        .lean();
+
+      const conversationIds = conversations.map((conv) => conv.conversationId);
+      const latestMessages = conversationIds.length
+        ? await Message.aggregate([
+            { $match: { conversationId: { $in: conversationIds } } },
+            {
+              $addFields: {
+                eventTime: { $ifNull: ["$createdAt", "$timestamp"] },
+              },
+            },
+            { $sort: { eventTime: -1, _id: -1 } },
+            {
+              $group: {
+                _id: "$conversationId",
+                messageId: { $first: "$messageId" },
+                text: { $first: "$messageData" },
+                sender: { $first: "$from" },
+                timestamp: { $first: "$eventTime" },
+              },
+            },
+          ])
+        : [];
+
+      const userMap = new Map(users.map((entry) => [entry.userId, entry]));
+      const latestMessageMap = new Map(
+        latestMessages.map((entry) => [entry._id, entry])
+      );
+
+      return conversations.map((conv) => {
+        const otherUserId = conv.participants.find((p) => p !== user.id);
+        const participant = userMap.get(otherUserId);
+        const unreadCount =
+          conv.unreadCount && typeof conv.unreadCount === "object"
+            ? conv.unreadCount[user.id] || 0
+            : 0;
+        const latestMessage = latestMessageMap.get(conv.conversationId);
+        const fallbackLastMessage = conv.lastMessage || null;
+        const normalizedTimestamp =
+          toIsoString(latestMessage?.timestamp) ||
+          toIsoString(fallbackLastMessage?.timestamp) ||
+          toIsoString(conv.updatedAt) ||
+          toIsoString(conv.createdAt);
+        const normalizedLastMessage = conv.lastMessage
+          ? {
+              messageId:
+                latestMessage?.messageId || fallbackLastMessage?.messageId || null,
+              text: latestMessage?.text || fallbackLastMessage?.text || "",
+              sender: latestMessage?.sender || fallbackLastMessage?.sender || null,
+              timestamp: normalizedTimestamp,
+            }
+          : latestMessage
+          ? {
+              messageId: latestMessage.messageId || null,
+              text: latestMessage.text || "",
+              sender: latestMessage.sender || null,
+              timestamp: normalizedTimestamp,
+            }
+          : null;
+
+        return {
+          conversationId: conv.conversationId,
+          participant: participant || {
+            userId: otherUserId,
+            name: "Unknown User",
+            picture:
+              "https://cdn.pixabay.com/photo/2018/04/18/18/56/user-3331256_1280.png",
+            role: "Unknown",
+          },
+          lastMessage: normalizedLastMessage,
+          unreadCount,
+          updatedAt: normalizedTimestamp || toIsoString(conv.updatedAt),
+        };
+      });
+    },
+
+    messagesWithUser: async (
+      _parent,
+      { userId, limit = 50, offset = 0 },
+      { session }
+    ) => {
+      const user = session?.user;
+      if (!user) throw new Error("Unauthorized: Please log in");
+
+      const boundedLimit = Math.max(1, Math.min(limit, 100));
+      const safeOffset = Math.max(0, offset);
+
+      const conversation = await Conversation.findOne({
+        participants: { $all: [user.id, userId] },
+      }).lean();
+
+      if (!conversation) {
+        return {
+          conversationId: null,
+          messages: [],
+          total: 0,
+          hasMore: false,
+        };
+      }
+
+      const total = await Message.countDocuments({
+        conversationId: conversation.conversationId,
+      });
+
+      const messages = await Message.find({
+        conversationId: conversation.conversationId,
+      })
+        .sort({ createdAt: 1 })
+        .skip(safeOffset)
+        .limit(boundedLimit)
+        .lean();
+
+      const normalizedMessages = messages.map((message) => {
+        const createdAtIso =
+          toIsoString(message.createdAt) ||
+          toIsoString(message.timestamp) ||
+          toIsoString(message.updatedAt) ||
+          objectIdToIsoString(message._id);
+        const updatedAtIso =
+          toIsoString(message.updatedAt) ||
+          toIsoString(message.createdAt) ||
+          toIsoString(message.timestamp) ||
+          objectIdToIsoString(message._id);
+
+        return {
+          ...message,
+          createdAt: createdAtIso,
+          updatedAt: updatedAtIso,
+        };
+      });
+
+      return {
+        conversationId: conversation.conversationId,
+        messages: normalizedMessages,
+        total,
+        hasMore: safeOffset + messages.length < total,
+      };
     },
 
     // ──────────────────────────────────────────────
@@ -504,6 +690,163 @@ const resolvers = {
         },
         total,
         hasMore: safeOffset + paginated.length < total,
+      };
+    },
+
+    employerApplicationDetail: async (
+      _parent,
+      { applicationId },
+      { session }
+    ) => {
+      const user = session?.user;
+      if (!user || !user.roleId) {
+        throw new Error("Unauthorized");
+      }
+
+      const employerId = user.roleId;
+      const application = await JobApplication.findOne({ applicationId }).lean();
+      if (!application) {
+        throw new Error("Application not found");
+      }
+
+      const job = await JobListing.findOne({
+        jobId: application.jobId,
+        employerId,
+      }).lean();
+
+      if (!job) {
+        throw new Error("Application does not belong to this employer");
+      }
+
+      const freelancerUser = await User.findOne({ roleId: application.freelancerId })
+        .select("userId roleId name picture email phone rating subscription aboutMe")
+        .lean();
+
+      const freelancerProfile = await Freelancer.findOne({
+        freelancerId: application.freelancerId,
+      })
+        .select("skills portfolio resume")
+        .lean();
+
+      const feedbacks = freelancerUser?.userId
+        ? await Feedback.find({ toUserId: freelancerUser.userId })
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .lean()
+        : [];
+
+      const feedbackTotal = freelancerUser?.userId
+        ? await Feedback.countDocuments({ toUserId: freelancerUser.userId })
+        : 0;
+
+      const feedbackStats = freelancerUser?.userId
+        ? await Feedback.aggregate([
+            { $match: { toUserId: freelancerUser.userId } },
+            {
+              $group: {
+                _id: null,
+                averageRating: { $avg: "$rating" },
+              },
+            },
+          ])
+        : [];
+
+      const reviewerIds = [...new Set(feedbacks.map((entry) => entry.fromUserId))];
+      const reviewers = reviewerIds.length
+        ? await User.find({ userId: { $in: reviewerIds } })
+            .select("userId name picture")
+            .lean()
+        : [];
+      const reviewerMap = new Map(reviewers.map((entry) => [entry.userId, entry]));
+
+      const jobSkills = Array.isArray(job.description?.skills)
+        ? job.description.skills
+        : [];
+      const freelancerSkills = Array.isArray(freelancerProfile?.skills)
+        ? freelancerProfile.skills
+        : [];
+
+      const normalizedFreelancerSkillSet = new Set(
+        freelancerSkills.map((skill) => String(skill).trim().toLowerCase())
+      );
+
+      const matchedSkills = jobSkills.filter((skill) =>
+        normalizedFreelancerSkillSet.has(String(skill).trim().toLowerCase())
+      );
+
+      const missingSkills = jobSkills.filter(
+        (skill) =>
+          !normalizedFreelancerSkillSet.has(String(skill).trim().toLowerCase())
+      );
+
+      const matchScore =
+        jobSkills.length > 0
+          ? Math.round((matchedSkills.length / jobSkills.length) * 100)
+          : 0;
+
+      const avgFeedbackRating =
+        feedbackStats.length > 0
+          ? Number((feedbackStats[0].averageRating || 0).toFixed(1))
+          : 0;
+
+      return {
+        applicationId: application.applicationId,
+        jobId: application.jobId,
+        freelancerId: application.freelancerId,
+        freelancerUserId: freelancerUser?.userId || null,
+        status: application.status,
+        appliedDate: toIsoString(application.appliedDate),
+        coverMessage: application.coverMessage || "",
+        resumeLink: application.resumeLink || freelancerProfile?.resume || "",
+        freelancerName: freelancerUser?.name || "Unknown Freelancer",
+        freelancerPicture: freelancerUser?.picture || null,
+        freelancerEmail: freelancerUser?.email || null,
+        freelancerPhone: freelancerUser?.phone || null,
+        freelancerRating: Number(freelancerUser?.rating || 0),
+        skillRating: Number(freelancerUser?.rating || 0),
+        isPremium: freelancerUser?.subscription === "Premium",
+        freelancerAbout: freelancerUser?.aboutMe || "",
+        freelancerSkills,
+        freelancerPortfolio: Array.isArray(freelancerProfile?.portfolio)
+          ? freelancerProfile.portfolio
+          : [],
+        jobTitle: job.title,
+        jobDescription: {
+          text: job.description?.text || "",
+          responsibilities: Array.isArray(job.description?.responsibilities)
+            ? job.description.responsibilities
+            : [],
+          requirements: Array.isArray(job.description?.requirements)
+            ? job.description.requirements
+            : [],
+          skills: jobSkills,
+        },
+        feedbackReviews: feedbacks.map((entry) => ({
+          feedbackId: entry.feedbackId,
+          fromUserId: entry.fromUserId,
+          fromUserName: entry.anonymous
+            ? "Anonymous"
+            : reviewerMap.get(entry.fromUserId)?.name || "Unknown User",
+          fromUserPicture: entry.anonymous
+            ? null
+            : reviewerMap.get(entry.fromUserId)?.picture || null,
+          rating: entry.rating,
+          comment: entry.comment || "",
+          tags: Array.isArray(entry.tags) ? entry.tags : [],
+          createdAt: toIsoString(entry.createdAt),
+        })),
+        feedbackTotal,
+        jobMatch: {
+          matchScore,
+          matchedSkills,
+          missingSkills,
+          hasPortfolio: Array.isArray(freelancerProfile?.portfolio)
+            ? freelancerProfile.portfolio.length > 0
+            : false,
+          hasResume: Boolean(application.resumeLink || freelancerProfile?.resume),
+          feedbackCount: feedbackTotal,
+          averageFeedbackRating: avgFeedbackRating,
+        },
       };
     },
 
