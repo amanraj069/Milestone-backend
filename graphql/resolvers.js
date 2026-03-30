@@ -979,6 +979,165 @@ const resolvers = {
         featuredBlog: featuredBlog || null,
       };
     },
+
+    // ──────────────────────────────────────────────
+    //  MODERATOR COMPLAINT QUERIES (read-only)
+    // ──────────────────────────────────────────────
+
+    /**
+     * GET /graphql
+     * Query: moderatorComplaints(status, priority, complaintType, searchTerm, page, limit)
+     * Before: REST endpoint fetched ALL complaints and filtered client-side
+     * After:  Server-side filtering + pagination + field selection
+     */
+    moderatorComplaints: async (
+      _parent,
+      { status, priority, complaintType, searchTerm, page = 1, limit = 20 },
+      { session }
+    ) => {
+      // Require Moderator role
+      if (!session?.user || session.user.role !== "Moderator") {
+        throw new Error("Access denied. Moderator access required.");
+      }
+
+      const skip = (page - 1) * limit;
+      const query = {};
+
+      // Build filter query
+      if (status && status !== "All") {
+        query.status = status;
+      }
+      if (priority && priority !== "All") {
+        query.priority = priority;
+      }
+      if (complaintType && complaintType !== "All") {
+        query.complaintType = complaintType;
+      }
+      if (searchTerm && searchTerm.trim()) {
+        const searchRegex = { $regex: searchTerm, $options: "i" };
+        query.$or = [
+          { subject: searchRegex },
+          { complainantName: searchRegex },
+          { freelancerName: searchRegex },
+          { employerName: searchRegex },
+          { jobTitle: searchRegex },
+        ];
+      }
+
+      // Execute query with pagination
+      const [complaints, total] = await Promise.all([
+        Complaint.find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        Complaint.countDocuments(query),
+      ]);
+
+      // Fetch related user data (freelancer/employer ratings)
+      const freelancerIds = [...new Set(complaints.map((c) => c.freelancerId))];
+      const employerIds = [...new Set(complaints.map((c) => c.employerId))];
+
+      const freelancers = await User.find({
+        $or: [
+          { roleId: { $in: freelancerIds } },
+          { userId: { $in: freelancerIds } },
+        ],
+      })
+        .select("userId roleId rating email")
+        .lean();
+
+      const employers = await User.find({
+        $or: [
+          { roleId: { $in: employerIds } },
+          { userId: { $in: employerIds } },
+        ],
+      })
+        .select("userId roleId rating email")
+        .lean();
+
+      const freelancerMap = {};
+      freelancers.forEach(
+        (u) => (freelancerMap[u.roleId || u.userId] = u)
+      );
+      const employerMap = {};
+      employers.forEach(
+        (u) => (employerMap[u.roleId || u.userId] = u)
+      );
+
+      const complaintsWithUserData = complaints.map((c) => {
+        const freelancer = freelancerMap[c.freelancerId];
+        const employer = employerMap[c.employerId];
+        return {
+          ...c,
+          freelancerUserId: freelancer?.userId || null,
+          freelancerRating: freelancer?.rating || null,
+          freelancerEmail: freelancer?.email || null,
+          employerUserId: employer?.userId || null,
+          employerRating: employer?.rating || null,
+          employerEmail: employer?.email || null,
+          createdAt: c.createdAt?.toISOString?.() || c.createdAt,
+          updatedAt: c.updatedAt?.toISOString?.() || c.updatedAt,
+          resolvedAt: c.resolvedAt?.toISOString?.() || c.resolvedAt,
+        };
+      });
+
+      return {
+        complaints: complaintsWithUserData,
+        total,
+        page,
+        limit,
+      };
+    },
+
+    /**
+     * GET /graphql
+     * Query: moderatorComplaintById(complaintId)
+     * Returns a single complaint with all related data
+     */
+    moderatorComplaintById: async (_parent, { complaintId }, { session }) => {
+      // Require Moderator role
+      if (!session?.user || session.user.role !== "Moderator") {
+        throw new Error("Access denied. Moderator access required.");
+      }
+
+      const complaint = await Complaint.findOne({ complaintId }).lean();
+      if (!complaint) {
+        throw new Error("Complaint not found");
+      }
+
+      // Fetch related user data
+      const freelancer = await User.findOne({
+        $or: [
+          { roleId: complaint.freelancerId },
+          { userId: complaint.freelancerId },
+        ],
+      })
+        .select("userId roleId rating email")
+        .lean();
+
+      const employer = await User.findOne({
+        $or: [
+          { roleId: complaint.employerId },
+          { userId: complaint.employerId },
+        ],
+      })
+        .select("userId roleId rating email")
+        .lean();
+
+      return {
+        ...complaint,
+        freelancerUserId: freelancer?.userId || null,
+        freelancerRating: freelancer?.rating || null,
+        freelancerEmail: freelancer?.email || null,
+        employerUserId: employer?.userId || null,
+        employerRating: employer?.rating || null,
+        employerEmail: employer?.email || null,
+        createdAt: complaint.createdAt?.toISOString?.() || complaint.createdAt,
+        updatedAt: complaint.updatedAt?.toISOString?.() || complaint.updatedAt,
+        resolvedAt: complaint.resolvedAt?.toISOString?.() || complaint.resolvedAt,
+      };
+    },
   },
 
   // ──────────────────────────────────────────────
@@ -1011,165 +1170,6 @@ const resolvers = {
       const job = await loaders.jobByJobId.load(feedback.jobId);
       return job?.title || "Unknown Project";
     },
-  },
-
-  // ──────────────────────────────────────────────
-  //  MODERATOR COMPLAINT QUERIES (read-only)
-  // ──────────────────────────────────────────────
-
-  /**
-   * GET /graphql
-   * Query: moderatorComplaints(status, priority, complaintType, searchTerm, page, limit)
-   * Before: REST endpoint fetched ALL complaints and filtered client-side
-   * After:  Server-side filtering + pagination + field selection
-   */
-  moderatorComplaints: async (
-    _parent,
-    { status, priority, complaintType, searchTerm, page = 1, limit = 20 },
-    { session }
-  ) => {
-    // Require Moderator role
-    if (!session?.user || session.user.role !== "Moderator") {
-      throw new Error("Access denied. Moderator access required.");
-    }
-
-    const skip = (page - 1) * limit;
-    const query = {};
-
-    // Build filter query
-    if (status && status !== "All") {
-      query.status = status;
-    }
-    if (priority && priority !== "All") {
-      query.priority = priority;
-    }
-    if (complaintType && complaintType !== "All") {
-      query.complaintType = complaintType;
-    }
-    if (searchTerm && searchTerm.trim()) {
-      const searchRegex = { $regex: searchTerm, $options: "i" };
-      query.$or = [
-        { subject: searchRegex },
-        { complainantName: searchRegex },
-        { freelancerName: searchRegex },
-        { employerName: searchRegex },
-        { jobTitle: searchRegex },
-      ];
-    }
-
-    // Execute query with pagination
-    const [complaints, total] = await Promise.all([
-      Complaint.find(query)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Complaint.countDocuments(query),
-    ]);
-
-    // Fetch related user data (freelancer/employer ratings)
-    const freelancerIds = [...new Set(complaints.map((c) => c.freelancerId))];
-    const employerIds = [...new Set(complaints.map((c) => c.employerId))];
-
-    const freelancers = await User.find({
-      $or: [
-        { roleId: { $in: freelancerIds } },
-        { userId: { $in: freelancerIds } },
-      ],
-    })
-      .select("userId roleId rating email")
-      .lean();
-
-    const employers = await User.find({
-      $or: [
-        { roleId: { $in: employerIds } },
-        { userId: { $in: employerIds } },
-      ],
-    })
-      .select("userId roleId rating email")
-      .lean();
-
-    const freelancerMap = {};
-    freelancers.forEach(
-      (u) => (freelancerMap[u.roleId || u.userId] = u)
-    );
-    const employerMap = {};
-    employers.forEach(
-      (u) => (employerMap[u.roleId || u.userId] = u)
-    );
-
-    const complaintsWithUserData = complaints.map((c) => {
-      const freelancer = freelancerMap[c.freelancerId];
-      const employer = employerMap[c.employerId];
-      return {
-        ...c,
-        freelancerUserId: freelancer?.userId || null,
-        freelancerRating: freelancer?.rating || null,
-        freelancerEmail: freelancer?.email || null,
-        employerUserId: employer?.userId || null,
-        employerRating: employer?.rating || null,
-        employerEmail: employer?.email || null,
-        createdAt: c.createdAt?.toISOString?.() || c.createdAt,
-        updatedAt: c.updatedAt?.toISOString?.() || c.updatedAt,
-        resolvedAt: c.resolvedAt?.toISOString?.() || c.resolvedAt,
-      };
-    });
-
-    return {
-      complaints: complaintsWithUserData,
-      total,
-      page,
-      limit,
-    };
-  },
-
-  /**
-   * GET /graphql
-   * Query: moderatorComplaintById(complaintId)
-   * Returns a single complaint with all related data
-   */
-  moderatorComplaintById: async (_parent, { complaintId }, { session }) => {
-    // Require Moderator role
-    if (!session?.user || session.user.role !== "Moderator") {
-      throw new Error("Access denied. Moderator access required.");
-    }
-
-    const complaint = await Complaint.findOne({ complaintId }).lean();
-    if (!complaint) {
-      throw new Error("Complaint not found");
-    }
-
-    // Fetch related user data
-    const freelancer = await User.findOne({
-      $or: [
-        { roleId: complaint.freelancerId },
-        { userId: complaint.freelancerId },
-      ],
-    })
-      .select("userId roleId rating email")
-      .lean();
-
-    const employer = await User.findOne({
-      $or: [
-        { roleId: complaint.employerId },
-        { userId: complaint.employerId },
-      ],
-    })
-      .select("userId roleId rating email")
-      .lean();
-
-    return {
-      ...complaint,
-      freelancerUserId: freelancer?.userId || null,
-      freelancerRating: freelancer?.rating || null,
-      freelancerEmail: freelancer?.email || null,
-      employerUserId: employer?.userId || null,
-      employerRating: employer?.rating || null,
-      employerEmail: employer?.email || null,
-      createdAt: complaint.createdAt?.toISOString?.() || complaint.createdAt,
-      updatedAt: complaint.updatedAt?.toISOString?.() || complaint.updatedAt,
-      resolvedAt: complaint.resolvedAt?.toISOString?.() || complaint.resolvedAt,
-    };
   },
 };
 
