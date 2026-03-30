@@ -236,6 +236,46 @@ const typeDefs = `#graphql
     hasMore: Boolean
   }
 
+  type ChatConversation {
+    conversationId: String!
+    participant: ChatParticipant!
+    lastMessage: LastMessage
+    unreadCount: Int!
+    updatedAt: String
+  }
+
+  type ChatParticipant {
+    userId: String!
+    name: String
+    picture: String
+    role: String
+  }
+
+  type LastMessage {
+    messageId: String
+    text: String
+    sender: String
+    timestamp: String
+  }
+
+  type ChatMessage {
+    messageId: String!
+    conversationId: String!
+    from: String!
+    to: String!
+    messageData: String!
+    isRead: Boolean!
+    createdAt: String
+    updatedAt: String
+  }
+
+  type MessageResult {
+    conversationId: String
+    messages: [ChatMessage!]!
+    total: Int!
+    hasMore: Boolean!
+  }
+
   type ApplicationStats {
     total: Int
     pending: Int
@@ -683,34 +723,65 @@ const typeDefs = `#graphql
     milestones: [EmployerMilestone]
   }
 
-  type EmployerApplication {
+  type PortfolioItem {
+    title: String
+    description: String
+    image: String
+    link: String
+  }
+
+  type FeedbackReview {
+    feedbackId: String
+    fromUserId: String
+    fromUserName: String
+    fromUserPicture: String
+    rating: Int
+    comment: String
+    tags: [String]
+    createdAt: String
+  }
+
+  type JobDescriptionDetail {
+    text: String
+    responsibilities: [String]
+    requirements: [String]
+    skills: [String]
+  }
+
+  type JobMatchSignals {
+    matchScore: Int
+    matchedSkills: [String]
+    missingSkills: [String]
+    hasPortfolio: Boolean
+    hasResume: Boolean
+    feedbackCount: Int
+    averageFeedbackRating: Float
+  }
+
+  type EmployerApplicationDetail {
     applicationId: String
     jobId: String
     freelancerId: String
+    freelancerUserId: String
     status: String
     appliedDate: String
     coverMessage: String
     resumeLink: String
-    freelancerUserId: String
     freelancerName: String
     freelancerPicture: String
     freelancerEmail: String
     freelancerPhone: String
+    freelancerRating: Float
     skillRating: Float
-    jobTitle: String
     isPremium: Boolean
-  }
-
-  type EmployerApplicationsStats {
-    total: Int
-    pending: Int
-    accepted: Int
-    rejected: Int
-  }
-
-  type EmployerApplicationsResult {
-    applications: [EmployerApplication]
-    stats: EmployerApplicationsStats
+    freelancerAbout: String
+    freelancerSkills: [String]
+    freelancerPortfolio: [PortfolioItem]
+    jobTitle: String
+    jobDescription: JobDescriptionDetail
+    feedbackReviews: [FeedbackReview]
+    feedbackTotal: Int
+    jobMatch: JobMatchSignals
   }
 
   type PublicBlog {
@@ -747,6 +818,10 @@ const typeDefs = `#graphql
     # Quiz badges (replaces .populate() endpoint)
     userBadges(userId: String!): [UserBadge]
 
+    # Chat queries
+    chatConversations(limit: Int = 20, offset: Int = 0): [ChatConversation!]!
+    messagesWithUser(userId: String!, limit: Int = 50, offset: Int = 0): MessageResult!
+
     # Freelancer queries (replaces per-job Employer lookups)
     freelancerActiveJobs: [ActiveJob]
     freelancerJobHistory: [HistoryJob]
@@ -757,7 +832,7 @@ const typeDefs = `#graphql
     employerTransactions: EmployerTransactionsResult
     employerTransactionDetail(jobId: String!): EmployerTransactionDetail
     employerDashboardStats: EmployerDashboardStats
-    employerApplications(status: String, sort: String, limit: Int, offset: Int): EmployerApplicationsResult
+    employerApplicationDetail(applicationId: String!): EmployerApplicationDetail
     
     # Admin dashboard queries (replaces over-fetching REST endpoints)
     adminDashboardOverview: AdminDashboardOverview
