@@ -211,6 +211,31 @@ const typeDefs = `#graphql
     stats: ApplicationStats
   }
 
+  type EmployerApplication {
+    applicationId: String
+    jobId: String
+    freelancerId: String
+    status: String
+    appliedDate: String
+    coverMessage: String
+    resumeLink: String
+    freelancerUserId: String
+    freelancerName: String
+    freelancerPicture: String
+    freelancerEmail: String
+    freelancerPhone: String
+    skillRating: Float
+    jobTitle: String
+    isPremium: Boolean
+  }
+
+  type EmployerApplicationsResult {
+    applications: [EmployerApplication]
+    stats: ApplicationStats
+    total: Int
+    hasMore: Boolean
+  }
+
   type ApplicationStats {
     total: Int
     pending: Int
@@ -261,6 +286,7 @@ const typeDefs = `#graphql
     freelancerActiveJobs: [ActiveJob]
     freelancerJobHistory: [HistoryJob]
     freelancerApplications: ApplicationsResult
+    employerApplications(status: String, sort: String, limit: Int, offset: Int): EmployerApplicationsResult
 
     # Public blog detail (replaces /api/blogs/:id + latest + featured)
     publicBlogDetail(blogId: String!): PublicBlogDetail
