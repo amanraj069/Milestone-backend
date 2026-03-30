@@ -283,6 +283,44 @@ const typeDefs = `#graphql
     rejected: Int
   }
 
+  # ── Moderator Complaint Types ──────────────────────
+
+  type Complaint {
+    complaintId: String
+    complainantType: String
+    complainantId: String
+    complainantName: String
+    complainantUserId: String
+    freelancerId: String
+    freelancerName: String
+    freelancerUserId: String
+    freelancerRating: Float
+    freelancerEmail: String
+    employerId: String
+    employerName: String
+    employerUserId: String
+    employerRating: Float
+    employerEmail: String
+    jobId: String
+    jobTitle: String
+    complaintType: String
+    priority: String
+    subject: String
+    description: String
+    status: String
+    moderatorNotes: String
+    createdAt: String
+    updatedAt: String
+    resolvedAt: String
+  }
+
+  type ModeratorComplaintsConnection {
+    complaints: [Complaint]
+    total: Int
+    page: Int
+    limit: Int
+  }
+
   # ── Admin Dashboard Types ────────────────────────
 
   type AdminUserCounts {
@@ -847,6 +885,10 @@ const typeDefs = `#graphql
     adminActivities: [AdminActivity]
     # Public blog detail (replaces /api/blogs/:id + latest + featured)
     publicBlogDetail(blogId: String!): PublicBlogDetail
+
+    # Moderator complaint queries (read-only for now)
+    moderatorComplaints(status: String, priority: String, complaintType: String, searchTerm: String, page: Int, limit: Int): ModeratorComplaintsConnection
+    moderatorComplaintById(complaintId: String!): Complaint
   }
 `;
 
