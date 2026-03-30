@@ -396,6 +396,118 @@ const resolvers = {
     },
 
     // ──────────────────────────────────────────────
+    //  EMPLOYER APPLICATIONS
+    // ──────────────────────────────────────────────
+
+    /**
+     * GET /api/employer/job_applications/all (GraphQL equivalent)
+     */
+    employerApplications: async (
+      _parent,
+      { status = "all", sort = "premium_oldest", limit = 50, offset = 0 },
+      { session }
+    ) => {
+      if (!session?.user) throw new Error("Unauthorized: Please log in");
+      if (session.user.role !== "Employer")
+        throw new Error("Access denied. Employer access required.");
+
+      const employerId = session.user.roleId;
+      if (!employerId) {
+        throw new Error("Employer roleId not found in session");
+      }
+
+      const boundedLimit = Math.max(1, Math.min(limit || 50, 500));
+      const safeOffset = Math.max(0, offset || 0);
+
+      const jobs = await JobListing.find({ employerId })
+        .select("jobId title")
+        .lean();
+      const jobIds = jobs.map((job) => job.jobId);
+
+      if (!jobIds.length) {
+        return {
+          applications: [],
+          stats: {
+            total: 0,
+            pending: 0,
+            accepted: 0,
+            rejected: 0,
+          },
+          total: 0,
+          hasMore: false,
+        };
+      }
+
+      const query = { jobId: { $in: jobIds } };
+      if (status && status !== "all") {
+        query.status = status;
+      }
+
+      const applications = await JobApplication.find(query).lean();
+      const freelancerIds = [
+        ...new Set(applications.map((app) => app.freelancerId).filter(Boolean)),
+      ];
+
+      const users = await User.find({ roleId: { $in: freelancerIds } })
+        .select("roleId userId name picture email phone rating subscription")
+        .lean();
+
+      const jobMap = new Map(jobs.map((job) => [job.jobId, job]));
+      const userMap = new Map(users.map((entry) => [entry.roleId, entry]));
+
+      const enriched = applications.map((application) => {
+        const freelancer = userMap.get(application.freelancerId);
+        const job = jobMap.get(application.jobId);
+
+        return {
+          applicationId: application.applicationId,
+          jobId: application.jobId,
+          freelancerId: application.freelancerId,
+          status: application.status,
+          appliedDate:
+            application.appliedDate?.toISOString?.() || application.appliedDate,
+          coverMessage: application.coverMessage,
+          resumeLink: application.resumeLink,
+          freelancerUserId: freelancer?.userId || null,
+          freelancerName: freelancer?.name || "Unknown Freelancer",
+          freelancerPicture: freelancer?.picture || null,
+          freelancerEmail: freelancer?.email || null,
+          freelancerPhone: freelancer?.phone || null,
+          skillRating: Number(freelancer?.rating || 0),
+          jobTitle: job?.title || "Unknown Job",
+          isPremium: freelancer?.subscription === "Premium",
+        };
+      });
+
+      if (sort === "newest") {
+        enriched.sort((a, b) => new Date(b.appliedDate) - new Date(a.appliedDate));
+      } else if (sort === "oldest") {
+        enriched.sort((a, b) => new Date(a.appliedDate) - new Date(b.appliedDate));
+      } else {
+        enriched.sort((a, b) => {
+          if (a.isPremium && !b.isPremium) return -1;
+          if (!a.isPremium && b.isPremium) return 1;
+          return new Date(a.appliedDate) - new Date(b.appliedDate);
+        });
+      }
+
+      const total = enriched.length;
+      const paginated = enriched.slice(safeOffset, safeOffset + boundedLimit);
+
+      return {
+        applications: paginated,
+        stats: {
+          total,
+          pending: enriched.filter((app) => app.status === "Pending").length,
+          accepted: enriched.filter((app) => app.status === "Accepted").length,
+          rejected: enriched.filter((app) => app.status === "Rejected").length,
+        },
+        total,
+        hasMore: safeOffset + paginated.length < total,
+      };
+    },
+
+    // ──────────────────────────────────────────────
     //  FREELANCER APPLICATIONS
     // ──────────────────────────────────────────────
 
