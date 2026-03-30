@@ -309,6 +309,22 @@ const requireEmployer = (req, res, next) => {
  *     responses:
  *       200:
  *         description: Work history returned
+ *
+ * /api/employer/complaints:
+ *   post:
+ *     summary: Create employer complaint
+ *     tags: [Employer]
+ *     security:
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [freelancerId, subject, description]
+ *             properties:
+ *               freelancerId:
  *                 type: string
  *               priority:
  *                 type: string
