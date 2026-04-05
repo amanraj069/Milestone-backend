@@ -1,0 +1,74 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: milestone-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      # Root user credentials for local development only.
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-rootpass}
+      # Initial database name created by Mongo image.
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-milestone}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: milestone-backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "9000:9000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-9000}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_change_me}
+
+      # Backend app connection string used in database.js.
+      MONGO_URL: ${MONGO_URL:-mongodb://root:rootpass@mongo:27017/milestone?authSource=admin}
+
+      # External service credentials (optional in local setup).
+      EMAIL_SERVICE: ${EMAIL_SERVICE:-gmail}
+      EMAIL_USER: ${EMAIL_USER:-}
+      EMAIL_PASS: ${EMAIL_PASS:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+    volumes:
+      # Keep runtime-generated files persisted between container restarts.
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ../m-frontend
+      dockerfile: Dockerfile
+      args:
+        # Build-time URL consumed by Vite for API/GraphQL/socket calls.
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:9000}
+    container_name: milestone-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "3000:80"
+
+volumes:
+  mongo_data:
