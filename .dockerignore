@@ -1,0 +1,28 @@
+# VCS and editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Dependencies and package manager artifacts
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Runtime artifacts
+logs
+uploads
+coverage
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Docs and misc
+README.md
