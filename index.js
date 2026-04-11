@@ -163,15 +163,23 @@ app.use(
   express.static(path.join(__dirname, "uploads")),
 );
 
+const isProduction = process.env.NODE_ENV === "production";
+
+// Trust the first proxy (Render)
+if (isProduction) {
+  app.set("trust proxy", 1);
+}
+
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
   resave: false,
   saveUninitialized: false,
+  proxy: isProduction,
   cookie: {
     maxAge: 24 * 60 * 60 * 1000,
-    secure: false,
+    secure: isProduction, // Set to true for HTTPS
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: isProduction ? "none" : "lax", // Required for cross-site cookies
   },
 });
 
