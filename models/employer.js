@@ -35,4 +35,7 @@ const employerSchema = new Schema(
   { timestamps: true }
 );
 
+employerSchema.index({ createdAt: -1, _id: -1 });
+employerSchema.index({ userId: 1 });
+
 module.exports = mongoose.model("Employer", employerSchema);

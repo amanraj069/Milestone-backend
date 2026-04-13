@@ -52,6 +52,60 @@ function calculatePlatformFee(durationDays, applicantCount) {
   return Math.max(2, Math.min(8, Math.round(rate * 10) / 10));
 }
 
+function encodeCursor(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64");
+}
+
+function decodeCursor(cursor) {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
+    if (!parsed?.createdAt || !parsed?.id) return null;
+    const createdAt = new Date(parsed.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id: parsed.id };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function encodePaymentCursor(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64");
+}
+
+function decodePaymentCursor(cursor) {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
+    if (!parsed?.updatedAt || !parsed?.jobObjectId || !parsed?.milestoneId) {
+      return null;
+    }
+    const updatedAt = new Date(parsed.updatedAt);
+    if (Number.isNaN(updatedAt.getTime())) return null;
+    return {
+      updatedAt,
+      jobObjectId: parsed.jobObjectId,
+      milestoneId: parsed.milestoneId,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function encodePlatformFeeCursor(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64");
+}
+
+function decodePlatformFeeCursor(cursor) {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
+    if (!parsed?.postedDate || !parsed?.id) return null;
+    const postedDate = new Date(parsed.postedDate);
+    if (Number.isNaN(postedDate.getTime())) return null;
+    return { postedDate, id: parsed.id };
+  } catch (_error) {
+    return null;
+  }
+}
+
 // ── Query Resolvers ─────────────────────────────
 
 const adminResolvers = {
@@ -280,72 +334,312 @@ const adminResolvers = {
   },
 
   // ──────────────────────────────────────────────
+  //  PLATFORM FEE COLLECTIONS (PAGINATED)
+  // ──────────────────────────────────────────────
+
+  adminPlatformFeeCollections: async (
+    _parent,
+    { first = 10, after = null },
+    { session },
+  ) => {
+    requireAdmin(session);
+
+    const normalizedFirst = Math.min(100, Math.max(1, Number(first) || 10));
+    const cursor = after ? decodePlatformFeeCursor(after) : null;
+
+    if (after && !cursor) {
+      throw new Error("Invalid cursor");
+    }
+
+    const baseFilter = { budget: { $gt: 0 } };
+    const queryFilter = cursor
+      ? {
+          ...baseFilter,
+          $or: [
+            { postedDate: { $lt: cursor.postedDate } },
+            { postedDate: cursor.postedDate, _id: { $lt: cursor.id } },
+          ],
+        }
+      : baseFilter;
+
+    const [total, jobsRaw] = await Promise.all([
+      JobListing.countDocuments(baseFilter),
+      JobListing.find(queryFilter)
+        .select(
+          "_id jobId title budget postedDate applicationDeadline applicants status employerId",
+        )
+        .sort({ postedDate: -1, _id: -1 })
+        .limit(normalizedFirst + 1)
+        .lean(),
+    ]);
+
+    const hasNextPage = jobsRaw.length > normalizedFirst;
+    const jobs = hasNextPage ? jobsRaw.slice(0, normalizedFirst) : jobsRaw;
+
+    if (!jobs.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
+
+    const jobIds = jobs.map((j) => j.jobId);
+    const employerIds = [...new Set(jobs.map((j) => j.employerId))];
+
+    const [appCounts, employers] = await Promise.all([
+      JobApplication.aggregate([
+        { $match: { jobId: { $in: jobIds } } },
+        { $group: { _id: "$jobId", count: { $sum: 1 } } },
+      ]),
+      Employer.find({ employerId: { $in: employerIds } })
+        .select("employerId companyName userId")
+        .lean(),
+    ]);
+
+    const appCountMap = Object.fromEntries(
+      appCounts.map((a) => [a._id, a.count]),
+    );
+    const employerMap = new Map(employers.map((e) => [e.employerId, e]));
+
+    const employerUserIds = employers.map((e) => e.userId);
+    const employerUsers = await User.find({ userId: { $in: employerUserIds } })
+      .select("userId name")
+      .lean();
+    const employerUserMap = new Map(
+      employerUsers.map((u) => [u.userId, u.name]),
+    );
+
+    const edges = jobs.map((job) => {
+      const postedDate = new Date(job.postedDate);
+      const deadline = new Date(job.applicationDeadline);
+      const durationDays = Math.max(
+        1,
+        Math.ceil((deadline - postedDate) / (1000 * 60 * 60 * 24)) || 1,
+      );
+      const applicantCount = appCountMap[job.jobId] || job.applicants || 0;
+      const feeRate = calculatePlatformFee(durationDays, applicantCount);
+      const feeAmount = Math.round((job.budget || 0) * (feeRate / 100) * 100) / 100;
+      const employer = employerMap.get(job.employerId);
+
+      return {
+        node: {
+          jobId: job.jobId,
+          title: job.title,
+          budget: job.budget,
+          durationDays,
+          applicantCount,
+          feeRate,
+          feeAmount,
+          postedDate: job.postedDate,
+          status: job.status,
+          employerName: employerUserMap.get(employer?.userId) || "Unknown",
+          companyName: employer?.companyName || "Unknown",
+        },
+        cursor: encodePlatformFeeCursor({
+          postedDate: job.postedDate,
+          id: String(job._id),
+        }),
+      };
+    });
+
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+    };
+  },
+
+  // ──────────────────────────────────────────────
   //  PAYMENTS
   // ──────────────────────────────────────────────
 
-  adminPayments: async (_parent, _args, { session }) => {
+  adminPayments: async (_parent, { first = 25, after = null }, { session }) => {
     requireAdmin(session);
 
-    const [jobsWithPaid, jobsWithPending] = await Promise.all([
-      JobListing.find({ "milestones.status": "paid" })
-        .select("jobId title budget employerId milestones assignedFreelancer status updatedAt").lean(),
-      JobListing.find({ "milestones.status": { $in: ["not-paid", "in-progress"] } })
-        .select("jobId title budget employerId milestones assignedFreelancer status updatedAt").lean(),
+    const normalizedFirst = Math.min(100, Math.max(1, Number(first) || 25));
+    const cursor = after ? decodePaymentCursor(after) : null;
+    if (after && !cursor) {
+      throw new Error("Invalid cursor");
+    }
+
+    const paymentStatuses = ["paid", "not-paid", "in-progress"];
+    const cursorMatch = cursor
+      ? {
+          $or: [
+            { updatedAt: { $lt: cursor.updatedAt } },
+            { updatedAt: cursor.updatedAt, _id: { $lt: cursor.jobObjectId } },
+            {
+              updatedAt: cursor.updatedAt,
+              _id: cursor.jobObjectId,
+              "milestones.milestoneId": { $lt: cursor.milestoneId },
+            },
+          ],
+        }
+      : {};
+
+    const [totalAgg, paymentRows] = await Promise.all([
+      JobListing.aggregate([
+        { $match: { "milestones.status": { $in: paymentStatuses } } },
+        { $unwind: "$milestones" },
+        { $match: { "milestones.status": { $in: paymentStatuses } } },
+        { $count: "total" },
+      ]),
+      JobListing.aggregate([
+        { $match: { "milestones.status": { $in: paymentStatuses } } },
+        { $unwind: "$milestones" },
+        { $match: { "milestones.status": { $in: paymentStatuses } } },
+        ...(cursor ? [{ $match: cursorMatch }] : []),
+        { $sort: { updatedAt: -1, _id: -1, "milestones.milestoneId": -1 } },
+        { $limit: normalizedFirst + 1 },
+        {
+          $project: {
+            _id: 1,
+            jobId: 1,
+            title: 1,
+            employerId: 1,
+            assignedFreelancer: 1,
+            updatedAt: 1,
+            milestoneId: "$milestones.milestoneId",
+            milestoneDescription: "$milestones.description",
+            milestonePayment: "$milestones.payment",
+            milestoneStatus: "$milestones.status",
+          },
+        },
+      ]),
     ]);
 
-    const allPaymentJobs = [...jobsWithPaid, ...jobsWithPending];
-    const empIds = [...new Set(allPaymentJobs.map((j) => j.employerId))];
-    const flIds = [...new Set(allPaymentJobs.filter((j) => j.assignedFreelancer?.freelancerId).map((j) => j.assignedFreelancer.freelancerId))];
+    const total = totalAgg[0]?.total || 0;
+    const hasNextPage = paymentRows.length > normalizedFirst;
+    const rows = hasNextPage ? paymentRows.slice(0, normalizedFirst) : paymentRows;
+
+    if (!rows.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
+
+    const empIds = [...new Set(rows.map((r) => r.employerId).filter(Boolean))];
+    const flIds = [
+      ...new Set(
+        rows
+          .map((r) => r.assignedFreelancer?.freelancerId)
+          .filter(Boolean),
+      ),
+    ];
 
     const [employers, freelancers] = await Promise.all([
-      Employer.find({ employerId: { $in: empIds } }).select("employerId companyName userId").lean(),
-      Freelancer.find({ freelancerId: { $in: flIds } }).select("freelancerId userId").lean(),
+      Employer.find({ employerId: { $in: empIds } })
+        .select("employerId companyName userId")
+        .lean(),
+      Freelancer.find({ freelancerId: { $in: flIds } })
+        .select("freelancerId userId")
+        .lean(),
     ]);
-    const allUserIds = [...employers.map((e) => e.userId), ...freelancers.map((f) => f.userId)];
-    const users = await User.find({ userId: { $in: allUserIds } }).select("userId name email").lean();
 
-    const payments = [];
+    const employerMap = new Map(employers.map((e) => [e.employerId, e]));
+    const freelancerMap = new Map(freelancers.map((f) => [f.freelancerId, f]));
 
-    const processJobs = (jobs, statusFilter, mapStatus) => {
-      jobs.forEach((job) => {
-        const employer = employers.find((e) => e.employerId === job.employerId);
-        const employerUser = users.find((u) => u.userId === employer?.userId);
-        const freelancer = freelancers.find((f) => f.freelancerId === job.assignedFreelancer?.freelancerId);
-        const freelancerUser = users.find((u) => u.userId === freelancer?.userId);
-        job.milestones.filter(statusFilter).forEach((milestone) => {
-          payments.push({
-            jobId: job.jobId, jobTitle: job.title,
-            milestoneId: milestone.milestoneId,
-            milestoneDescription: milestone.description,
-            amount: parseFloat(milestone.payment) || 0,
-            status: mapStatus(milestone),
-            employerName: employerUser?.name || "Unknown",
-            companyName: employer?.companyName || "Unknown",
-            freelancerName: freelancerUser?.name || "Unknown",
-            date: job.updatedAt?.toISOString?.() || job.updatedAt,
-          });
-        });
-      });
+    const allUserIds = [
+      ...new Set([
+        ...employers.map((e) => e.userId),
+        ...freelancers.map((f) => f.userId),
+      ]),
+    ];
+    const users = await User.find({ userId: { $in: allUserIds } })
+      .select("userId name")
+      .lean();
+    const userMap = new Map(users.map((u) => [u.userId, u]));
+
+    const edges = rows.map((row) => {
+      const employer = employerMap.get(row.employerId);
+      const employerUser = employer ? userMap.get(employer.userId) : null;
+      const freelancer = freelancerMap.get(row.assignedFreelancer?.freelancerId);
+      const freelancerUser = freelancer ? userMap.get(freelancer.userId) : null;
+
+      const status =
+        row.milestoneStatus === "paid"
+          ? "Paid"
+          : row.milestoneStatus === "in-progress"
+            ? "In Progress"
+            : "Pending";
+
+      return {
+        node: {
+          jobId: row.jobId,
+          jobTitle: row.title,
+          milestoneId: row.milestoneId,
+          milestoneDescription: row.milestoneDescription,
+          amount: parseFloat(row.milestonePayment) || 0,
+          status,
+          employerName: employerUser?.name || "Unknown",
+          companyName: employer?.companyName || "Unknown",
+          freelancerName: freelancerUser?.name || "Unknown",
+          date: row.updatedAt?.toISOString?.() || row.updatedAt,
+        },
+        cursor: encodePaymentCursor({
+          updatedAt: row.updatedAt,
+          jobObjectId: String(row._id),
+          milestoneId: String(row.milestoneId || ""),
+        }),
+      };
+    });
+
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
     };
-
-    processJobs(jobsWithPaid, (m) => m.status === "paid", () => "Paid");
-    processJobs(jobsWithPending, (m) => m.status === "not-paid" || m.status === "in-progress",
-      (m) => m.status === "in-progress" ? "In Progress" : "Pending");
-
-    payments.sort((a, b) => new Date(b.date) - new Date(a.date));
-    return { payments, total: payments.length };
   },
 
   // ──────────────────────────────────────────────
   //  USERS
   // ──────────────────────────────────────────────
 
-  adminUsers: async (_parent, _args, { session }) => {
+  adminUsers: async (_parent, { first = 25, after = null }, { session }) => {
     requireAdmin(session);
 
-    const users = await User.find({ role: { $ne: "" } })
-      .select("userId name email role subscription picture location rating createdAt subscriptionDuration subscriptionExpiryDate")
-      .sort({ createdAt: -1 }).lean();
+    const safeFirst = Math.min(100, Math.max(1, Number(first) || 25));
+    const baseFilter = { role: { $ne: "" } };
+    const cursor = after ? decodeCursor(after) : null;
+
+    const queryFilter = cursor
+      ? {
+          ...baseFilter,
+          $or: [
+            { createdAt: { $lt: cursor.createdAt } },
+            { createdAt: cursor.createdAt, _id: { $lt: cursor.id } },
+          ],
+        }
+      : baseFilter;
+
+    const [usersRaw, total] = await Promise.all([
+      User.find(queryFilter)
+        .select("_id userId name email role subscription picture location rating createdAt subscriptionDuration subscriptionExpiryDate")
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(safeFirst + 1)
+        .lean(),
+      User.countDocuments(baseFilter),
+    ]);
+
+    const hasNextPage = usersRaw.length > safeFirst;
+    const users = hasNextPage ? usersRaw.slice(0, safeFirst) : usersRaw;
+
+    if (!users.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
 
     const userIds = users.map((u) => u.userId);
     const [freelancers, employers, moderators] = await Promise.all([
@@ -358,7 +652,7 @@ const adminResolvers = {
     const empMap = Object.fromEntries(employers.map((e) => [e.userId, e.employerId]));
     const modMap = Object.fromEntries(moderators.map((m) => [m.userId, m.moderatorId]));
 
-    const result = users.map((u) => {
+    const edges = users.map((u) => {
       let roleId = null, profilePath = null;
       if (u.role === "Freelancer" && flMap[u.userId]) {
         roleId = flMap[u.userId]; profilePath = `/admin/freelancers/${roleId}`;
@@ -368,61 +662,143 @@ const adminResolvers = {
         roleId = modMap[u.userId]; profilePath = `/admin/moderators/${roleId}`;
       }
       return {
-        ...u, roleId, profilePath,
-        createdAt: u.createdAt?.toISOString?.() || u.createdAt,
-        subscriptionExpiryDate: u.subscriptionExpiryDate?.toISOString?.() || u.subscriptionExpiryDate,
+        node: {
+          ...u,
+          roleId,
+          profilePath,
+          createdAt: u.createdAt?.toISOString?.() || u.createdAt,
+          subscriptionExpiryDate:
+            u.subscriptionExpiryDate?.toISOString?.() ||
+            u.subscriptionExpiryDate,
+        },
+        cursor: encodeCursor({
+          createdAt: u.createdAt,
+          id: String(u._id),
+        }),
       };
     });
 
-    return { users: result, total: result.length };
+    const endCursor = edges.length ? edges[edges.length - 1].cursor : null;
+
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor,
+      },
+      total,
+    };
   },
 
   // ──────────────────────────────────────────────
   //  FREELANCERS LIST
   // ──────────────────────────────────────────────
 
-  adminFreelancers: async (_parent, _args, { session }) => {
+  adminFreelancers: async (_parent, { first = 25, after = null }, { session }) => {
     requireAdmin(session);
 
-    const freelancers = await Freelancer.find({}).lean();
-    const freelancerUserIds = freelancers.map((f) => f.userId);
-    const users = await User.find({ userId: { $in: freelancerUserIds } })
-      .select("userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate")
-      .lean();
+    const normalizedFirst = Math.min(100, Math.max(1, first || 25));
+    const cursor = after ? decodeCursor(after) : null;
+    const query = {};
 
+    if (after && !cursor) {
+      throw new Error("Invalid cursor");
+    }
+
+    if (cursor) {
+      query.$or = [
+        { createdAt: { $lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, _id: { $lt: cursor.id } },
+      ];
+    }
+
+    const [total, slice] = await Promise.all([
+      Freelancer.countDocuments({}),
+      Freelancer.find(query)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(normalizedFirst + 1)
+        .select("freelancerId userId skills createdAt")
+        .lean(),
+    ]);
+
+    const hasNextPage = slice.length > normalizedFirst;
+    const freelancers = hasNextPage ? slice.slice(0, normalizedFirst) : slice;
+
+    if (!freelancers.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
+
+    const freelancerUserIds = freelancers.map((f) => f.userId);
     const roleIds = freelancers.map((f) => f.freelancerId);
-    const [applicationCounts, activeJobs] = await Promise.all([
+
+    const [users, applicationCounts, activeJobs] = await Promise.all([
+      User.find({ userId: { $in: freelancerUserIds } })
+        .select("userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate")
+        .lean(),
       JobApplication.aggregate([
         { $match: { freelancerId: { $in: roleIds } } },
         { $group: { _id: "$freelancerId", count: { $sum: 1 } } },
       ]),
-      JobListing.find({ "assignedFreelancer.freelancerId": { $in: roleIds }, "assignedFreelancer.status": "working" })
-        .select("assignedFreelancer.freelancerId").lean(),
+      JobListing.find({
+        "assignedFreelancer.freelancerId": { $in: roleIds },
+        "assignedFreelancer.status": "working",
+      })
+        .select("assignedFreelancer.freelancerId")
+        .lean(),
     ]);
 
-    const applicationMap = {};
-    applicationCounts.forEach((item) => { applicationMap[item._id] = item.count; });
-    const workingFreelancerIds = new Set(activeJobs.map((job) => job.assignedFreelancer.freelancerId));
+    const userMap = new Map(users.map((u) => [u.userId, u]));
+    const applicationMap = Object.fromEntries(
+      applicationCounts.map((item) => [item._id, item.count]),
+    );
+    const workingFreelancerIds = new Set(
+      activeJobs.map((job) => job.assignedFreelancer.freelancerId),
+    );
 
-    const result = freelancers.map((freelancer) => {
-      const user = users.find((u) => u.userId === freelancer.userId);
+    const edges = freelancers.map((freelancer) => {
+      const user = userMap.get(freelancer.userId);
       return {
-        freelancerId: freelancer.freelancerId, userId: freelancer.userId,
-        name: user?.name || "N/A", email: user?.email || "N/A",
-        phone: user?.phone || "N/A", picture: user?.picture || "",
-        location: user?.location || "N/A", rating: user?.rating || 0,
-        skills: freelancer.skills?.length || 0,
-        subscription: user?.subscription || "Basic",
-        isPremium: user?.subscription === "Premium",
-        subscriptionDuration: user?.subscriptionDuration || null,
-        subscriptionExpiryDate: user?.subscriptionExpiryDate?.toISOString?.() || user?.subscriptionExpiryDate || null,
-        applicationsCount: applicationMap[freelancer.freelancerId] || 0,
-        isCurrentlyWorking: workingFreelancerIds.has(freelancer.freelancerId),
-        joinedDate: (user?.createdAt || freelancer.createdAt)?.toISOString?.() || null,
+        node: {
+          freelancerId: freelancer.freelancerId,
+          userId: freelancer.userId,
+          name: user?.name || "N/A",
+          email: user?.email || "N/A",
+          phone: user?.phone || "N/A",
+          picture: user?.picture || "",
+          location: user?.location || "N/A",
+          rating: user?.rating || 0,
+          skills: freelancer.skills?.length || 0,
+          subscription: user?.subscription || "Basic",
+          isPremium: user?.subscription === "Premium",
+          subscriptionDuration: user?.subscriptionDuration || null,
+          subscriptionExpiryDate:
+            user?.subscriptionExpiryDate?.toISOString?.() ||
+            user?.subscriptionExpiryDate ||
+            null,
+          applicationsCount: applicationMap[freelancer.freelancerId] || 0,
+          isCurrentlyWorking: workingFreelancerIds.has(freelancer.freelancerId),
+          joinedDate:
+            (user?.createdAt || freelancer.createdAt)?.toISOString?.() || null,
+        },
+        cursor: encodeCursor({
+          createdAt: freelancer.createdAt,
+          id: String(freelancer._id),
+        }),
       };
     });
 
-    return { freelancers: result, total: result.length };
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+    };
   },
 
   // ──────────────────────────────────────────────
@@ -498,44 +874,107 @@ const adminResolvers = {
   //  EMPLOYERS LIST
   // ──────────────────────────────────────────────
 
-  adminEmployers: async (_parent, _args, { session }) => {
+  adminEmployers: async (_parent, { first = 25, after = null }, { session }) => {
     requireAdmin(session);
 
-    const employers = await Employer.find({}).lean();
-    const employerUserIds = employers.map((e) => e.userId);
-    const users = await User.find({ userId: { $in: employerUserIds } })
-      .select("userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate")
-      .lean();
+    const normalizedFirst = Math.min(100, Math.max(1, first || 25));
+    const cursor = after ? decodeCursor(after) : null;
+    const query = {};
 
-    const empIds = employers.map((e) => e.employerId);
-    const jobCounts = await JobListing.aggregate([
-      { $match: { employerId: { $in: empIds } } },
-      { $group: { _id: "$employerId", count: { $sum: 1 } } },
+    if (after && !cursor) {
+      throw new Error("Invalid cursor");
+    }
+
+    if (cursor) {
+      query.$or = [
+        { createdAt: { $lt: cursor.createdAt } },
+        { createdAt: cursor.createdAt, _id: { $lt: cursor.id } },
+      ];
+    }
+
+    const [total, slice] = await Promise.all([
+      Employer.countDocuments({}),
+      Employer.find(query)
+        .sort({ createdAt: -1, _id: -1 })
+        .limit(normalizedFirst + 1)
+        .select(
+          "employerId userId companyName currentFreelancers previouslyWorkedFreelancers createdAt",
+        )
+        .lean(),
     ]);
-    const jobCountMap = {};
-    jobCounts.forEach((item) => { jobCountMap[item._id] = item.count; });
 
-    const result = employers.map((employer) => {
-      const user = users.find((u) => u.userId === employer.userId);
+    const hasNextPage = slice.length > normalizedFirst;
+    const employers = hasNextPage ? slice.slice(0, normalizedFirst) : slice;
+
+    if (!employers.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
+
+    const employerUserIds = employers.map((e) => e.userId);
+    const empIds = employers.map((e) => e.employerId);
+
+    const [users, jobCounts] = await Promise.all([
+      User.find({ userId: { $in: employerUserIds } })
+        .select("userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate")
+        .lean(),
+      JobListing.aggregate([
+        { $match: { employerId: { $in: empIds } } },
+        { $group: { _id: "$employerId", count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const userMap = new Map(users.map((u) => [u.userId, u]));
+    const jobCountMap = Object.fromEntries(
+      jobCounts.map((item) => [item._id, item.count]),
+    );
+
+    const edges = employers.map((employer) => {
+      const user = userMap.get(employer.userId);
       const currentHires = employer.currentFreelancers?.length || 0;
       const pastHires = employer.previouslyWorkedFreelancers?.length || 0;
+
       return {
-        employerId: employer.employerId, userId: employer.userId,
-        name: user?.name || "N/A", email: user?.email || "N/A",
-        phone: user?.phone || "N/A", picture: user?.picture || "",
-        location: user?.location || "N/A",
-        companyName: employer.companyName || "N/A",
-        rating: user?.rating || 0, subscription: user?.subscription || "Basic",
-        isPremium: user?.subscription === "Premium",
-        subscriptionDuration: user?.subscriptionDuration || null,
-        subscriptionExpiryDate: user?.subscriptionExpiryDate?.toISOString?.() || null,
-        jobListingsCount: jobCountMap[employer.employerId] || 0,
-        hiredCount: currentHires + pastHires, currentHires, pastHires,
-        joinedDate: (user?.createdAt || employer.createdAt)?.toISOString?.() || null,
+        node: {
+          employerId: employer.employerId,
+          userId: employer.userId,
+          name: user?.name || "N/A",
+          email: user?.email || "N/A",
+          phone: user?.phone || "N/A",
+          picture: user?.picture || "",
+          location: user?.location || "N/A",
+          companyName: employer.companyName || "N/A",
+          rating: user?.rating || 0,
+          subscription: user?.subscription || "Basic",
+          isPremium: user?.subscription === "Premium",
+          subscriptionDuration: user?.subscriptionDuration || null,
+          subscriptionExpiryDate:
+            user?.subscriptionExpiryDate?.toISOString?.() || null,
+          jobListingsCount: jobCountMap[employer.employerId] || 0,
+          hiredCount: currentHires + pastHires,
+          currentHires,
+          pastHires,
+          joinedDate:
+            (user?.createdAt || employer.createdAt)?.toISOString?.() || null,
+        },
+        cursor: encodeCursor({
+          createdAt: employer.createdAt,
+          id: String(employer._id),
+        }),
       };
     });
 
-    return { employers: result, total: result.length };
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+    };
   },
 
   // ──────────────────────────────────────────────

@@ -13,6 +13,32 @@ const Blog = require("../models/blog");
 const Subscription = require("../models/subscription");
 const RatingAudit = require("../models/RatingAudit");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
+const { v4: uuidv4 } = require("uuid");
+
+function getPaginationParams(query, defaultLimit = 25, maxLimit = 100) {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(
+    maxLimit,
+    Math.max(1, parseInt(query.limit, 10) || defaultLimit),
+  );
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
+function getPaginationMeta(total, page, limit) {
+  const totalPages = Math.ceil(total / limit) || 1;
+  return {
+    page,
+    limit,
+    total,
+    totalPages,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+}
 
 // ============ PROFILE ============
 
@@ -742,76 +768,89 @@ exports.getAllPayments = async (req, res) => {
 
 exports.getAllModerators = async (req, res) => {
   try {
-    // Find all existing Moderator documents
-    let moderators = await Moderator.find({}).lean();
-    const existingModeratorUserIds = new Set(moderators.map((m) => m.userId));
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
 
-    // Also find users with role "Moderator" who may not have a Moderator document
-    const moderatorUsers = await User.find({ role: "Moderator" })
-      .select(
-        "userId name email phone picture location rating createdAt subscription aboutMe roleId",
-      )
-      .lean();
+    const [moderatorUsers, totalModerators, resolvedComplaints, allComplaints, blogsCreated, quizzesCreated] =
+      await Promise.all([
+        User.find({ role: "Moderator" })
+          .select(
+            "userId name email phone picture location rating createdAt subscription aboutMe roleId",
+          )
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        User.countDocuments({ role: "Moderator" }),
+        Complaint.countDocuments({
+          status: "Resolved",
+          resolvedAt: { $exists: true, $ne: null },
+        }),
+        Complaint.countDocuments(),
+        Blog.countDocuments(),
+        Quiz.countDocuments(),
+      ]);
 
-    // Auto-create missing Moderator documents for users with role "Moderator"
-    for (const user of moderatorUsers) {
-      if (!existingModeratorUserIds.has(user.userId)) {
-        const newMod = await Moderator.create({
-          moderatorId: user.roleId || require("uuid").v4(),
-          userId: user.userId,
-        });
-        moderators.push(newMod.toObject ? newMod.toObject() : newMod);
-      }
+    if (!moderatorUsers.length) {
+      return res.json({
+        success: true,
+        moderators: [],
+        total: totalModerators,
+        pagination: getPaginationMeta(totalModerators, page, limit),
+      });
     }
 
-    const moderatorUserIds = moderators.map((m) => m.userId);
-    const users = await User.find({ userId: { $in: moderatorUserIds } })
-      .select(
-        "userId name email phone picture location rating createdAt subscription aboutMe",
-      )
+    const moderatorUserIds = moderatorUsers.map((u) => u.userId);
+    let moderatorDocs = await Moderator.find({ userId: { $in: moderatorUserIds } })
+      .select("moderatorId userId createdAt")
       .lean();
 
-    // Get complaint resolution stats per moderator
-    const resolvedComplaints = await Complaint.find({
-      status: "Resolved",
-      resolvedAt: { $exists: true },
-    }).lean();
+    const existingModeratorMap = new Map(
+      moderatorDocs.map((mod) => [mod.userId, mod]),
+    );
+    const missingModerators = moderatorUsers
+      .filter((user) => !existingModeratorMap.has(user.userId))
+      .map((user) => ({
+        moderatorId: user.roleId || uuidv4(),
+        userId: user.userId,
+      }));
 
-    // Get all complaints for stats
-    const allComplaints = await Complaint.countDocuments();
+    if (missingModerators.length) {
+      await Moderator.insertMany(missingModerators, { ordered: false }).catch(
+        () => {},
+      );
+      moderatorDocs = await Moderator.find({ userId: { $in: moderatorUserIds } })
+        .select("moderatorId userId createdAt")
+        .lean();
+    }
 
-    // Get blog creation stats
-    const blogs = await Blog.find({}).select("createdAt").lean();
+    const moderatorMap = new Map(moderatorDocs.map((mod) => [mod.userId, mod]));
 
-    // Get quiz creation stats
-    const quizzes = await Quiz.find({}).select("createdAt").lean();
-
-    const moderatorsWithDetails = moderators.map((mod) => {
-      const user = users.find((u) => u.userId === mod.userId);
-
+    const moderatorsWithDetails = moderatorUsers.map((user) => {
+      const mod = moderatorMap.get(user.userId);
       return {
-        moderatorId: mod.moderatorId,
-        userId: mod.userId,
-        name: user?.name || "N/A",
-        email: user?.email || "N/A",
-        phone: user?.phone || "N/A",
-        picture: user?.picture || "",
-        location: user?.location || "N/A",
-        rating: user?.rating || 0,
-        aboutMe: user?.aboutMe || "",
-        joinedDate: user?.createdAt || mod.createdAt,
-        subscription: user?.subscription || "Basic",
-        complaintsResolved: resolvedComplaints.length,
+        moderatorId: mod?.moderatorId || user.roleId || uuidv4(),
+        userId: user.userId,
+        name: user.name || "N/A",
+        email: user.email || "N/A",
+        phone: user.phone || "N/A",
+        picture: user.picture || "",
+        location: user.location || "N/A",
+        rating: user.rating || 0,
+        aboutMe: user.aboutMe || "",
+        joinedDate: user.createdAt || mod?.createdAt,
+        subscription: user.subscription || "Basic",
+        complaintsResolved: resolvedComplaints,
         totalComplaints: allComplaints,
-        blogsCreated: blogs.length,
-        quizzesCreated: quizzes.length,
+        blogsCreated,
+        quizzesCreated,
       };
     });
 
     res.json({
       success: true,
       moderators: moderatorsWithDetails,
-      total: moderatorsWithDetails.length,
+      total: totalModerators,
+      pagination: getPaginationMeta(totalModerators, page, limit),
     });
   } catch (error) {
     console.error("Error fetching moderators:", error.message);
@@ -836,13 +875,24 @@ exports.getModeratorActivity = async (req, res) => {
       .select("name email picture createdAt")
       .lean();
 
-    // Get complaint activity
-    const complaints = await Complaint.find({}).sort({ updatedAt: -1 }).lean();
-    const resolvedByModerator = complaints.filter(
-      (c) => c.status === "Resolved",
-    );
-    const pendingComplaints = complaints.filter((c) => c.status === "Pending");
-    const underReview = complaints.filter((c) => c.status === "Under Review");
+    // Get complaint activity without scanning the full complaints collection
+    const [
+      complaintsResolved,
+      complaintsPending,
+      complaintsUnderReview,
+      recentComplaints,
+    ] = await Promise.all([
+      Complaint.countDocuments({ status: "Resolved" }),
+      Complaint.countDocuments({ status: "Pending" }),
+      Complaint.countDocuments({ status: "Under Review" }),
+      Complaint.find({})
+        .sort({ updatedAt: -1 })
+        .limit(10)
+        .select(
+          "complaintId subject status priority createdAt updatedAt complainantName complainantType freelancerName employerName jobTitle complaintType",
+        )
+        .lean(),
+    ]);
 
     // Get blog stats
     const totalBlogs = await Blog.countDocuments();
@@ -861,13 +911,13 @@ exports.getModeratorActivity = async (req, res) => {
           joinedDate: user?.createdAt,
         },
         activity: {
-          complaintsResolved: resolvedByModerator.length,
-          complaintsPending: pendingComplaints.length,
-          complaintsUnderReview: underReview.length,
+          complaintsResolved,
+          complaintsPending,
+          complaintsUnderReview,
           totalBlogs,
           totalQuizzes,
         },
-        recentComplaints: complaints.slice(0, 10).map((c) => ({
+        recentComplaints: recentComplaints.map((c) => ({
           complaintId: c.complaintId,
           subject: c.subject,
           status: c.status,
@@ -918,12 +968,28 @@ exports.deleteModerator = async (req, res) => {
 
 exports.getAllUsers = async (req, res) => {
   try {
-    const users = await User.find({ role: { $ne: "" } })
-      .select(
-        "userId name email role subscription picture location rating createdAt subscriptionDuration subscriptionExpiryDate",
-      )
-      .sort({ createdAt: -1 })
-      .lean();
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+
+    const [users, totalUsers] = await Promise.all([
+      User.find({ role: { $ne: "" } })
+        .select(
+          "userId name email role subscription picture location rating createdAt subscriptionDuration subscriptionExpiryDate",
+        )
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments({ role: { $ne: "" } }),
+    ]);
+
+    if (!users.length) {
+      return res.json({
+        success: true,
+        users: [],
+        total: totalUsers,
+        pagination: getPaginationMeta(totalUsers, page, limit),
+      });
+    }
 
     const userIds = users.map((u) => u.userId);
     const [freelancers, employers, moderators] = await Promise.all([
@@ -966,7 +1032,8 @@ exports.getAllUsers = async (req, res) => {
     res.json({
       success: true,
       users: usersWithRoleId,
-      total: usersWithRoleId.length,
+      total: totalUsers,
+      pagination: getPaginationMeta(totalUsers, page, limit),
     });
   } catch (error) {
     console.error("Error fetching all users:", error.message);
@@ -1151,29 +1218,52 @@ exports.getPlatformStats = async (req, res) => {
 
 exports.getAllComplaints = async (req, res) => {
   try {
-    const complaints = await Complaint.find({}).sort({ createdAt: -1 }).lean();
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+
+    const [complaints, totalComplaints] = await Promise.all([
+      Complaint.find({})
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select(
+          "complaintId complainantType complainantId complainantName freelancerId freelancerName jobId jobTitle employerId employerName complaintType priority subject status createdAt updatedAt resolvedAt",
+        )
+        .lean(),
+      Complaint.countDocuments({}),
+    ]);
+
+    if (!complaints.length) {
+      return res.json({
+        success: true,
+        complaints: [],
+        total: totalComplaints,
+        pagination: getPaginationMeta(totalComplaints, page, limit),
+      });
+    }
 
     const complainantIds = [...new Set(complaints.map((c) => c.complainantId))];
     const complainantUsers = await User.find({
       roleId: { $in: complainantIds },
     })
-      .select("userId roleId name")
+      .select("userId roleId")
       .lean();
 
+    const complainantUserMap = Object.fromEntries(
+      complainantUsers.map((u) => [u.roleId, u.userId]),
+    );
+
     const complaintsWithUserId = complaints.map((complaint) => {
-      const complainantUser = complainantUsers.find(
-        (user) => user.roleId === complaint.complainantId,
-      );
       return {
         ...complaint,
-        complainantUserId: complainantUser?.userId || null,
+        complainantUserId: complainantUserMap[complaint.complainantId] || null,
       };
     });
 
     res.json({
       success: true,
       complaints: complaintsWithUserId,
-      total: complaintsWithUserId.length,
+      total: totalComplaints,
+      pagination: getPaginationMeta(totalComplaints, page, limit),
     });
   } catch (error) {
     console.error("Error fetching complaints:", error.message);
@@ -1187,7 +1277,27 @@ exports.getAllComplaints = async (req, res) => {
 
 exports.getAllFreelancers = async (req, res) => {
   try {
-    const freelancers = await Freelancer.find({}).lean();
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+
+    const [freelancers, totalFreelancers] = await Promise.all([
+      Freelancer.find({})
+        .select("freelancerId userId skills createdAt")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Freelancer.countDocuments({}),
+    ]);
+
+    if (!freelancers.length) {
+      return res.json({
+        success: true,
+        freelancers: [],
+        total: totalFreelancers,
+        pagination: getPaginationMeta(totalFreelancers, page, limit),
+      });
+    }
+
     const freelancerUserIds = freelancers.map((f) => f.userId);
     const users = await User.find({ userId: { $in: freelancerUserIds } })
       .select(
@@ -1216,8 +1326,10 @@ exports.getAllFreelancers = async (req, res) => {
       activeJobs.map((job) => job.assignedFreelancer.freelancerId),
     );
 
+    const userMap = Object.fromEntries(users.map((u) => [u.userId, u]));
+
     const freelancersWithDetails = freelancers.map((freelancer) => {
-      const user = users.find((u) => u.userId === freelancer.userId);
+      const user = userMap[freelancer.userId];
       return {
         freelancerId: freelancer.freelancerId,
         userId: freelancer.userId,
@@ -1241,7 +1353,8 @@ exports.getAllFreelancers = async (req, res) => {
     res.json({
       success: true,
       freelancers: freelancersWithDetails,
-      total: freelancersWithDetails.length,
+      total: totalFreelancers,
+      pagination: getPaginationMeta(totalFreelancers, page, limit),
     });
   } catch (error) {
     console.error("Error fetching freelancers:", error.message);
@@ -1253,7 +1366,29 @@ exports.getAllFreelancers = async (req, res) => {
 
 exports.getAllEmployers = async (req, res) => {
   try {
-    const employers = await Employer.find({}).lean();
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+
+    const [employers, totalEmployers] = await Promise.all([
+      Employer.find({})
+        .select(
+          "employerId userId companyName currentFreelancers previouslyWorkedFreelancers createdAt",
+        )
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Employer.countDocuments({}),
+    ]);
+
+    if (!employers.length) {
+      return res.json({
+        success: true,
+        employers: [],
+        total: totalEmployers,
+        pagination: getPaginationMeta(totalEmployers, page, limit),
+      });
+    }
+
     const employerUserIds = employers.map((e) => e.userId);
     const users = await User.find({ userId: { $in: employerUserIds } })
       .select(
@@ -1271,8 +1406,10 @@ exports.getAllEmployers = async (req, res) => {
       jobCountMap[item._id] = item.count;
     });
 
+    const userMap = Object.fromEntries(users.map((u) => [u.userId, u]));
+
     const employersWithDetails = employers.map((employer) => {
-      const user = users.find((u) => u.userId === employer.userId);
+      const user = userMap[employer.userId];
       const currentHires = employer.currentFreelancers?.length || 0;
       const pastHires = employer.previouslyWorkedFreelancers?.length || 0;
 
@@ -1301,7 +1438,8 @@ exports.getAllEmployers = async (req, res) => {
     res.json({
       success: true,
       employers: employersWithDetails,
-      total: employersWithDetails.length,
+      total: totalEmployers,
+      pagination: getPaginationMeta(totalEmployers, page, limit),
     });
   } catch (error) {
     console.error("Error fetching employers:", error.message);
@@ -1523,7 +1661,29 @@ exports.getEmployerDetail = async (req, res) => {
 
 exports.getAllJobListings = async (req, res) => {
   try {
-    const jobs = await JobListing.find({}).lean();
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+
+    const [jobs, totalJobs] = await Promise.all([
+      JobListing.find({})
+        .select(
+          "jobId title employerId budget jobType experienceLevel status location postedDate applicationDeadline milestones assignedFreelancer",
+        )
+        .sort({ postedDate: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      JobListing.countDocuments({}),
+    ]);
+
+    if (!jobs.length) {
+      return res.json({
+        success: true,
+        jobs: [],
+        total: totalJobs,
+        pagination: getPaginationMeta(totalJobs, page, limit),
+      });
+    }
+
     const employerIds = jobs.map((job) => job.employerId);
     const employers = await Employer.find({ employerId: { $in: employerIds } })
       .select("employerId companyName userId")
@@ -1543,9 +1703,14 @@ exports.getAllJobListings = async (req, res) => {
       applicantMap[item._id] = item.count;
     });
 
+    const employerMap = Object.fromEntries(
+      employers.map((e) => [e.employerId, e]),
+    );
+    const userMap = Object.fromEntries(users.map((u) => [u.userId, u]));
+
     const jobsWithDetails = jobs.map((job) => {
-      const employer = employers.find((e) => e.employerId === job.employerId);
-      const user = users.find((u) => u.userId === employer?.userId);
+      const employer = employerMap[job.employerId];
+      const user = userMap[employer?.userId];
 
       // Calculate paid amount from milestones
       let paidAmount = 0;
@@ -1584,7 +1749,8 @@ exports.getAllJobListings = async (req, res) => {
     res.json({
       success: true,
       jobs: jobsWithDetails,
-      total: jobsWithDetails.length,
+      total: totalJobs,
+      pagination: getPaginationMeta(totalJobs, page, limit),
     });
   } catch (error) {
     console.error("Error fetching job listings:", error.message);
