@@ -481,7 +481,7 @@ const adminResolvers = {
         }
       : {};
 
-    const [totalAgg, paymentRows] = await Promise.all([
+    const [totalAgg, paymentRows, summaryAgg] = await Promise.all([
       JobListing.aggregate([
         { $match: { "milestones.status": { $in: paymentStatuses } } },
         { $unwind: "$milestones" },
@@ -510,9 +510,31 @@ const adminResolvers = {
           },
         },
       ]),
+      JobListing.aggregate([
+        { $match: { "milestones.status": { $in: paymentStatuses } } },
+        { $unwind: "$milestones" },
+        { $match: { "milestones.status": { $in: paymentStatuses } } },
+        {
+          $group: {
+            _id: "$milestones.status",
+            amount: { $sum: { $toDouble: "$milestones.payment" } },
+          },
+        },
+      ]),
     ]);
 
     const total = totalAgg[0]?.total || 0;
+    const summary = {
+      paidTotal: 0,
+      pendingTotal: 0,
+      inProgressTotal: 0,
+    };
+    summaryAgg.forEach((item) => {
+      if (item._id === "paid") summary.paidTotal = item.amount || 0;
+      if (item._id === "not-paid") summary.pendingTotal = item.amount || 0;
+      if (item._id === "in-progress") summary.inProgressTotal = item.amount || 0;
+    });
+
     const hasNextPage = paymentRows.length > normalizedFirst;
     const rows = hasNextPage ? paymentRows.slice(0, normalizedFirst) : paymentRows;
 
@@ -521,6 +543,7 @@ const adminResolvers = {
         edges: [],
         pageInfo: { hasNextPage: false, endCursor: null },
         total,
+        summary,
       };
     }
 
@@ -597,6 +620,7 @@ const adminResolvers = {
         endCursor: edges.length ? edges[edges.length - 1].cursor : null,
       },
       total,
+      summary,
     };
   },
 

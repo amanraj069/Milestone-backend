@@ -454,6 +454,12 @@ const typeDefs = `#graphql
     total: Int
   }
 
+  type AdminPaymentsSummary {
+    paidTotal: Float
+    pendingTotal: Float
+    inProgressTotal: Float
+  }
+
   type AdminPaymentsEdge {
     node: AdminPayment
     cursor: String
@@ -468,6 +474,7 @@ const typeDefs = `#graphql
     edges: [AdminPaymentsEdge]
     pageInfo: AdminPaymentsPageInfo
     total: Int
+    summary: AdminPaymentsSummary
   }
 
   # ── Admin Users Types ──────────────────────────
