@@ -418,6 +418,22 @@ const typeDefs = `#graphql
     feeStructure: AdminFeeStructure
   }
 
+  type AdminPlatformFeeEdge {
+    node: AdminPlatformFeeJob
+    cursor: String
+  }
+
+  type AdminPlatformFeePageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type AdminPlatformFeeConnection {
+    edges: [AdminPlatformFeeEdge]
+    pageInfo: AdminPlatformFeePageInfo
+    total: Int
+  }
+
   # ── Admin Payments Types ───────────────────────
 
   type AdminPayment {
@@ -435,6 +451,22 @@ const typeDefs = `#graphql
 
   type AdminPaymentsResult {
     payments: [AdminPayment]
+    total: Int
+  }
+
+  type AdminPaymentsEdge {
+    node: AdminPayment
+    cursor: String
+  }
+
+  type AdminPaymentsPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type AdminPaymentsConnection {
+    edges: [AdminPaymentsEdge]
+    pageInfo: AdminPaymentsPageInfo
     total: Int
   }
 
@@ -456,8 +488,19 @@ const typeDefs = `#graphql
     profilePath: String
   }
 
-  type AdminUsersResult {
-    users: [AdminUser]
+  type AdminUsersEdge {
+    node: AdminUser
+    cursor: String
+  }
+
+  type AdminUsersPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type AdminUsersConnection {
+    edges: [AdminUsersEdge]
+    pageInfo: AdminUsersPageInfo
     total: Int
   }
 
@@ -484,6 +527,22 @@ const typeDefs = `#graphql
 
   type AdminFreelancersResult {
     freelancers: [AdminFreelancerSummary]
+    total: Int
+  }
+
+  type AdminFreelancersEdge {
+    node: AdminFreelancerSummary
+    cursor: String
+  }
+
+  type AdminFreelancersPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type AdminFreelancersConnection {
+    edges: [AdminFreelancersEdge]
+    pageInfo: AdminFreelancersPageInfo
     total: Int
   }
 
@@ -550,6 +609,22 @@ const typeDefs = `#graphql
 
   type AdminEmployersResult {
     employers: [AdminEmployerSummary]
+    total: Int
+  }
+
+  type AdminEmployersEdge {
+    node: AdminEmployerSummary
+    cursor: String
+  }
+
+  type AdminEmployersPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type AdminEmployersConnection {
+    edges: [AdminEmployersEdge]
+    pageInfo: AdminEmployersPageInfo
     total: Int
   }
 
@@ -837,11 +912,12 @@ const typeDefs = `#graphql
     # Admin dashboard queries (replaces over-fetching REST endpoints)
     adminDashboardOverview: AdminDashboardOverview
     adminDashboardRevenue: AdminDashboardRevenue
-    adminPayments: AdminPaymentsResult
-    adminUsers: AdminUsersResult
-    adminFreelancers: AdminFreelancersResult
+    adminPlatformFeeCollections(first: Int = 10, after: String): AdminPlatformFeeConnection
+    adminPayments(first: Int = 25, after: String): AdminPaymentsConnection
+    adminUsers(first: Int = 25, after: String): AdminUsersConnection
+    adminFreelancers(first: Int = 25, after: String): AdminFreelancersConnection
     adminFreelancerDetail(freelancerId: String!): AdminFreelancerDetail
-    adminEmployers: AdminEmployersResult
+    adminEmployers(first: Int = 25, after: String): AdminEmployersConnection
     adminEmployerDetail(employerId: String!): AdminEmployerDetail
     adminStatistics: AdminStatistics
     adminActivities: [AdminActivity]
