@@ -298,8 +298,13 @@ exports.login = async (req, res) => {
 };
 
 exports.logout = (req, res) => {
+  const isProduction = process.env.NODE_ENV === "production";
   req.session.destroy(() => {
-    res.clearCookie("connect.sid");
+    res.clearCookie("connect.sid", {
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      httpOnly: true,
+    });
     res.json({ success: true });
   });
 };
