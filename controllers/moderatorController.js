@@ -268,6 +268,13 @@ exports.getAllComplaints = async (req, res) => {
       underReviewComplaints,
       resolvedComplaints,
       rejectedComplaints,
+      complainantTypeOptions,
+      jobOptions,
+      statusOptions,
+      priorityOptions,
+      typeOptions,
+      employerAgainstOptions,
+      freelancerAgainstOptions,
     ] = await Promise.all([
       Complaint.find(query)
         .sort(querySort)
@@ -282,6 +289,13 @@ exports.getAllComplaints = async (req, res) => {
       Complaint.countDocuments({ status: "Under Review" }),
       Complaint.countDocuments({ status: "Resolved" }),
       Complaint.countDocuments({ status: "Rejected" }),
+      Complaint.distinct("complainantType"),
+      Complaint.distinct("jobTitle"),
+      Complaint.distinct("status"),
+      Complaint.distinct("priority"),
+      Complaint.distinct("complaintType"),
+      Complaint.distinct("employerName"),
+      Complaint.distinct("freelancerName"),
     ]);
 
     const stats = {
@@ -292,12 +306,27 @@ exports.getAllComplaints = async (req, res) => {
       rejected: rejectedComplaints,
     };
 
+    const againstSet = new Set([
+      ...employerAgainstOptions.filter(Boolean),
+      ...freelancerAgainstOptions.filter(Boolean),
+    ]);
+
+    const filterOptions = {
+      complainantTypes: (complainantTypeOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      against: Array.from(againstSet).sort((a, b) => String(a).localeCompare(String(b))),
+      jobs: (jobOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      statuses: (statusOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      priorities: (priorityOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      types: (typeOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+    };
+
     if (!complaints.length) {
       return res.json({
         success: true,
         complaints: [],
         total: totalComplaints,
         stats,
+        filterOptions,
         pagination: getPaginationMeta(totalComplaints, page, limit),
       });
     }
@@ -394,6 +423,7 @@ exports.getAllComplaints = async (req, res) => {
       complaints: complaintsWithUserId,
       total: totalComplaints,
       stats,
+      filterOptions,
       pagination: getPaginationMeta(totalComplaints, page, limit),
     });
   } catch (error) {
@@ -874,7 +904,16 @@ exports.getAllFreelancers = async (req, res) => {
     };
     const userSort = sortMap[sortBy] || sortMap.recent;
 
-    const [users, totalFreelancers] = await Promise.all([
+    const [
+      users,
+      totalFreelancers,
+      optionNames,
+      optionEmails,
+      optionPhones,
+      optionRatings,
+      optionSubscriptions,
+      optionDurations,
+    ] = await Promise.all([
       User.find(query)
         .select(
           "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate",
@@ -884,7 +923,34 @@ exports.getAllFreelancers = async (req, res) => {
         .limit(limit)
         .lean(),
       User.countDocuments(query),
+      User.distinct("name", { role: "Freelancer" }),
+      User.distinct("email", { role: "Freelancer" }),
+      User.distinct("phone", { role: "Freelancer" }),
+      User.distinct("rating", { role: "Freelancer" }),
+      User.distinct("subscription", { role: "Freelancer" }),
+      User.distinct("subscriptionDuration", { role: "Freelancer" }),
     ]);
+
+    const hasPremiumOption = optionSubscriptions.includes("Premium");
+    const hasBasicOption = optionSubscriptions.some((value) => value !== "Premium");
+
+    const filterOptions = {
+      names: optionNames.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      emails: optionEmails.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      phones: optionPhones.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      ratings: optionRatings
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+      subscribed: [
+        ...(hasPremiumOption ? ["Yes"] : []),
+        ...(hasBasicOption ? ["No"] : []),
+      ],
+      durations: optionDurations
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+    };
 
     const freelancers = await Freelancer.find({ userId: { $in: users.map((u) => u.userId) } })
       .select("freelancerId userId skills portfolio createdAt")
@@ -965,6 +1031,7 @@ exports.getAllFreelancers = async (req, res) => {
       success: true,
       freelancers: freelancersWithDetails,
       total: totalFreelancers,
+      filterOptions,
       pagination: getPaginationMeta(totalFreelancers, page, limit),
     });
   } catch (error) {
@@ -1163,7 +1230,8 @@ exports.getAllEmployers = async (req, res) => {
     };
     const sortStage = sortMap[sortBy] || sortMap.recent;
 
-    const aggregateResult = await Employer.aggregate([
+    const [aggregateResult, optionsAggregate] = await Promise.all([
+      Employer.aggregate([
       {
         $lookup: {
           from: "users",
@@ -1221,12 +1289,73 @@ exports.getAllEmployers = async (req, res) => {
             },
           ],
           total: [{ $count: "count" }],
+          options: [
+            {
+              $group: {
+                _id: null,
+                names: { $addToSet: "$user.name" },
+                companies: { $addToSet: "$companyName" },
+                emails: { $addToSet: "$user.email" },
+                phones: { $addToSet: "$user.phone" },
+                ratings: { $addToSet: "$user.rating" },
+                subscriptions: { $addToSet: "$user.subscription" },
+                durations: { $addToSet: "$user.subscriptionDuration" },
+              },
+            },
+          ],
         },
       },
+    ]),
+      Employer.aggregate([
+        {
+          $lookup: {
+            from: "users",
+            localField: "userId",
+            foreignField: "userId",
+            as: "user",
+          },
+        },
+        { $unwind: "$user" },
+        { $match: { "user.role": "Employer" } },
+        {
+          $group: {
+            _id: null,
+            names: { $addToSet: "$user.name" },
+            companies: { $addToSet: "$companyName" },
+            emails: { $addToSet: "$user.email" },
+            phones: { $addToSet: "$user.phone" },
+            ratings: { $addToSet: "$user.rating" },
+            subscriptions: { $addToSet: "$user.subscription" },
+            durations: { $addToSet: "$user.subscriptionDuration" },
+          },
+        },
+      ]),
     ]);
 
     const employers = aggregateResult?.[0]?.rows || [];
     const totalEmployers = aggregateResult?.[0]?.total?.[0]?.count || 0;
+    const optionBucket = optionsAggregate?.[0] || {};
+    const hasPremiumOption = (optionBucket.subscriptions || []).includes("Premium");
+    const hasBasicOption = (optionBucket.subscriptions || []).some((value) => value && value !== "Premium");
+
+    const filterOptions = {
+      names: (optionBucket.names || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      companies: (optionBucket.companies || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      emails: (optionBucket.emails || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      phones: (optionBucket.phones || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      ratings: (optionBucket.ratings || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+      subscribed: [
+        ...(hasPremiumOption ? ["Yes"] : []),
+        ...(hasBasicOption ? ["No"] : []),
+      ],
+      durations: (optionBucket.durations || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+    };
 
     if (!employers.length) {
       return res.json({
@@ -1309,6 +1438,7 @@ exports.getAllEmployers = async (req, res) => {
       success: true,
       employers: employersWithDetails,
       total: totalEmployers,
+      filterOptions,
       pagination: getPaginationMeta(totalEmployers, page, limit),
     });
   } catch (error) {
@@ -1450,7 +1580,8 @@ exports.getAllJobListings = async (req, res) => {
     };
     const sortStage = sortMap[sortBy] || sortMap.recent;
 
-    const aggregateResult = await JobListing.aggregate([
+    const [aggregateResult, allTitles, allTypes, allStatuses, allCompanies] = await Promise.all([
+      JobListing.aggregate([
       {
         $lookup: {
           from: "employers",
@@ -1527,12 +1658,34 @@ exports.getAllJobListings = async (req, res) => {
             },
           ],
           total: [{ $count: "count" }],
+          options: [
+            {
+              $group: {
+                _id: null,
+                titles: { $addToSet: "$title" },
+                companies: { $addToSet: "$companyName" },
+                types: { $addToSet: "$jobType" },
+                statuses: { $addToSet: "$status" },
+              },
+            },
+          ],
         },
       },
+    ]),
+      JobListing.distinct("title"),
+      JobListing.distinct("jobType"),
+      JobListing.distinct("status"),
+      Employer.distinct("companyName"),
     ]);
 
     const jobs = aggregateResult?.[0]?.rows || [];
     const totalJobs = aggregateResult?.[0]?.total?.[0]?.count || 0;
+    const filterOptions = {
+      titles: (allTitles || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      companies: (allCompanies || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      types: (allTypes || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      statuses: (allStatuses || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+    };
 
     if (!jobs.length) {
       return res.json({
@@ -1567,6 +1720,7 @@ exports.getAllJobListings = async (req, res) => {
       success: true,
       jobs: jobsWithDetails,
       total: totalJobs,
+      filterOptions,
       pagination: getPaginationMeta(totalJobs, page, limit),
     });
   } catch (error) {
@@ -1684,6 +1838,28 @@ exports.getPendingApprovals = async (req, res) => {
       ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
       : null;
 
+    const [allEmployerUsers, allEmployerCompanies] = await Promise.all([
+      User.find({ role: "Employer" })
+        .select("name email location isApproved isRejected")
+        .lean(),
+      Employer.find({}).select("companyName").lean(),
+    ]);
+
+    const statusSet = new Set();
+    allEmployerUsers.forEach((user) => {
+      if (user.isRejected) statusSet.add("Rejected");
+      else if (user.isApproved) statusSet.add("Approved");
+      else statusSet.add("Pending");
+    });
+
+    const filterOptions = {
+      names: allEmployerUsers.map((u) => u.name).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      emails: allEmployerUsers.map((u) => u.email).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      companies: allEmployerCompanies.map((e) => e.companyName).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      locations: allEmployerUsers.map((u) => u.location).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      statuses: Array.from(statusSet).sort((a, b) => String(a).localeCompare(String(b))),
+    };
+
     const allowedSortBy = new Set(["createdAt", "name"]);
     const normalizedSortBy = allowedSortBy.has(sortBy) ? sortBy : "createdAt";
     const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
@@ -1746,6 +1922,7 @@ exports.getPendingApprovals = async (req, res) => {
           success: true,
           pendingApprovals: [],
           count: 0,
+          filterOptions,
           pagination: getPaginationMeta(0, page, limit),
         });
       }
@@ -1829,6 +2006,7 @@ exports.getPendingApprovals = async (req, res) => {
       success: true,
       pendingApprovals: approvals, // keeping the same key for backward compatibility
       count: totalApprovals,
+      filterOptions,
       pagination: getPaginationMeta(totalApprovals, page, limit),
     });
   } catch (error) {

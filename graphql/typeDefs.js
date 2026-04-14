@@ -1007,6 +1007,413 @@ const typeDefs = `#graphql
     featuredBlog: PublicBlog
   }
 
+  # ── Moderator GraphQL Types ─────────────────
+
+  type ModeratorBlogsNode {
+    blogId: String
+    slug: String
+    title: String
+    tagline: String
+    category: String
+    imageUrl: String
+    author: String
+    readTime: Int
+    status: String
+    featured: Boolean
+    createdAt: String
+    formattedCreatedAt: String
+    readTimeDisplay: String
+  }
+
+  type ModeratorBlogsEdge {
+    node: ModeratorBlogsNode
+    cursor: String
+  }
+
+  type ModeratorBlogsPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorBlogsConnection {
+    edges: [ModeratorBlogsEdge]
+    pageInfo: ModeratorBlogsPageInfo
+    total: Int
+  }
+
+  type ModeratorBlogsSummary {
+    totalBlogs: Int
+    publishedBlogs: Int
+    featuredBlogs: Int
+  }
+
+  type ModeratorBlogsFilterOptions {
+    categories: [String]
+    featured: [String]
+  }
+
+  type ModeratorBlogsMeta {
+    summary: ModeratorBlogsSummary
+    filterOptions: ModeratorBlogsFilterOptions
+  }
+
+  type QuestionOption {
+    text: String
+    isCorrect: Boolean
+  }
+
+  type Question {
+    _id: String
+    text: String
+    marks: Float
+    options: [QuestionOption]
+    hasCode: Boolean
+    codeSnippet: String
+    codeLanguage: String
+  }
+
+  type ModeratorQuizzesNode {
+    _id: String
+    title: String
+    skillName: String
+    passingScore: Int
+    createdAt: String
+    questionCount: Int
+    questions: [Question]
+  }
+
+  type ModeratorQuizzesEdge {
+    node: ModeratorQuizzesNode
+    cursor: String
+  }
+
+  type ModeratorQuizzesPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorQuizzesConnection {
+    edges: [ModeratorQuizzesEdge]
+    pageInfo: ModeratorQuizzesPageInfo
+    total: Int
+  }
+
+  type ModeratorQuizzesSummary {
+    totalQuizzes: Int
+    totalQuestions: Int
+    avgPassingScore: Int
+  }
+
+  type ModeratorQuizzesFilterOptions {
+    skills: [String]
+  }
+
+  type ModeratorQuizzesMeta {
+    summary: ModeratorQuizzesSummary
+    filterOptions: ModeratorQuizzesFilterOptions
+  }
+
+  type ModeratorQuizAttemptNode {
+    attemptId: String
+    freelancerName: String
+    email: String
+    marksObtained: Float
+    totalMarks: Float
+    percentage: Float
+    passed: Boolean
+    badgeAwarded: Boolean
+    attemptedAt: String
+  }
+
+  type ModeratorQuizAttemptsEdge {
+    node: ModeratorQuizAttemptNode
+    cursor: String
+  }
+
+  type ModeratorQuizAttemptsPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorQuizAttemptsConnection {
+    edges: [ModeratorQuizAttemptsEdge]
+    pageInfo: ModeratorQuizAttemptsPageInfo
+    total: Int
+    quizTitle: String
+    skillName: String
+    passingScore: Int
+    passedAttempts: Int
+  }
+
+  type ModeratorFreelancersNode {
+    freelancerId: String
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    location: String
+    rating: Float
+    skills: Int
+    portfolioCount: Int
+    joinedDate: String
+    subscription: String
+    isPremium: Boolean
+    subscriptionDuration: Int
+    subscriptionExpiryDate: String
+    applicationsCount: Int
+    isCurrentlyWorking: Boolean
+  }
+
+  type ModeratorFreelancersEdge {
+    node: ModeratorFreelancersNode
+    cursor: String
+  }
+
+  type ModeratorFreelancersPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorFreelancersConnection {
+    edges: [ModeratorFreelancersEdge]
+    pageInfo: ModeratorFreelancersPageInfo
+    total: Int
+  }
+
+  type ModeratorFreelancersFilterOptions {
+    names: [String]
+    emails: [String]
+    phones: [String]
+    ratings: [Float]
+    subscribed: [String]
+    durations: [Int]
+  }
+
+  type ModeratorFreelancersMeta {
+    filterOptions: ModeratorFreelancersFilterOptions
+  }
+
+  type ModeratorEmployersNode {
+    employerId: String
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    location: String
+    companyName: String
+    rating: Float
+    subscription: String
+    isPremium: Boolean
+    subscriptionDuration: Int
+    subscriptionExpiryDate: String
+    jobListingsCount: Int
+    hiredCount: Int
+    currentHires: Int
+    pastHires: Int
+    joinedDate: String
+  }
+
+  type ModeratorEmployersEdge {
+    node: ModeratorEmployersNode
+    cursor: String
+  }
+
+  type ModeratorEmployersPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorEmployersConnection {
+    edges: [ModeratorEmployersEdge]
+    pageInfo: ModeratorEmployersPageInfo
+    total: Int
+  }
+
+  type ModeratorEmployersFilterOptions {
+    names: [String]
+    companies: [String]
+    emails: [String]
+    phones: [String]
+    ratings: [Float]
+    subscribed: [String]
+    durations: [Int]
+  }
+
+  type ModeratorEmployersMeta {
+    filterOptions: ModeratorEmployersFilterOptions
+  }
+
+  type ModeratorJobListingsNode {
+    jobId: String
+    title: String
+    companyName: String
+    budget: Float
+    location: String
+    jobType: String
+    experienceLevel: String
+    status: String
+    applicationDeadline: String
+    descriptionText: String
+    skillsRequired: [String]
+    applicantsCount: Int
+    createdAt: String
+  }
+
+  type ModeratorJobListingsEdge {
+    node: ModeratorJobListingsNode
+    cursor: String
+  }
+
+  type ModeratorJobListingsPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorJobListingsConnection {
+    edges: [ModeratorJobListingsEdge]
+    pageInfo: ModeratorJobListingsPageInfo
+    total: Int
+  }
+
+  type ModeratorJobListingsFilterOptions {
+    titles: [String]
+    companies: [String]
+    types: [String]
+    statuses: [String]
+  }
+
+  type ModeratorJobListingsMeta {
+    filterOptions: ModeratorJobListingsFilterOptions
+  }
+
+  type ModeratorCompanyDetails {
+    companyName: String
+    companyPAN: String
+    accountsPayableEmail: String
+    officialBusinessEmail: String
+    taxIdentificationNumber: String
+    billingAddress: String
+    proofOfAddressUrl: String
+    companyLogoUrl: String
+    isSubmitted: Boolean
+    submittedAt: String
+  }
+
+  type ModeratorApprovalsNode {
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    location: String
+    companyName: String
+    approvalStatus: String
+    isApproved: Boolean
+    isRejected: Boolean
+    registeredAt: String
+    companyDetails: ModeratorCompanyDetails
+  }
+
+  type ModeratorApprovalsEdge {
+    node: ModeratorApprovalsNode
+    cursor: String
+  }
+
+  type ModeratorApprovalsPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorApprovalsConnection {
+    edges: [ModeratorApprovalsEdge]
+    pageInfo: ModeratorApprovalsPageInfo
+    total: Int
+  }
+
+  type ModeratorApprovalsFilterOptions {
+    names: [String]
+    emails: [String]
+    companies: [String]
+    locations: [String]
+    statuses: [String]
+  }
+
+  type ModeratorApprovalsMeta {
+    filterOptions: ModeratorApprovalsFilterOptions
+  }
+
+  type ModeratorComplaintsNode {
+    complaintId: String
+    complainantType: String
+    complainantId: String
+    complainantName: String
+    complainantUserId: String
+    freelancerId: String
+    freelancerName: String
+    freelancerUserId: String
+    freelancerRating: Float
+    freelancerEmail: String
+    employerId: String
+    employerName: String
+    employerUserId: String
+    employerRating: Float
+    employerEmail: String
+    jobId: String
+    jobTitle: String
+    complaintType: String
+    priority: String
+    subject: String
+    status: String
+    createdAt: String
+    updatedAt: String
+    resolvedAt: String
+  }
+
+  type ModeratorComplaintsEdge {
+    node: ModeratorComplaintsNode
+    cursor: String
+  }
+
+  type ModeratorComplaintsPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type ModeratorComplaintsConnection {
+    edges: [ModeratorComplaintsEdge]
+    pageInfo: ModeratorComplaintsPageInfo
+    total: Int
+  }
+
+  type ModeratorComplaintsSummary {
+    total: Int
+    pending: Int
+    underReview: Int
+    resolved: Int
+    rejected: Int
+  }
+
+  type ModeratorComplaintsFilterOptions {
+    complainantTypes: [String]
+    against: [String]
+    jobs: [String]
+    statuses: [String]
+    priorities: [String]
+    types: [String]
+  }
+
+  type ModeratorComplaintsMeta {
+    summary: ModeratorComplaintsSummary
+    filterOptions: ModeratorComplaintsFilterOptions
+  }
+
+  type ModeratorActionResult {
+    success: Boolean
+    message: String
+  }
+
   type Query {
     # Feedback queries (replaces N+1 REST endpoints)
     feedbacksForJob(jobId: String!): [Feedback]
@@ -1097,11 +1504,112 @@ const typeDefs = `#graphql
       sortOrder: String
     ): AdminModeratorsConnection
     adminModeratorsMeta: AdminModeratorsMeta
+    moderatorBlogs(
+      first: Int = 25
+      after: String
+      page: Int
+      search: String
+      searchBy: String
+      categoryIn: [String]
+      featuredIn: [String]
+      sortBy: String
+      sortOrder: String
+    ): ModeratorBlogsConnection
+    moderatorBlogsMeta: ModeratorBlogsMeta
+    moderatorQuizzes(
+      first: Int = 25
+      after: String
+      page: Int
+      search: String
+      sortBy: String
+    ): ModeratorQuizzesConnection
+    moderatorQuizzesMeta: ModeratorQuizzesMeta
+    moderatorQuizAttempts(
+      quizId: String!
+      first: Int = 20
+      after: String
+      page: Int
+    ): ModeratorQuizAttemptsConnection
+    moderatorFreelancers(
+      first: Int = 25
+      after: String
+      page: Int
+      search: String
+      sortBy: String
+      nameIn: [String]
+      emailIn: [String]
+      phoneIn: [String]
+      ratingIn: [String]
+      subscribedIn: [String]
+      durationIn: [String]
+    ): ModeratorFreelancersConnection
+    moderatorFreelancersMeta: ModeratorFreelancersMeta
+    moderatorEmployers(
+      first: Int = 25
+      after: String
+      page: Int
+      search: String
+      sortBy: String
+      nameIn: [String]
+      companyIn: [String]
+      emailIn: [String]
+      phoneIn: [String]
+      ratingIn: [String]
+      subscribedIn: [String]
+      durationIn: [String]
+    ): ModeratorEmployersConnection
+    moderatorEmployersMeta: ModeratorEmployersMeta
+    moderatorJobListings(
+      first: Int = 25
+      after: String
+      page: Int
+      search: String
+      sortBy: String
+      titleIn: [String]
+      companyIn: [String]
+      typeIn: [String]
+      statusIn: [String]
+    ): ModeratorJobListingsConnection
+    moderatorJobListingsMeta: ModeratorJobListingsMeta
+    moderatorApprovals(
+      first: Int = 25
+      after: String
+      page: Int
+      status: String
+      search: String
+      sortBy: String
+      sortOrder: String
+      nameIn: [String]
+      emailIn: [String]
+      companyIn: [String]
+      locationIn: [String]
+      statusIn: [String]
+    ): ModeratorApprovalsConnection
+    moderatorApprovalsMeta: ModeratorApprovalsMeta
+    moderatorComplaints(
+      first: Int = 25
+      after: String
+      page: Int
+      search: String
+      sortBy: String
+      sortOrder: String
+      complainantTypeIn: [String]
+      againstIn: [String]
+      jobIn: [String]
+      statusIn: [String]
+      priorityIn: [String]
+      typeIn: [String]
+    ): ModeratorComplaintsConnection
+    moderatorComplaintsMeta: ModeratorComplaintsMeta
     adminEmployerDetail(employerId: String!): AdminEmployerDetail
     adminStatistics: AdminStatistics
     adminActivities: [AdminActivity]
     # Public blog detail (replaces /api/blogs/:id + latest + featured)
     publicBlogDetail(blogId: String!): PublicBlogDetail
+  }
+
+  type Mutation {
+    moderatorDeleteBlog(blogId: String!): ModeratorActionResult
   }
 `;
 
