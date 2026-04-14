@@ -455,9 +455,26 @@ const typeDefs = `#graphql
   }
 
   type AdminPaymentsSummary {
+    totalTransactions: Int
     paidTotal: Float
     pendingTotal: Float
     inProgressTotal: Float
+    paidCount: Int
+    pendingCount: Int
+    inProgressCount: Int
+  }
+
+  type AdminPaymentsFilterOptions {
+    jobs: [String]
+    milestones: [String]
+    employers: [String]
+    freelancers: [String]
+    statuses: [String]
+  }
+
+  type AdminPaymentsMeta {
+    summary: AdminPaymentsSummary
+    filterOptions: AdminPaymentsFilterOptions
   }
 
   type AdminPaymentsEdge {
@@ -511,6 +528,26 @@ const typeDefs = `#graphql
     total: Int
   }
 
+  type AdminUsersSummary {
+    total: Int
+    freelancers: Int
+    employers: Int
+    moderators: Int
+    admins: Int
+  }
+
+  type AdminUsersFilterOptions {
+    roles: [String]
+    subscriptions: [String]
+    locations: [String]
+    ratings: [Float]
+  }
+
+  type AdminUsersMeta {
+    summary: AdminUsersSummary
+    filterOptions: AdminUsersFilterOptions
+  }
+
   # ── Admin Freelancers Types ────────────────────
 
   type AdminFreelancerSummary {
@@ -551,6 +588,24 @@ const typeDefs = `#graphql
     edges: [AdminFreelancersEdge]
     pageInfo: AdminFreelancersPageInfo
     total: Int
+  }
+
+  type AdminFreelancersSummary {
+    total: Int
+    working: Int
+    premium: Int
+  }
+
+  type AdminFreelancersFilterOptions {
+    locations: [String]
+    ratings: [Float]
+    subscriptions: [String]
+    statuses: [String]
+  }
+
+  type AdminFreelancersMeta {
+    summary: AdminFreelancersSummary
+    filterOptions: AdminFreelancersFilterOptions
   }
 
   type AdminFreelancerApplication {
@@ -633,6 +688,69 @@ const typeDefs = `#graphql
     edges: [AdminEmployersEdge]
     pageInfo: AdminEmployersPageInfo
     total: Int
+  }
+
+  type AdminEmployersSummary {
+    total: Int
+    premium: Int
+    totalJobListings: Int
+  }
+
+  type AdminEmployersFilterOptions {
+    companies: [String]
+    locations: [String]
+    ratings: [Float]
+    subscriptions: [String]
+  }
+
+  type AdminEmployersMeta {
+    summary: AdminEmployersSummary
+    filterOptions: AdminEmployersFilterOptions
+  }
+
+  type AdminModeratorSummary {
+    moderatorId: String
+    userId: String
+    name: String
+    email: String
+    picture: String
+    location: String
+    joinedDate: String
+    complaintsResolved: Int
+    totalComplaints: Int
+    blogsCreated: Int
+  }
+
+  type AdminModeratorsEdge {
+    node: AdminModeratorSummary
+    cursor: String
+  }
+
+  type AdminModeratorsPageInfo {
+    hasNextPage: Boolean
+    endCursor: String
+  }
+
+  type AdminModeratorsConnection {
+    edges: [AdminModeratorsEdge]
+    pageInfo: AdminModeratorsPageInfo
+    total: Int
+  }
+
+  type AdminModeratorsSummary {
+    total: Int
+    complaintsResolved: Int
+    totalComplaints: Int
+    blogsCreated: Int
+  }
+
+  type AdminModeratorsFilterOptions {
+    locations: [String]
+  }
+
+  type AdminModeratorsMeta {
+    summary: AdminModeratorsSummary
+    filterOptions: AdminModeratorsFilterOptions
   }
 
   type AdminEmployerJob {
@@ -920,11 +1038,65 @@ const typeDefs = `#graphql
     adminDashboardOverview: AdminDashboardOverview
     adminDashboardRevenue: AdminDashboardRevenue
     adminPlatformFeeCollections(first: Int = 10, after: String): AdminPlatformFeeConnection
-    adminPayments(first: Int = 25, after: String): AdminPaymentsConnection
-    adminUsers(first: Int = 25, after: String): AdminUsersConnection
-    adminFreelancers(first: Int = 25, after: String): AdminFreelancersConnection
+    adminPayments(
+      first: Int = 25
+      after: String
+      search: String
+      jobTitleIn: [String]
+      milestoneIn: [String]
+      employerIn: [String]
+      freelancerIn: [String]
+      statusIn: [String]
+      sortBy: String
+      sortOrder: String
+    ): AdminPaymentsConnection
+    adminPaymentsMeta: AdminPaymentsMeta
+    adminUsers(
+      first: Int = 25
+      after: String
+      search: String
+      roleIn: [String]
+      subscriptionIn: [String]
+      locationIn: [String]
+      ratingIn: [Float]
+      sortBy: String
+      sortOrder: String
+    ): AdminUsersConnection
+    adminUsersMeta: AdminUsersMeta
+    adminFreelancers(
+      first: Int = 25
+      after: String
+      search: String
+      locationIn: [String]
+      ratingIn: [Float]
+      subscriptionIn: [String]
+      statusIn: [String]
+      sortBy: String
+      sortOrder: String
+    ): AdminFreelancersConnection
+    adminFreelancersMeta: AdminFreelancersMeta
     adminFreelancerDetail(freelancerId: String!): AdminFreelancerDetail
-    adminEmployers(first: Int = 25, after: String): AdminEmployersConnection
+    adminEmployers(
+      first: Int = 25
+      after: String
+      search: String
+      companyIn: [String]
+      locationIn: [String]
+      ratingIn: [Float]
+      subscriptionIn: [String]
+      sortBy: String
+      sortOrder: String
+    ): AdminEmployersConnection
+    adminEmployersMeta: AdminEmployersMeta
+    adminModerators(
+      first: Int = 25
+      after: String
+      search: String
+      locationIn: [String]
+      sortBy: String
+      sortOrder: String
+    ): AdminModeratorsConnection
+    adminModeratorsMeta: AdminModeratorsMeta
     adminEmployerDetail(employerId: String!): AdminEmployerDetail
     adminStatistics: AdminStatistics
     adminActivities: [AdminActivity]
