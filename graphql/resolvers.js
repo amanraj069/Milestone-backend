@@ -8,7 +8,10 @@ const Conversation = require("../models/conversation");
 const Message = require("../models/message");
 const adminResolvers = require("./adminResolvers");
 const employerResolvers = require("./employerResolvers");
+const moderatorResolvers = require("./moderatorResolvers");
 const Blog = require("../models/blog");
+
+const { moderatorDeleteBlog, ...moderatorQueryResolvers } = moderatorResolvers;
 
 const toIsoString = (value) => {
   if (!value) return null;
@@ -861,6 +864,7 @@ const resolvers = {
      */
     // ── Admin dashboard queries (delegated to adminResolvers.js) ──
     ...adminResolvers,
+    ...moderatorQueryResolvers,
     ...employerResolvers,
 
     freelancerApplications: async (_parent, _args, { session, loaders }) => {
@@ -978,6 +982,11 @@ const resolvers = {
         featuredBlog: featuredBlog || null,
       };
     },
+  },
+
+  Mutation: {
+    moderatorDeleteBlog: async (_parent, args, context) =>
+      moderatorDeleteBlog(_parent, args, context),
   },
 
   // ──────────────────────────────────────────────
