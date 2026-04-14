@@ -40,6 +40,15 @@ const chatLogger = require("./utils/chatLogger");
 const app = express();
 const server = http.createServer(app);
 
+// Global allowed origins for CORS
+const allowedOrigins = [
+  process.env.FRONTEND_ORIGIN,
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:3002",
+  "http://localhost:5173",
+].filter(Boolean);
+
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
@@ -56,7 +65,7 @@ app.use(morgan("combined", { stream: logStream }));
 
 const io = new Server(server, {
   cors: {
-    origin: [process.env.FRONTEND_ORIGIN || "http://localhost:3000"],
+    origin: allowedOrigins,
     credentials: true,
     methods: ["GET", "POST"],
   },
@@ -70,17 +79,21 @@ const PORT = process.env.PORT || 9000;
 
 app.use(
   cors({
-    origin: [
-      process.env.FRONTEND_ORIGIN || "http://localhost:3000",
-      "http://localhost:3001",
-      "http://localhost:3002",
-      "http://localhost:5173",
-    ],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`Not allowed by CORS: ${origin}`));
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   }),
 );
+
+// Explicitly handle pre-flight requests
+app.options(/(.*)/, cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -150,15 +163,23 @@ app.use(
   express.static(path.join(__dirname, "uploads")),
 );
 
+const isProduction = process.env.NODE_ENV === "production";
+
+// Trust the first proxy (Render)
+if (isProduction) {
+  app.set("trust proxy", 1);
+}
+
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
   resave: false,
   saveUninitialized: false,
+  proxy: isProduction,
   cookie: {
     maxAge: 24 * 60 * 60 * 1000,
-    secure: false,
+    secure: isProduction, // Set to true for HTTPS
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: isProduction ? "none" : "lax", // Required for cross-site cookies
   },
 });
 
@@ -463,11 +484,7 @@ async function startServer() {
 
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`Backend running at http://localhost:${PORT}`);
-    console.log(
-      `CORS enabled for: ${
-        process.env.FRONTEND_ORIGIN || "http://localhost:3000"
-      }`,
-    );
+    console.log(`CORS enabled for: ${allowedOrigins.join(", ")}`);
     console.log(`Socket.IO server ready`);
     console.log(`API Documentation available at /api-docs`);
     console.log(`GraphQL endpoint available at /graphql`);
