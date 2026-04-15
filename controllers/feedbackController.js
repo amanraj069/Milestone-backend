@@ -4,6 +4,10 @@ const User = require('../models/user');
 const Notification = require('../models/Notification');
 const { v4: uuidv4 } = require('uuid');
 
+function buildMapByKey(items, key) {
+  return new Map((items || []).map((item) => [item[key], item]));
+}
+
 // Create feedback
 exports.createFeedback = async (req, res) => {
   try {
@@ -203,21 +207,27 @@ exports.getFeedbacksForJob = async (req, res) => {
 
     const feedbacks = await Feedback.find({ jobId }).sort({ createdAt: -1 }).lean();
 
-    // Populate user details for non-anonymous feedbacks
-    const populatedFeedbacks = await Promise.all(feedbacks.map(async (fb) => {
+    const fromUserIds = [...new Set(feedbacks.map((fb) => fb.fromUserId).filter(Boolean))];
+    const fromUsers = fromUserIds.length
+      ? await User.find({ userId: { $in: fromUserIds } }).select('userId name picture').lean()
+      : [];
+    const fromUserMap = buildMapByKey(fromUsers, 'userId');
+
+    // Populate user details without per-row lookups
+    const populatedFeedbacks = feedbacks.map((fb) => {
       if (fb.anonymous && req.session.user.role !== 'Moderator') {
         return {
           ...fb,
           fromUser: { name: 'Anonymous' }
         };
       }
-      
-      const fromUser = await User.findOne({ userId: fb.fromUserId }).select('name picture').lean();
+
+      const fromUser = fromUserMap.get(fb.fromUserId);
       return {
         ...fb,
         fromUser: fromUser || { name: 'Unknown User' }
       };
-    }));
+    });
 
     res.json({ 
       success: true, 
@@ -250,21 +260,29 @@ exports.getFeedbacksForUser = async (req, res) => {
 
     const total = await Feedback.countDocuments({ toUserId: userId });
 
-    // Populate user details for non-anonymous feedbacks
-    const populatedFeedbacks = await Promise.all(feedbacks.map(async (fb) => {
+    const visibleFromUserIds = [
+      ...new Set(feedbacks.filter((fb) => !fb.anonymous).map((fb) => fb.fromUserId).filter(Boolean)),
+    ];
+    const visibleFromUsers = visibleFromUserIds.length
+      ? await User.find({ userId: { $in: visibleFromUserIds } }).select('userId name picture').lean()
+      : [];
+    const visibleFromUserMap = buildMapByKey(visibleFromUsers, 'userId');
+
+    // Populate user details without per-row lookups
+    const populatedFeedbacks = feedbacks.map((fb) => {
       if (fb.anonymous) {
         return {
           ...fb,
           fromUser: { name: 'Anonymous' }
         };
       }
-      
-      const fromUser = await User.findOne({ userId: fb.fromUserId }).select('name picture').lean();
+
+      const fromUser = visibleFromUserMap.get(fb.fromUserId);
       return {
         ...fb,
         fromUser: fromUser || { name: 'Unknown User' }
       };
-    }));
+    });
 
     res.json({ 
       success: true, 
@@ -352,15 +370,30 @@ exports.getPublicFeedbacksForUser = async (req, res) => {
 
     const total = await Feedback.countDocuments({ toUserId: userId });
 
-    // Populate feedback with job title and user details (with anonymity)
-    const populatedFeedbacks = await Promise.all(feedbacks.map(async (fb) => {
-      // Get job title only (not full job details)
-      const job = await JobListing.findOne({ jobId: fb.jobId }).select('title').lean();
-      
-      // Handle anonymity
+    const jobIds = [...new Set(feedbacks.map((fb) => fb.jobId).filter(Boolean))];
+    const fromUserIds = [
+      ...new Set(feedbacks.filter((fb) => !fb.anonymous).map((fb) => fb.fromUserId).filter(Boolean)),
+    ];
+
+    const [jobs, users] = await Promise.all([
+      jobIds.length
+        ? JobListing.find({ jobId: { $in: jobIds } }).select('jobId title').lean()
+        : [],
+      fromUserIds.length
+        ? User.find({ userId: { $in: fromUserIds } }).select('userId name picture role').lean()
+        : [],
+    ]);
+
+    const jobMap = buildMapByKey(jobs, 'jobId');
+    const userMap = buildMapByKey(users, 'userId');
+
+    // Populate feedback with batched job and user lookups
+    const populatedFeedbacks = feedbacks.map((fb) => {
+      const job = jobMap.get(fb.jobId);
+
       let fromUser = { name: 'Anonymous' };
       if (!fb.anonymous) {
-        const user = await User.findOne({ userId: fb.fromUserId }).select('name picture role').lean();
+        const user = userMap.get(fb.fromUserId);
         if (user) {
           fromUser = {
             name: user.name,
@@ -380,7 +413,7 @@ exports.getPublicFeedbacksForUser = async (req, res) => {
         fromUser,
         createdAt: fb.createdAt
       };
-    }));
+    });
 
     res.json({ 
       success: true, 

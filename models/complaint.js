@@ -101,6 +101,14 @@ complaintSchema.pre("save", function (next) {
   next();
 });
 
+// Supports complaint queues and admin timelines.
+complaintSchema.index({ status: 1, updatedAt: -1 });
+complaintSchema.index({ status: 1, createdAt: -1 });
+// Supports complainant and party-specific complaint history views.
+complaintSchema.index({ complainantId: 1, createdAt: -1 });
+complaintSchema.index({ employerId: 1, createdAt: -1 });
+complaintSchema.index({ freelancerId: 1, createdAt: -1 });
+
 const Complaint = mongoose.model("Complaint", complaintSchema);
 
 module.exports = Complaint;

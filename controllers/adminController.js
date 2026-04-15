@@ -156,62 +156,72 @@ exports.uploadProfilePicture = async (req, res) => {
 
 exports.getDashboardOverview = async (req, res) => {
   try {
-    // Total counts
-    const totalUsers = await User.countDocuments({ role: { $ne: "" } });
-    const totalFreelancers = await User.countDocuments({ role: "Freelancer" });
-    const totalEmployers = await User.countDocuments({ role: "Employer" });
-    const totalModerators = await User.countDocuments({ role: "Moderator" });
-    const totalAdmins = await User.countDocuments({ role: "Admin" });
-
-    // Job stats
-    const totalJobs = await JobListing.countDocuments();
-    const activeJobs = await JobListing.countDocuments({
-      status: { $in: ["open", "active", "in-progress"] },
-    });
-    const completedJobs = await JobListing.countDocuments({
-      status: "completed",
-    });
-    const closedJobs = await JobListing.countDocuments({ status: "closed" });
-
-    // Application stats
-    const totalApplications = await JobApplication.countDocuments();
-    const pendingApplications = await JobApplication.countDocuments({
-      status: "Pending",
-    });
-    const acceptedApplications = await JobApplication.countDocuments({
-      status: "Accepted",
-    });
-    const rejectedApplications = await JobApplication.countDocuments({
-      status: "Rejected",
-    });
-
-    // Complaint stats
-    const totalComplaints = await Complaint.countDocuments();
-    const pendingComplaints = await Complaint.countDocuments({
-      status: "Pending",
-    });
-    const resolvedComplaints = await Complaint.countDocuments({
-      status: "Resolved",
-    });
-
-    // Subscription stats
-    const premiumUsers = await User.countDocuments({ subscription: "Premium" });
-    const basicUsers = await User.countDocuments({
-      subscription: "Basic",
-      role: { $ne: "" },
-    });
-
-    // Revenue calculation from paid milestones
-    const revenueData = await JobListing.aggregate([
-      { $unwind: "$milestones" },
-      { $match: { "milestones.status": "paid" } },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: { $toDouble: "$milestones.payment" } },
-          totalPaidMilestones: { $sum: 1 },
+    const [
+      totalUsers,
+      totalFreelancers,
+      totalEmployers,
+      totalModerators,
+      totalAdmins,
+      totalJobs,
+      activeJobs,
+      completedJobs,
+      closedJobs,
+      totalApplications,
+      pendingApplications,
+      acceptedApplications,
+      rejectedApplications,
+      totalComplaints,
+      pendingComplaints,
+      resolvedComplaints,
+      premiumUsers,
+      basicUsers,
+      revenueData,
+      budgetData,
+      totalQuizzes,
+      totalAttempts,
+      totalBlogs,
+      totalFeedbacks,
+      avgRatingData,
+    ] = await Promise.all([
+      User.countDocuments({ role: { $ne: "" } }),
+      User.countDocuments({ role: "Freelancer" }),
+      User.countDocuments({ role: "Employer" }),
+      User.countDocuments({ role: "Moderator" }),
+      User.countDocuments({ role: "Admin" }),
+      JobListing.countDocuments(),
+      JobListing.countDocuments({ status: { $in: ["open", "active", "in-progress"] } }),
+      JobListing.countDocuments({ status: "completed" }),
+      JobListing.countDocuments({ status: "closed" }),
+      JobApplication.countDocuments(),
+      JobApplication.countDocuments({ status: "Pending" }),
+      JobApplication.countDocuments({ status: "Accepted" }),
+      JobApplication.countDocuments({ status: "Rejected" }),
+      Complaint.countDocuments(),
+      Complaint.countDocuments({ status: "Pending" }),
+      Complaint.countDocuments({ status: "Resolved" }),
+      User.countDocuments({ subscription: "Premium" }),
+      User.countDocuments({ subscription: "Basic", role: { $ne: "" } }),
+      JobListing.aggregate([
+        { $unwind: "$milestones" },
+        { $match: { "milestones.status": "paid" } },
+        {
+          $group: {
+            _id: null,
+            totalRevenue: { $sum: { $toDouble: "$milestones.payment" } },
+            totalPaidMilestones: { $sum: 1 },
+          },
         },
-      },
+      ]),
+      JobListing.aggregate([
+        { $group: { _id: null, totalBudget: { $sum: "$budget" } } },
+      ]),
+      Quiz.countDocuments(),
+      Attempt.countDocuments(),
+      Blog.countDocuments(),
+      Feedback.countDocuments(),
+      Feedback.aggregate([
+        { $group: { _id: null, avgRating: { $avg: "$rating" } } },
+      ]),
     ]);
 
     const totalRevenue =
@@ -219,24 +229,7 @@ exports.getDashboardOverview = async (req, res) => {
     const totalPaidMilestones =
       revenueData.length > 0 ? revenueData[0].totalPaidMilestones : 0;
 
-    // Total budget across all jobs
-    const budgetData = await JobListing.aggregate([
-      { $group: { _id: null, totalBudget: { $sum: "$budget" } } },
-    ]);
     const totalBudget = budgetData.length > 0 ? budgetData[0].totalBudget : 0;
-
-    // Quiz stats
-    const totalQuizzes = await Quiz.countDocuments();
-    const totalAttempts = await Attempt.countDocuments();
-
-    // Blog stats
-    const totalBlogs = await Blog.countDocuments();
-
-    // Feedback stats
-    const totalFeedbacks = await Feedback.countDocuments();
-    const avgRatingData = await Feedback.aggregate([
-      { $group: { _id: null, avgRating: { $avg: "$rating" } } },
-    ]);
     const avgRating =
       avgRatingData.length > 0
         ? Math.round(avgRatingData[0].avgRating * 10) / 10
