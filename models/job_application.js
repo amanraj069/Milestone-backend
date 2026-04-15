@@ -58,7 +58,6 @@ const jobApplicationSchema = new Schema(
 
 jobApplicationSchema.index({ jobId: 1, status: 1, appliedDate: 1 });
 jobApplicationSchema.index({ freelancerId: 1, appliedDate: -1 });
-jobApplicationSchema.index({ applicationId: 1 });
 
 const JobApplication = mongoose.model("Job_Application", jobApplicationSchema);
 

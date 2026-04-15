@@ -39,4 +39,7 @@ const freelancerSchema = new Schema(
   { timestamps: true }
 );
 
+freelancerSchema.index({ createdAt: -1, _id: -1 });
+freelancerSchema.index({ userId: 1 });
+
 module.exports = mongoose.model("Freelancer", freelancerSchema);

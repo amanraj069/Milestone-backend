@@ -73,17 +73,74 @@ exports.createQuiz = async (req, res) => {
  */
 exports.listQuizzes = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const rawPage = Number.parseInt(req.query.page, 10);
+    const rawLimit = Number.parseInt(req.query.limit, 10);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
     const skip = (page - 1) * limit;
     const q = {};
+    const search = String(req.query.search || "").trim();
+    const sortBy = String(req.query.sortBy || "newest");
+
     if (req.query.skill) q.skillName = req.query.skill;
-    const total = await Quiz.countDocuments(q);
-    const quizzes = await Quiz.find(q)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-    res.json({ success: true, data: { quizzes, total, page, limit } });
+    if (search) {
+      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      q.$or = [{ title: regex }, { skillName: regex }];
+    }
+
+    const sortMap = {
+      newest: { createdAt: -1, _id: -1 },
+      oldest: { createdAt: 1, _id: 1 },
+      "questions-desc": { questionCount: -1, _id: -1 },
+      "questions-asc": { questionCount: 1, _id: 1 },
+    };
+
+    const [total, skills, quizzes, summaryAggregate] = await Promise.all([
+      Quiz.countDocuments(q),
+      Quiz.distinct("skillName"),
+      Quiz.aggregate([
+        { $match: q },
+        {
+          $addFields: {
+            questionCount: { $size: { $ifNull: ["$questions", []] } },
+          },
+        },
+        { $sort: sortMap[sortBy] || sortMap.newest },
+        { $skip: skip },
+        { $limit: limit },
+      ]),
+      Quiz.aggregate([
+        { $match: q },
+        {
+          $group: {
+            _id: null,
+            totalQuestions: { $sum: { $size: { $ifNull: ["$questions", []] } } },
+            avgPassingScore: { $avg: "$passingScore" },
+          },
+        },
+      ]),
+    ]);
+
+    const pagination = {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      hasPrevPage: page > 1,
+      hasNextPage: skip + quizzes.length < total,
+    };
+
+    const filterOptions = {
+      skills: (skills || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+    };
+
+    const summary = {
+      totalQuizzes: total,
+      totalQuestions: summaryAggregate[0]?.totalQuestions || 0,
+      avgPassingScore: Math.round(summaryAggregate[0]?.avgPassingScore || 0),
+    };
+
+    res.json({ success: true, data: { quizzes, total, page, limit, pagination, filterOptions, summary } });
   } catch (err) {
     console.error(err);
     res
@@ -190,14 +247,23 @@ exports.getQuizStats = async (req, res) => {
 exports.getQuizAttempts = async (req, res) => {
   try {
     const quizId = req.params.id;
+    const rawPage = Number.parseInt(req.query.page, 10);
+    const rawLimit = Number.parseInt(req.query.limit, 10);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 20;
+    const skip = (page - 1) * limit;
     const quiz = await Quiz.findById(quizId);
     if (!quiz)
       return res
         .status(404)
         .json({ success: false, error: { message: "Quiz not found" } });
 
-    // Find all attempts (userId is a String UUID, not ObjectId reference)
-    const attempts = await Attempt.find({ quizId }).sort({ createdAt: -1 });
+    // Find page attempts (userId is a String UUID, not ObjectId reference)
+    const [attempts, totalAttempts, passedAttempts] = await Promise.all([
+      Attempt.find({ quizId }).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Attempt.countDocuments({ quizId }),
+      Attempt.countDocuments({ quizId, passed: true }),
+    ]);
 
     // Get all unique user IDs
     const userIds = [...new Set(attempts.map((a) => a.userId))];
@@ -252,8 +318,16 @@ exports.getQuizAttempts = async (req, res) => {
         quizTitle: quiz.title,
         skillName: quiz.skillName,
         passingScore: quiz.passingScore,
-        totalAttempts: attempts.length,
-        passedAttempts: attempts.filter((a) => a.passed).length,
+        totalAttempts,
+        passedAttempts,
+        pagination: {
+          page,
+          limit,
+          total: totalAttempts,
+          totalPages: Math.max(1, Math.ceil(totalAttempts / limit)),
+          hasPrevPage: page > 1,
+          hasNextPage: skip + attemptDetails.length < totalAttempts,
+        },
         attempts: attemptDetails,
       },
     });

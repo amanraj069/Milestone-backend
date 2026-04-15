@@ -59,4 +59,9 @@ const userSchema = new Schema(
   { timestamps: true },
 );
 
+// Supports adminUsers cursor pagination: filter by role and sort by createdAt/_id.
+userSchema.index({ role: 1, createdAt: -1, _id: -1 });
+// Supports frequent roleId-based joins/lookups in controllers and GraphQL loaders.
+userSchema.index({ roleId: 1 });
+
 module.exports = mongoose.model("User", userSchema);
