@@ -11,6 +11,49 @@ const Notification = require("../models/Notification");
 const { v4: uuidv4 } = require("uuid");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
+function getPaginationParams(query, defaultLimit = 25, maxLimit = 100) {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const limit = Math.min(
+    maxLimit,
+    Math.max(1, parseInt(query.limit, 10) || defaultLimit),
+  );
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
+function getPaginationMeta(total, page, limit) {
+  const totalPages = Math.ceil(total / limit) || 1;
+  return {
+    page,
+    limit,
+    total,
+    totalPages,
+    hasNextPage: page < totalPages,
+    hasPrevPage: page > 1,
+  };
+}
+
+function parseArrayQueryParam(value) {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((entry) => String(entry).split(","))
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 // Get moderator profile data
 exports.getModeratorProfile = async (req, res) => {
   try {
@@ -155,7 +198,138 @@ exports.uploadProfilePicture = async (req, res) => {
 // Get all complaints (Moderator only)
 exports.getAllComplaints = async (req, res) => {
   try {
-    const complaints = await Complaint.find({}).sort({ createdAt: -1 }).lean();
+    const { search = "", sortBy = "date", sortOrder = "desc" } = req.query;
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+    const cleanComplainantTypeIn = parseArrayQueryParam(req.query.complainantTypeIn);
+    const cleanAgainstIn = parseArrayQueryParam(req.query.againstIn);
+    const cleanJobIn = parseArrayQueryParam(req.query.jobIn);
+    const cleanStatusIn = parseArrayQueryParam(req.query.statusIn);
+    const cleanPriorityIn = parseArrayQueryParam(req.query.priorityIn);
+    const cleanTypeIn = parseArrayQueryParam(req.query.typeIn);
+    const searchText = String(search || "").trim();
+    const regex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
+
+    const andConditions = [];
+
+    if (cleanComplainantTypeIn.length) {
+      andConditions.push({ complainantType: { $in: cleanComplainantTypeIn } });
+    }
+    if (cleanAgainstIn.length) {
+      andConditions.push({
+        $or: [
+          { complainantType: "Freelancer", employerName: { $in: cleanAgainstIn } },
+          { complainantType: "Employer", freelancerName: { $in: cleanAgainstIn } },
+        ],
+      });
+    }
+    if (cleanJobIn.length) {
+      andConditions.push({ jobTitle: { $in: cleanJobIn } });
+    }
+    if (cleanStatusIn.length) {
+      andConditions.push({ status: { $in: cleanStatusIn } });
+    }
+    if (cleanPriorityIn.length) {
+      andConditions.push({ priority: { $in: cleanPriorityIn } });
+    }
+    if (cleanTypeIn.length) {
+      andConditions.push({ complaintType: { $in: cleanTypeIn } });
+    }
+
+    if (regex) {
+      andConditions.push({
+        $or: [
+          { subject: regex },
+          { complainantName: regex },
+          { complaintType: regex },
+          { jobTitle: regex },
+          { employerName: regex },
+          { freelancerName: regex },
+        ],
+      });
+    }
+
+    const query = andConditions.length ? { $and: andConditions } : {};
+    const sortFieldMap = {
+      date: "createdAt",
+      priority: "priority",
+      status: "status",
+      complainant: "complainantName",
+    };
+    const normalizedSortField = sortFieldMap[sortBy] || "createdAt";
+    const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
+    const querySort = { [normalizedSortField]: normalizedSortOrder, _id: normalizedSortOrder };
+
+    const [
+      complaints,
+      totalComplaints,
+      pendingComplaints,
+      underReviewComplaints,
+      resolvedComplaints,
+      rejectedComplaints,
+      complainantTypeOptions,
+      jobOptions,
+      statusOptions,
+      priorityOptions,
+      typeOptions,
+      employerAgainstOptions,
+      freelancerAgainstOptions,
+    ] = await Promise.all([
+      Complaint.find(query)
+        .sort(querySort)
+        .skip(skip)
+        .limit(limit)
+        .select(
+          "complaintId complainantType complainantId complainantName freelancerId freelancerName jobId jobTitle employerId employerName complaintType priority subject status createdAt updatedAt resolvedAt",
+        )
+        .lean(),
+      Complaint.countDocuments(query),
+      Complaint.countDocuments({ status: "Pending" }),
+      Complaint.countDocuments({ status: "Under Review" }),
+      Complaint.countDocuments({ status: "Resolved" }),
+      Complaint.countDocuments({ status: "Rejected" }),
+      Complaint.distinct("complainantType"),
+      Complaint.distinct("jobTitle"),
+      Complaint.distinct("status"),
+      Complaint.distinct("priority"),
+      Complaint.distinct("complaintType"),
+      Complaint.distinct("employerName"),
+      Complaint.distinct("freelancerName"),
+    ]);
+
+    const stats = {
+      total: totalComplaints,
+      pending: pendingComplaints,
+      underReview: underReviewComplaints,
+      resolved: resolvedComplaints,
+      rejected: rejectedComplaints,
+    };
+
+    const againstSet = new Set([
+      ...employerAgainstOptions.filter(Boolean),
+      ...freelancerAgainstOptions.filter(Boolean),
+    ]);
+
+    const filterOptions = {
+      complainantTypes: (complainantTypeOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      against: Array.from(againstSet).sort((a, b) => String(a).localeCompare(String(b))),
+      jobs: (jobOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      statuses: (statusOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      priorities: (priorityOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      types: (typeOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+    };
+
+    if (!complaints.length) {
+      return res.json({
+        success: true,
+        complaints: [],
+        total: totalComplaints,
+        stats,
+        filterOptions,
+        pagination: getPaginationMeta(totalComplaints, page, limit),
+      });
+    }
 
     // Get complainant userIds for chat functionality
     const complainantIds = [...new Set(complaints.map((c) => c.complainantId))];
@@ -195,18 +369,37 @@ exports.getAllComplaints = async (req, res) => {
       .lean();
 
     // Add complainant userId and user ratings to each complaint
+    const complainantByRoleId = new Map(
+      complainantUsers.filter((u) => u.roleId).map((u) => [u.roleId, u]),
+    );
+    const complainantByUserId = new Map(
+      complainantUsers.filter((u) => u.userId).map((u) => [u.userId, u]),
+    );
+    const freelancerByRoleId = new Map(
+      freelancers.filter((u) => u.roleId).map((u) => [u.roleId, u]),
+    );
+    const freelancerByUserId = new Map(
+      freelancers.filter((u) => u.userId).map((u) => [u.userId, u]),
+    );
+    const employerByRoleId = new Map(
+      employers.filter((u) => u.roleId).map((u) => [u.roleId, u]),
+    );
+    const employerByUserId = new Map(
+      employers.filter((u) => u.userId).map((u) => [u.userId, u]),
+    );
+
     const complaintsWithUserId = complaints.map((complaint) => {
-      const complainantUser = complainantUsers.find(
-        (user) => user.roleId === complaint.complainantId || user.userId === complaint.complainantId,
-      );
-      
-      const freelancer = freelancers.find(
-        (user) => user.roleId === complaint.freelancerId || user.userId === complaint.freelancerId,
-      );
-      
-      const employer = employers.find(
-        (user) => user.roleId === complaint.employerId || user.userId === complaint.employerId,
-      );
+      const complainantUser =
+        complainantByRoleId.get(complaint.complainantId) ||
+        complainantByUserId.get(complaint.complainantId);
+
+      const freelancer =
+        freelancerByRoleId.get(complaint.freelancerId) ||
+        freelancerByUserId.get(complaint.freelancerId);
+
+      const employer =
+        employerByRoleId.get(complaint.employerId) ||
+        employerByUserId.get(complaint.employerId);
       
       const result = {
         ...complaint,
@@ -228,7 +421,10 @@ exports.getAllComplaints = async (req, res) => {
     res.json({
       success: true,
       complaints: complaintsWithUserId,
-      total: complaintsWithUserId.length,
+      total: totalComplaints,
+      stats,
+      filterOptions,
+      pagination: getPaginationMeta(totalComplaints, page, limit),
     });
   } catch (error) {
     console.error("Error fetching all complaints:", error.message);
@@ -486,13 +682,14 @@ exports.getDashboardStats = async (req, res) => {
     const totalFreelancers = await Freelancer.countDocuments({});
     let currentlyWorkingCount = 0;
     if (totalFreelancers > 0) {
-      const activeJobsForFreelancers = await JobListing.find({
-        'assignedFreelancer.freelancerId': { $exists: true, $ne: null },
-        'assignedFreelancer.status': 'working',
-      }).select('assignedFreelancer.freelancerId').lean();
-
-      const workingSet = new Set(activeJobsForFreelancers.map(j => j.assignedFreelancer.freelancerId));
-      currentlyWorkingCount = workingSet.size;
+      const workingFreelancerIds = await JobListing.distinct(
+        'assignedFreelancer.freelancerId',
+        {
+          'assignedFreelancer.freelancerId': { $exists: true, $ne: null },
+          'assignedFreelancer.status': 'working',
+        },
+      );
+      currentlyWorkingCount = workingFreelancerIds.length;
     }
     const successRate = totalFreelancers > 0 ? Math.round((currentlyWorkingCount / totalFreelancers) * 100) : 0;
 
@@ -617,14 +814,156 @@ function getTimeAgo(date) {
 // Get all freelancers (Moderator only)
 exports.getAllFreelancers = async (req, res) => {
   try {
-    const freelancers = await Freelancer.find({}).lean();
+    const { search = "", sortBy = "recent" } = req.query;
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+    const cleanNameIn = parseArrayQueryParam(req.query.nameIn);
+    const cleanEmailIn = parseArrayQueryParam(req.query.emailIn);
+    const cleanPhoneIn = parseArrayQueryParam(req.query.phoneIn);
+    const cleanRatingIn = parseArrayQueryParam(req.query.ratingIn)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    const cleanSubscribedIn = parseArrayQueryParam(req.query.subscribedIn)
+      .map((value) => String(value).toLowerCase());
+    const cleanDurationIn = parseArrayQueryParam(req.query.durationIn)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    const searchText = String(search || "").trim();
+    const regex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
 
-    const freelancerIds = freelancers.map((f) => f.userId);
-    const users = await User.find({ userId: { $in: freelancerIds } })
-      .select(
-        "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate"
-      )
+    const andConditions = [{ role: "Freelancer" }];
+
+    if (cleanNameIn.length) {
+      andConditions.push({ name: { $in: cleanNameIn } });
+    }
+    if (cleanEmailIn.length) {
+      andConditions.push({ email: { $in: cleanEmailIn } });
+    }
+    if (cleanPhoneIn.length) {
+      andConditions.push({ phone: { $in: cleanPhoneIn } });
+    }
+    if (cleanRatingIn.length) {
+      andConditions.push({ rating: { $in: cleanRatingIn } });
+    }
+    if (cleanSubscribedIn.length) {
+      const wantsPremium = cleanSubscribedIn.includes("yes");
+      const wantsBasic = cleanSubscribedIn.includes("no");
+
+      if (wantsPremium && !wantsBasic) {
+        andConditions.push({ subscription: "Premium" });
+      } else if (!wantsPremium && wantsBasic) {
+        andConditions.push({ subscription: { $ne: "Premium" } });
+      }
+    }
+    if (cleanDurationIn.length) {
+      const includesZero = cleanDurationIn.includes(0);
+      const positiveDurations = cleanDurationIn.filter((value) => value > 0);
+
+      if (includesZero && positiveDurations.length) {
+        andConditions.push({
+          $or: [
+            { subscriptionDuration: { $in: positiveDurations } },
+            { subscriptionDuration: { $exists: false } },
+            { subscriptionDuration: null },
+            { subscriptionDuration: 0 },
+          ],
+        });
+      } else if (includesZero) {
+        andConditions.push({
+          $or: [
+            { subscriptionDuration: { $exists: false } },
+            { subscriptionDuration: null },
+            { subscriptionDuration: 0 },
+          ],
+        });
+      } else if (positiveDurations.length) {
+        andConditions.push({ subscriptionDuration: { $in: positiveDurations } });
+      }
+    }
+
+    if (regex) {
+      andConditions.push({
+        $or: [
+          { name: regex },
+          { email: regex },
+          { location: regex },
+          { phone: regex },
+        ],
+      });
+    }
+
+    const query = andConditions.length === 1 ? andConditions[0] : { $and: andConditions };
+    const sortMap = {
+      recent: { createdAt: -1, _id: -1 },
+      oldest: { createdAt: 1, _id: 1 },
+      "name-az": { name: 1, _id: 1 },
+      "name-za": { name: -1, _id: -1 },
+      "rating-high-low": { rating: -1, _id: -1 },
+      "rating-low-high": { rating: 1, _id: 1 },
+    };
+    const userSort = sortMap[sortBy] || sortMap.recent;
+
+    const [
+      users,
+      totalFreelancers,
+      optionNames,
+      optionEmails,
+      optionPhones,
+      optionRatings,
+      optionSubscriptions,
+      optionDurations,
+    ] = await Promise.all([
+      User.find(query)
+        .select(
+          "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate",
+        )
+        .sort(userSort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments(query),
+      User.distinct("name", { role: "Freelancer" }),
+      User.distinct("email", { role: "Freelancer" }),
+      User.distinct("phone", { role: "Freelancer" }),
+      User.distinct("rating", { role: "Freelancer" }),
+      User.distinct("subscription", { role: "Freelancer" }),
+      User.distinct("subscriptionDuration", { role: "Freelancer" }),
+    ]);
+
+    const hasPremiumOption = optionSubscriptions.includes("Premium");
+    const hasBasicOption = optionSubscriptions.some((value) => value !== "Premium");
+
+    const filterOptions = {
+      names: optionNames.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      emails: optionEmails.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      phones: optionPhones.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      ratings: optionRatings
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+      subscribed: [
+        ...(hasPremiumOption ? ["Yes"] : []),
+        ...(hasBasicOption ? ["No"] : []),
+      ],
+      durations: optionDurations
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+    };
+
+    const freelancers = await Freelancer.find({ userId: { $in: users.map((u) => u.userId) } })
+      .select("freelancerId userId skills portfolio createdAt")
       .lean();
+
+    if (!freelancers.length) {
+      return res.json({
+        success: true,
+        freelancers: [],
+        total: totalFreelancers,
+        pagination: getPaginationMeta(totalFreelancers, page, limit),
+      });
+    }
 
     // Get applications count for each freelancer using roleId
     const roleIds = freelancers.map((f) => f.freelancerId);
@@ -650,8 +989,17 @@ exports.getAllFreelancers = async (req, res) => {
       activeJobs.map((job) => job.assignedFreelancer.freelancerId)
     );
 
-    const freelancersWithDetails = freelancers.map((freelancer) => {
-      const user = users.find((u) => u.userId === freelancer.userId);
+    const userMap = new Map(users.map((u) => [u.userId, u]));
+    const freelancerByUserId = new Map(
+      freelancers.map((freelancer) => [freelancer.userId, freelancer]),
+    );
+
+    const freelancersWithDetails = users
+      .map((user) => {
+      const freelancer = freelancerByUserId.get(user.userId);
+      if (!freelancer) {
+        return null;
+      }
       const isPremium = user?.subscription === "Premium";
       const isCurrentlyWorking = workingFreelancerIds.has(
         freelancer.freelancerId
@@ -676,12 +1024,15 @@ exports.getAllFreelancers = async (req, res) => {
         applicationsCount: applicationMap[freelancer.freelancerId] || 0,
         isCurrentlyWorking,
       };
-    });
+    })
+      .filter(Boolean);
 
     res.json({
       success: true,
       freelancers: freelancersWithDetails,
-      total: freelancersWithDetails.length,
+      total: totalFreelancers,
+      filterOptions,
+      pagination: getPaginationMeta(totalFreelancers, page, limit),
     });
   } catch (error) {
     console.error("Error fetching freelancers:", error.message);
@@ -782,25 +1133,240 @@ exports.deleteFreelancer = async (req, res) => {
 // Get all employers (Moderator only)
 exports.getAllEmployers = async (req, res) => {
   try {
-    const employers = await Employer.find({}).lean();
+    const { search = "", sortBy = "recent" } = req.query;
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+    const cleanNameIn = parseArrayQueryParam(req.query.nameIn);
+    const cleanCompanyIn = parseArrayQueryParam(req.query.companyIn);
+    const cleanEmailIn = parseArrayQueryParam(req.query.emailIn);
+    const cleanPhoneIn = parseArrayQueryParam(req.query.phoneIn);
+    const cleanRatingIn = parseArrayQueryParam(req.query.ratingIn)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    const cleanSubscribedIn = parseArrayQueryParam(req.query.subscribedIn)
+      .map((value) => String(value).toLowerCase());
+    const cleanDurationIn = parseArrayQueryParam(req.query.durationIn)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    const searchText = String(search || "").trim();
+    const regex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
 
-    const employerIds = employers.map((e) => e.userId);
-    const users = await User.find({ userId: { $in: employerIds } })
-      .select(
-        "userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate"
-      )
-      .lean();
+    const andConditions = [{ "user.role": "Employer" }];
 
-    // Get job listing counts per employer
-    const empIds = employers.map((e) => e.employerId);
-    const jobCounts = await JobListing.aggregate([
-      { $match: { employerId: { $in: empIds } } },
-      { $group: { _id: "$employerId", count: { $sum: 1 } } },
+    if (cleanNameIn.length) {
+      andConditions.push({ "user.name": { $in: cleanNameIn } });
+    }
+    if (cleanCompanyIn.length) {
+      andConditions.push({ companyName: { $in: cleanCompanyIn } });
+    }
+    if (cleanEmailIn.length) {
+      andConditions.push({ "user.email": { $in: cleanEmailIn } });
+    }
+    if (cleanPhoneIn.length) {
+      andConditions.push({ "user.phone": { $in: cleanPhoneIn } });
+    }
+    if (cleanRatingIn.length) {
+      andConditions.push({ "user.rating": { $in: cleanRatingIn } });
+    }
+    if (cleanSubscribedIn.length) {
+      const wantsPremium = cleanSubscribedIn.includes("yes");
+      const wantsBasic = cleanSubscribedIn.includes("no");
+
+      if (wantsPremium && !wantsBasic) {
+        andConditions.push({ "user.subscription": "Premium" });
+      } else if (!wantsPremium && wantsBasic) {
+        andConditions.push({ "user.subscription": { $ne: "Premium" } });
+      }
+    }
+    if (cleanDurationIn.length) {
+      const includesZero = cleanDurationIn.includes(0);
+      const positiveDurations = cleanDurationIn.filter((value) => value > 0);
+
+      if (includesZero && positiveDurations.length) {
+        andConditions.push({
+          $or: [
+            { "user.subscriptionDuration": { $in: positiveDurations } },
+            { "user.subscriptionDuration": { $exists: false } },
+            { "user.subscriptionDuration": null },
+            { "user.subscriptionDuration": 0 },
+          ],
+        });
+      } else if (includesZero) {
+        andConditions.push({
+          $or: [
+            { "user.subscriptionDuration": { $exists: false } },
+            { "user.subscriptionDuration": null },
+            { "user.subscriptionDuration": 0 },
+          ],
+        });
+      } else if (positiveDurations.length) {
+        andConditions.push({ "user.subscriptionDuration": { $in: positiveDurations } });
+      }
+    }
+
+    if (regex) {
+      andConditions.push({
+        $or: [
+          { "user.name": regex },
+          { "user.email": regex },
+          { "user.phone": regex },
+          { "user.location": regex },
+          { companyName: regex },
+        ],
+      });
+    }
+
+    const matchStage = andConditions.length === 1 ? andConditions[0] : { $and: andConditions };
+    const sortMap = {
+      recent: { "user.createdAt": -1, _id: -1 },
+      oldest: { "user.createdAt": 1, _id: 1 },
+      "name-az": { "user.name": 1, _id: 1 },
+      "name-za": { "user.name": -1, _id: -1 },
+      "rating-high-low": { "user.rating": -1, _id: -1 },
+      "rating-low-high": { "user.rating": 1, _id: 1 },
+      "jobListings-high-low": { jobListingsCount: -1, _id: -1 },
+      "jobListings-low-high": { jobListingsCount: 1, _id: 1 },
+    };
+    const sortStage = sortMap[sortBy] || sortMap.recent;
+
+    const [aggregateResult, optionsAggregate] = await Promise.all([
+      Employer.aggregate([
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "userId",
+          as: "user",
+        },
+      },
+      { $unwind: "$user" },
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: "job_listings",
+          let: { employerId: "$employerId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$employerId", "$$employerId"] } } },
+            { $count: "count" },
+          ],
+          as: "jobListingMeta",
+        },
+      },
+      {
+        $addFields: {
+          jobListingsCount: {
+            $ifNull: [{ $arrayElemAt: ["$jobListingMeta.count", 0] }, 0],
+          },
+        },
+      },
+      {
+        $facet: {
+          rows: [
+            { $sort: sortStage },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                employerId: 1,
+                userId: 1,
+                companyName: 1,
+                currentFreelancers: 1,
+                previouslyWorkedFreelancers: 1,
+                createdAt: 1,
+                jobListingsCount: 1,
+                "user.name": 1,
+                "user.email": 1,
+                "user.phone": 1,
+                "user.picture": 1,
+                "user.location": 1,
+                "user.rating": 1,
+                "user.createdAt": 1,
+                "user.subscription": 1,
+                "user.subscriptionDuration": 1,
+                "user.subscriptionExpiryDate": 1,
+              },
+            },
+          ],
+          total: [{ $count: "count" }],
+          options: [
+            {
+              $group: {
+                _id: null,
+                names: { $addToSet: "$user.name" },
+                companies: { $addToSet: "$companyName" },
+                emails: { $addToSet: "$user.email" },
+                phones: { $addToSet: "$user.phone" },
+                ratings: { $addToSet: "$user.rating" },
+                subscriptions: { $addToSet: "$user.subscription" },
+                durations: { $addToSet: "$user.subscriptionDuration" },
+              },
+            },
+          ],
+        },
+      },
+    ]),
+      Employer.aggregate([
+        {
+          $lookup: {
+            from: "users",
+            localField: "userId",
+            foreignField: "userId",
+            as: "user",
+          },
+        },
+        { $unwind: "$user" },
+        { $match: { "user.role": "Employer" } },
+        {
+          $group: {
+            _id: null,
+            names: { $addToSet: "$user.name" },
+            companies: { $addToSet: "$companyName" },
+            emails: { $addToSet: "$user.email" },
+            phones: { $addToSet: "$user.phone" },
+            ratings: { $addToSet: "$user.rating" },
+            subscriptions: { $addToSet: "$user.subscription" },
+            durations: { $addToSet: "$user.subscriptionDuration" },
+          },
+        },
+      ]),
     ]);
-    const jobCountMap = {};
-    jobCounts.forEach((item) => {
-      jobCountMap[item._id] = item.count;
-    });
+
+    const employers = aggregateResult?.[0]?.rows || [];
+    const totalEmployers = aggregateResult?.[0]?.total?.[0]?.count || 0;
+    const optionBucket = optionsAggregate?.[0] || {};
+    const hasPremiumOption = (optionBucket.subscriptions || []).includes("Premium");
+    const hasBasicOption = (optionBucket.subscriptions || []).some((value) => value && value !== "Premium");
+
+    const filterOptions = {
+      names: (optionBucket.names || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      companies: (optionBucket.companies || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      emails: (optionBucket.emails || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      phones: (optionBucket.phones || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      ratings: (optionBucket.ratings || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+      subscribed: [
+        ...(hasPremiumOption ? ["Yes"] : []),
+        ...(hasBasicOption ? ["No"] : []),
+      ],
+      durations: (optionBucket.durations || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value))
+        .sort((a, b) => a - b),
+    };
+
+    if (!employers.length) {
+      return res.json({
+        success: true,
+        employers: [],
+        total: totalEmployers,
+        pagination: getPaginationMeta(totalEmployers, page, limit),
+      });
+    }
+
+    const empIds = employers.map((e) => e.employerId);
 
     // Get hired freelancers from job listings as source of truth
     // (covers cases where Employer.currentFreelancers arrays are stale)
@@ -833,9 +1399,8 @@ exports.getAllEmployers = async (req, res) => {
       };
     });
 
-    // Get hired freelancers count (current + previously worked)
     const employersWithDetails = employers.map((employer) => {
-      const user = users.find((u) => u.userId === employer.userId);
+      const user = employer.user || {};
       const isPremium = user?.subscription === "Premium";
       const fallbackCurrentHires = employer.currentFreelancers?.length || 0;
       const fallbackPastHires = employer.previouslyWorkedFreelancers?.length || 0;
@@ -861,7 +1426,7 @@ exports.getAllEmployers = async (req, res) => {
         isPremium,
         subscriptionDuration: user?.subscriptionDuration || null,
         subscriptionExpiryDate: user?.subscriptionExpiryDate || null,
-        jobListingsCount: jobCountMap[employer.employerId] || 0,
+        jobListingsCount: employer.jobListingsCount || 0,
         hiredCount,
         currentHires,
         pastHires,
@@ -872,7 +1437,9 @@ exports.getAllEmployers = async (req, res) => {
     res.json({
       success: true,
       employers: employersWithDetails,
-      total: employersWithDetails.length,
+      total: totalEmployers,
+      filterOptions,
+      pagination: getPaginationMeta(totalEmployers, page, limit),
     });
   } catch (error) {
     console.error("Error fetching employers:", error.message);
@@ -967,37 +1534,174 @@ exports.deleteEmployer = async (req, res) => {
 // Get all job listings (Moderator only)
 exports.getAllJobListings = async (req, res) => {
   try {
-    const jobs = await JobListing.find({}).lean();
+    const { search = "", sortBy = "recent" } = req.query;
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+    const cleanTitleIn = parseArrayQueryParam(req.query.titleIn);
+    const cleanCompanyIn = parseArrayQueryParam(req.query.companyIn);
+    const cleanTypeIn = parseArrayQueryParam(req.query.typeIn);
+    const cleanStatusIn = parseArrayQueryParam(req.query.statusIn);
+    const searchText = String(search || "").trim();
+    const regex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
 
-    const employerIds = jobs.map((job) => job.employerId);
-    const employers = await Employer.find({ employerId: { $in: employerIds } })
-      .select("employerId companyName")
-      .lean();
-    const userIds = employers.map((e) => e.userId);
-    const users = await User.find({ userId: { $in: userIds } })
-      .select("userId name")
-      .lean();
+    const andConditions = [];
+    if (cleanTitleIn.length) {
+      andConditions.push({ title: { $in: cleanTitleIn } });
+    }
+    if (cleanCompanyIn.length) {
+      andConditions.push({ companyName: { $in: cleanCompanyIn } });
+    }
+    if (cleanTypeIn.length) {
+      andConditions.push({ jobType: { $in: cleanTypeIn } });
+    }
+    if (cleanStatusIn.length) {
+      andConditions.push({ status: { $in: cleanStatusIn } });
+    }
+    if (regex) {
+      andConditions.push({
+        $or: [
+          { title: regex },
+          { companyName: regex },
+          { location: regex },
+          { jobType: regex },
+        ],
+      });
+    }
 
-    // Get applicant counts for all jobs
-    const jobIds = jobs.map((job) => job.jobId);
-    const applicantCounts = await JobApplication.aggregate([
-      { $match: { jobId: { $in: jobIds } } },
-      { $group: { _id: "$jobId", count: { $sum: 1 } } },
+    const matchStage = andConditions.length ? { $and: andConditions } : {};
+    const sortMap = {
+      recent: { postedDate: -1, _id: -1 },
+      oldest: { postedDate: 1, _id: 1 },
+      "budget-high-low": { budget: -1, _id: -1 },
+      "budget-low-high": { budget: 1, _id: 1 },
+      "applicants-high-low": { applicantsCount: -1, _id: -1 },
+      "applicants-low-high": { applicantsCount: 1, _id: 1 },
+    };
+    const sortStage = sortMap[sortBy] || sortMap.recent;
+
+    const [aggregateResult, allTitles, allTypes, allStatuses, allCompanies] = await Promise.all([
+      JobListing.aggregate([
+      {
+        $lookup: {
+          from: "employers",
+          localField: "employerId",
+          foreignField: "employerId",
+          as: "employer",
+        },
+      },
+      {
+        $unwind: {
+          path: "$employer",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "employer.userId",
+          foreignField: "userId",
+          as: "employerUser",
+        },
+      },
+      {
+        $unwind: {
+          path: "$employerUser",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "job_applications",
+          let: { jobId: "$jobId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$jobId", "$$jobId"] } } },
+            { $count: "count" },
+          ],
+          as: "applicantMeta",
+        },
+      },
+      {
+        $addFields: {
+          companyName: { $ifNull: ["$employer.companyName", "Unknown Company"] },
+          employerName: { $ifNull: ["$employerUser.name", "Unknown"] },
+          applicantsCount: {
+            $ifNull: [{ $arrayElemAt: ["$applicantMeta.count", 0] }, 0],
+          },
+        },
+      },
+      { $match: matchStage },
+      {
+        $facet: {
+          rows: [
+            { $sort: sortStage },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                jobId: 1,
+                title: 1,
+                employerId: 1,
+                budget: 1,
+                jobType: 1,
+                experienceLevel: 1,
+                status: 1,
+                location: 1,
+                postedDate: 1,
+                applicationDeadline: 1,
+                description: 1,
+                assignedFreelancer: 1,
+                companyName: 1,
+                employerName: 1,
+                applicantsCount: 1,
+              },
+            },
+          ],
+          total: [{ $count: "count" }],
+          options: [
+            {
+              $group: {
+                _id: null,
+                titles: { $addToSet: "$title" },
+                companies: { $addToSet: "$companyName" },
+                types: { $addToSet: "$jobType" },
+                statuses: { $addToSet: "$status" },
+              },
+            },
+          ],
+        },
+      },
+    ]),
+      JobListing.distinct("title"),
+      JobListing.distinct("jobType"),
+      JobListing.distinct("status"),
+      Employer.distinct("companyName"),
     ]);
 
-    const applicantMap = {};
-    applicantCounts.forEach((item) => {
-      applicantMap[item._id] = item.count;
-    });
+    const jobs = aggregateResult?.[0]?.rows || [];
+    const totalJobs = aggregateResult?.[0]?.total?.[0]?.count || 0;
+    const filterOptions = {
+      titles: (allTitles || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      companies: (allCompanies || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      types: (allTypes || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      statuses: (allStatuses || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+    };
+
+    if (!jobs.length) {
+      return res.json({
+        success: true,
+        jobs: [],
+        total: totalJobs,
+        pagination: getPaginationMeta(totalJobs, page, limit),
+      });
+    }
 
     const jobsWithDetails = jobs.map((job) => {
-      const employer = employers.find((e) => e.employerId === job.employerId);
-      const user = users.find((u) => u.userId === employer?.userId);
       return {
         jobId: job.jobId,
         title: job.title,
-        employerName: user?.name || "Unknown",
-        companyName: employer?.companyName || "Unknown Company",
+        employerName: job.employerName || "Unknown",
+        companyName: job.companyName || "Unknown Company",
         budget: job.budget,
         jobType: job.jobType,
         experienceLevel: job.experienceLevel,
@@ -1008,14 +1712,16 @@ exports.getAllJobListings = async (req, res) => {
         skills: job.description?.skills || [],
         description: job.description,
         assignedFreelancer: job.assignedFreelancer,
-        applicantsCount: applicantMap[job.jobId] || 0,
+        applicantsCount: job.applicantsCount || 0,
       };
     });
 
     res.json({
       success: true,
       jobs: jobsWithDetails,
-      total: jobsWithDetails.length,
+      total: totalJobs,
+      filterOptions,
+      pagination: getPaginationMeta(totalJobs, page, limit),
     });
   } catch (error) {
     console.error("Error fetching job listings:", error.message);
@@ -1118,63 +1824,190 @@ exports.deleteJobListing = async (req, res) => {
 // Get pending employer approvals (or all employers if status=all)
 exports.getPendingApprovals = async (req, res) => {
   try {
-    const { status } = req.query; // 'pending', 'approved', or 'all'
+    const { status, search = "", sortBy = "createdAt", sortOrder = "desc" } = req.query; // 'pending', 'approved', or 'all'
+    const { page, limit, skip } = getPaginationParams(req.query, 25);
+    const cleanNameIn = parseArrayQueryParam(req.query.nameIn);
+    const cleanEmailIn = parseArrayQueryParam(req.query.emailIn);
+    const cleanCompanyIn = parseArrayQueryParam(req.query.companyIn);
+    const cleanLocationIn = parseArrayQueryParam(req.query.locationIn);
+    const cleanStatusIn = parseArrayQueryParam(req.query.statusIn)
+      .map((entry) => entry.toLowerCase())
+      .filter((entry) => ["pending", "approved", "rejected"].includes(entry));
+    const searchText = String(search || "").trim();
+    const regex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
+
+    const [allEmployerUsers, allEmployerCompanies] = await Promise.all([
+      User.find({ role: "Employer" })
+        .select("name email location isApproved isRejected")
+        .lean(),
+      Employer.find({}).select("companyName").lean(),
+    ]);
+
+    const statusSet = new Set();
+    allEmployerUsers.forEach((user) => {
+      if (user.isRejected) statusSet.add("Rejected");
+      else if (user.isApproved) statusSet.add("Approved");
+      else statusSet.add("Pending");
+    });
+
+    const filterOptions = {
+      names: allEmployerUsers.map((u) => u.name).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      emails: allEmployerUsers.map((u) => u.email).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      companies: allEmployerCompanies.map((e) => e.companyName).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      locations: allEmployerUsers.map((u) => u.location).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+      statuses: Array.from(statusSet).sort((a, b) => String(a).localeCompare(String(b))),
+    };
+
+    const allowedSortBy = new Set(["createdAt", "name"]);
+    const normalizedSortBy = allowedSortBy.has(sortBy) ? sortBy : "createdAt";
+    const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc" ? 1 : -1;
     
-    let query = { role: "Employer" };
+    const andConditions = [{ role: "Employer" }];
     
     // Filter by approval status if specified
     if (status === 'pending') {
-      query.isApproved = false;
-      query.isRejected = { $ne: true };
+      andConditions.push({ isApproved: false, isRejected: { $ne: true } });
     } else if (status === 'approved') {
-      query.isApproved = true;
-      query.isRejected = { $ne: true };
+      andConditions.push({ isApproved: true, isRejected: { $ne: true } });
     } else if (status === 'rejected') {
-      query.isRejected = true;
+      andConditions.push({ isRejected: true });
     }
-    // If status === 'all', don't add isApproved filter (shows all employers)
-    
-    const users = await User.find(query).lean();
 
-    // Get employer details for each user
-    const approvals = await Promise.all(
-      users.map(async (user) => {
-        const employer = await Employer.findOne({ userId: user.userId }).lean();
-        
-        return {
-          userId: user.userId,
-          employerId: employer?.employerId || null,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          picture: user.picture,
-          location: user.location,
-          companyName: employer?.companyName || "",
-          websiteLink: employer?.websiteLink || "",
-          companyDetails: employer?.companyDetails || {
-            companyName: "",
-            companyPAN: "",
-            billingAddress: "",
-            accountsPayableEmail: "",
-            taxIdentificationNumber: "",
-            proofOfAddressUrl: "",
-            officialBusinessEmail: "",
-            companyLogoUrl: "",
-            isSubmitted: false,
-            submittedAt: null,
-          },
-          registeredAt: user.createdAt,
-          isApproved: user.isApproved,
-          isRejected: user.isRejected || false,
-          approvalStatus: user.isRejected ? 'Rejected' : (user.isApproved ? 'Approved' : 'Pending'),
-        };
-      })
-    );
+    if (cleanNameIn.length) {
+      andConditions.push({ name: { $in: cleanNameIn } });
+    }
+    if (cleanEmailIn.length) {
+      andConditions.push({ email: { $in: cleanEmailIn } });
+    }
+    if (cleanLocationIn.length) {
+      andConditions.push({ location: { $in: cleanLocationIn } });
+    }
+
+    if (cleanStatusIn.length) {
+      const statusOr = [];
+      if (cleanStatusIn.includes("pending")) {
+        statusOr.push({ isApproved: false, isRejected: { $ne: true } });
+      }
+      if (cleanStatusIn.includes("approved")) {
+        statusOr.push({ isApproved: true, isRejected: { $ne: true } });
+      }
+      if (cleanStatusIn.includes("rejected")) {
+        statusOr.push({ isRejected: true });
+      }
+      if (statusOr.length) {
+        andConditions.push({ $or: statusOr });
+      }
+    }
+
+    let companyMatchedUserIds = [];
+    if (cleanCompanyIn.length || regex) {
+      const employerAnd = [];
+
+      if (cleanCompanyIn.length) {
+        employerAnd.push({ companyName: { $in: cleanCompanyIn } });
+      }
+
+      if (regex) {
+        employerAnd.push({ companyName: regex });
+      }
+
+      const employerQuery = employerAnd.length > 1 ? { $and: employerAnd } : employerAnd[0] || {};
+      const matchedEmployers = await Employer.find(employerQuery).select("userId").lean();
+      companyMatchedUserIds = matchedEmployers.map((employer) => employer.userId);
+
+      if (cleanCompanyIn.length && !companyMatchedUserIds.length) {
+        return res.json({
+          success: true,
+          pendingApprovals: [],
+          count: 0,
+          filterOptions,
+          pagination: getPaginationMeta(0, page, limit),
+        });
+      }
+    }
+
+    if (searchText) {
+      const searchOr = [
+        { name: regex },
+        { email: regex },
+        { location: regex },
+      ];
+
+      if (companyMatchedUserIds.length) {
+        searchOr.push({ userId: { $in: companyMatchedUserIds } });
+      }
+
+      andConditions.push({ $or: searchOr });
+    } else if (cleanCompanyIn.length) {
+      andConditions.push({ userId: { $in: companyMatchedUserIds } });
+    }
+
+    const query = andConditions.length === 1 ? andConditions[0] : { $and: andConditions };
+    const querySort = { [normalizedSortBy]: normalizedSortOrder, _id: normalizedSortOrder };
+    
+    const [users, totalApprovals] = await Promise.all([
+      User.find(query)
+        .select(
+          "userId name email phone picture location createdAt isApproved isRejected",
+        )
+        .sort(querySort)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      User.countDocuments(query),
+    ]);
+
+    const employerDocs = await Employer.find({
+      userId: { $in: users.map((u) => u.userId) },
+    })
+      .select("userId employerId companyName websiteLink companyDetails")
+      .lean();
+    const employerMap = new Map(employerDocs.map((e) => [e.userId, e]));
+
+    const approvals = users.map((user) => {
+      const employer = employerMap.get(user.userId);
+
+      return {
+        userId: user.userId,
+        employerId: employer?.employerId || null,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        picture: user.picture,
+        location: user.location,
+        companyName: employer?.companyName || "",
+        websiteLink: employer?.websiteLink || "",
+        companyDetails: employer?.companyDetails || {
+          companyName: "",
+          companyPAN: "",
+          billingAddress: "",
+          accountsPayableEmail: "",
+          taxIdentificationNumber: "",
+          proofOfAddressUrl: "",
+          officialBusinessEmail: "",
+          companyLogoUrl: "",
+          isSubmitted: false,
+          submittedAt: null,
+        },
+        registeredAt: user.createdAt,
+        isApproved: user.isApproved,
+        isRejected: user.isRejected || false,
+        approvalStatus: user.isRejected
+          ? "Rejected"
+          : user.isApproved
+            ? "Approved"
+            : "Pending",
+      };
+    });
 
     res.json({
       success: true,
       pendingApprovals: approvals, // keeping the same key for backward compatibility
-      count: approvals.length,
+      count: totalApprovals,
+      filterOptions,
+      pagination: getPaginationMeta(totalApprovals, page, limit),
     });
   } catch (error) {
     console.error("Error fetching approvals:", error.message);

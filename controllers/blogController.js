@@ -358,10 +358,108 @@ exports.getModeratorBlogs = async (req, res) => {
       });
     }
 
-    const blogs = await Blog.find().sort({ createdAt: -1 }).lean();
+    const {
+      search = "",
+      searchBy = "title",
+      category = "all",
+      featured = "all",
+      sortBy = "date-desc",
+    } = req.query;
+
+    const rawPage = Number.parseInt(req.query.page, 10);
+    const rawLimit = Number.parseInt(req.query.limit, 10);
+    const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
+    const skip = (page - 1) * limit;
+
+    const query = {};
+
+    if (category !== "all") {
+      query.category = category;
+    }
+
+    if (featured === "featured") {
+      query.featured = true;
+    } else if (featured === "non-featured") {
+      query.featured = false;
+    }
+
+    const searchText = String(search || "").trim();
+    if (searchText) {
+      const regex = new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      if (searchBy === "category") {
+        query.category = regex;
+      } else if (searchBy === "content") {
+        query.excerpt = regex;
+      } else {
+        query.title = regex;
+      }
+    }
+
+    const sortMap = {
+      "date-desc": { createdAt: -1, _id: -1 },
+      "date-asc": { createdAt: 1, _id: 1 },
+      "title-asc": { title: 1, _id: 1 },
+      "title-desc": { title: -1, _id: -1 },
+    };
+
+    const [blogs, total, categories, summaryAggregate] = await Promise.all([
+      Blog.find(query)
+        .sort(sortMap[sortBy] || sortMap["date-desc"])
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Blog.countDocuments(query),
+      Blog.distinct("category"),
+      Blog.aggregate([
+        { $match: query },
+        {
+          $group: {
+            _id: null,
+            totalBlogs: { $sum: 1 },
+            publishedBlogs: {
+              $sum: {
+                $cond: [{ $eq: ["$status", "published"] }, 1, 0],
+              },
+            },
+            featuredBlogs: {
+              $sum: {
+                $cond: [{ $eq: ["$featured", true] }, 1, 0],
+              },
+            },
+          },
+        },
+      ]),
+    ]);
+
+    const pagination = {
+      page,
+      limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      hasPrevPage: page > 1,
+      hasNextPage: skip + blogs.length < total,
+    };
+
+    const filterOptions = {
+      categories: (categories || [])
+        .filter(Boolean)
+        .sort((a, b) => String(a).localeCompare(String(b))),
+      featured: ["featured", "non-featured"],
+    };
+
+    const summary = {
+      totalBlogs: summaryAggregate[0]?.totalBlogs || 0,
+      publishedBlogs: summaryAggregate[0]?.publishedBlogs || 0,
+      featuredBlogs: summaryAggregate[0]?.featuredBlogs || 0,
+    };
 
     return res.json({
       success: true,
+      total,
+      pagination,
+      filterOptions,
+      summary,
       blogs: blogs.map((blog) => ({
         ...blog,
         formattedCreatedAt: new Date(blog.createdAt).toLocaleDateString(
