@@ -40,6 +40,10 @@ function getPaginationMeta(total, page, limit) {
   };
 }
 
+function mapByKey(items, key) {
+  return new Map((items || []).map((item) => [item[key], item]));
+}
+
 // ============ PROFILE ============
 
 exports.getAdminProfile = async (req, res) => {
@@ -464,9 +468,12 @@ exports.getRevenueStats = async (req, res) => {
       .select("userId name")
       .lean();
 
+    const employerById = mapByKey(employers, "employerId");
+    const employerUserById = mapByKey(employerUsers, "userId");
+
     const topPayingJobsWithDetails = topPayingJobs.map((job) => {
-      const employer = employers.find((e) => e.employerId === job.employerId);
-      const user = employerUsers.find((u) => u.userId === employer?.userId);
+      const employer = employerById.get(job.employerId);
+      const user = employerUserById.get(employer?.userId);
       const posted = new Date(job.postedDate);
       const deadline = job.applicationDeadline
         ? new Date(job.applicationDeadline)
@@ -644,14 +651,18 @@ exports.getAllPayments = async (req, res) => {
       .select("userId name email")
       .lean();
 
+    const employerById = mapByKey(employers, "employerId");
+    const freelancerById = mapByKey(freelancers, "freelancerId");
+    const userById = mapByKey(users, "userId");
+
     const payments = [];
     jobsWithPayments.forEach((job) => {
-      const employer = employers.find((e) => e.employerId === job.employerId);
-      const employerUser = users.find((u) => u.userId === employer?.userId);
-      const freelancer = freelancers.find(
-        (f) => f.freelancerId === job.assignedFreelancer?.freelancerId,
+      const employer = employerById.get(job.employerId);
+      const employerUser = userById.get(employer?.userId);
+      const freelancer = freelancerById.get(
+        job.assignedFreelancer?.freelancerId,
       );
-      const freelancerUser = users.find((u) => u.userId === freelancer?.userId);
+      const freelancerUser = userById.get(freelancer?.userId);
 
       job.milestones
         .filter((m) => m.status === "paid")
@@ -710,19 +721,20 @@ exports.getAllPayments = async (req, res) => {
       .select("userId name")
       .lean();
 
+    const pendingEmployerById = mapByKey(pendingEmployers, "employerId");
+    const pendingFreelancerById = mapByKey(
+      pendingFreelancersList,
+      "freelancerId",
+    );
+    const pendingUserById = mapByKey(pendingUsers, "userId");
+
     jobsWithPendingPayments.forEach((job) => {
-      const employer = pendingEmployers.find(
-        (e) => e.employerId === job.employerId,
+      const employer = pendingEmployerById.get(job.employerId);
+      const employerUser = pendingUserById.get(employer?.userId);
+      const freelancer = pendingFreelancerById.get(
+        job.assignedFreelancer?.freelancerId,
       );
-      const employerUser = pendingUsers.find(
-        (u) => u.userId === employer?.userId,
-      );
-      const freelancer = pendingFreelancersList.find(
-        (f) => f.freelancerId === job.assignedFreelancer?.freelancerId,
-      );
-      const freelancerUser = pendingUsers.find(
-        (u) => u.userId === freelancer?.userId,
-      );
+      const freelancerUser = pendingUserById.get(freelancer?.userId);
 
       job.milestones
         .filter((m) => m.status === "not-paid" || m.status === "in-progress")
@@ -887,11 +899,10 @@ exports.getModeratorActivity = async (req, res) => {
         .lean(),
     ]);
 
-    // Get blog stats
-    const totalBlogs = await Blog.countDocuments();
-
-    // Get quiz stats
-    const totalQuizzes = await Quiz.countDocuments();
+    const [totalBlogs, totalQuizzes] = await Promise.all([
+      Blog.countDocuments(),
+      Quiz.countDocuments(),
+    ]);
 
     res.json({
       success: true,
@@ -1971,6 +1982,9 @@ exports.getDashboardRevenue = async (req, res) => {
       .lean();
 
     // Calculate fee for each job
+    const employerById = mapByKey(employers, "employerId");
+    const employerUserById = mapByKey(employerUsers, "userId");
+
     const jobFees = allJobs.map((job) => {
       const postedDate = new Date(job.postedDate);
       const deadline = new Date(job.applicationDeadline);
@@ -1982,8 +1996,8 @@ exports.getDashboardRevenue = async (req, res) => {
       const feeRate = calculatePlatformFee(durationDays, applicantCount);
       const feeAmount = (job.budget || 0) * (feeRate / 100);
 
-      const employer = employers.find((e) => e.employerId === job.employerId);
-      const empUser = employerUsers.find((u) => u.userId === employer?.userId);
+      const employer = employerById.get(job.employerId);
+      const empUser = employerUserById.get(employer?.userId);
 
       return {
         jobId: job.jobId,
@@ -2070,28 +2084,40 @@ exports.getDashboardRevenue = async (req, res) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const totalJobCount = await JobListing.countDocuments();
-    const completedJobs = await JobListing.countDocuments({
-      status: "completed",
-    });
-    const totalApplications = await JobApplication.countDocuments();
-    const acceptedApplications = await JobApplication.countDocuments({
-      status: "Accepted",
-    });
-    const recentJobCount = await JobListing.countDocuments({
-      postedDate: { $gte: thirtyDaysAgo },
-    });
-    const recentAppCount = await JobApplication.countDocuments({
-      appliedDate: { $gte: thirtyDaysAgo },
-    });
-    const activeUsers = await User.countDocuments({
-      role: { $ne: "" },
-      updatedAt: { $gte: thirtyDaysAgo },
-    });
-    const totalUsers = await User.countDocuments({ role: { $ne: "" } });
-    const premiumCount = await User.countDocuments({
-      subscription: "Premium",
-    });
+    const [
+      totalJobCount,
+      completedJobs,
+      totalApplications,
+      acceptedApplications,
+      recentJobCount,
+      recentAppCount,
+      activeUsers,
+      totalUsers,
+      premiumCount,
+    ] = await Promise.all([
+      JobListing.countDocuments(),
+      JobListing.countDocuments({
+        status: "completed",
+      }),
+      JobApplication.countDocuments(),
+      JobApplication.countDocuments({
+        status: "Accepted",
+      }),
+      JobListing.countDocuments({
+        postedDate: { $gte: thirtyDaysAgo },
+      }),
+      JobApplication.countDocuments({
+        appliedDate: { $gte: thirtyDaysAgo },
+      }),
+      User.countDocuments({
+        role: { $ne: "" },
+        updatedAt: { $gte: thirtyDaysAgo },
+      }),
+      User.countDocuments({ role: { $ne: "" } }),
+      User.countDocuments({
+        subscription: "Premium",
+      }),
+    ]);
 
     // Recent platform-fee transactions (top 10)
     const recentFeeJobs = jobFees
