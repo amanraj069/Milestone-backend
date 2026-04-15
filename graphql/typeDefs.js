@@ -250,6 +250,7 @@ const typeDefs = `#graphql
   type HistoryJobsFilterOptions {
     statuses: [String]
     employers: [String]
+    jobTitles: [String]
   }
 
   type HistoryJobsResult {
@@ -1605,6 +1606,8 @@ const typeDefs = `#graphql
       search: String
       sortBy: String
       statusIn: [String]
+      employerIn: [String]
+      jobTitleIn: [String]
       page: Int = 1
       limit: Int = 25
     ): HistoryJobsResult

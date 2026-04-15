@@ -4,6 +4,7 @@ const JobApplication = require("../models/job_application");
 const UserBadge = require("../models/UserBadge");
 const User = require("../models/user");
 const Freelancer = require("../models/freelancer");
+const Employer = require("../models/employer");
 const Conversation = require("../models/conversation");
 const Message = require("../models/message");
 const adminResolvers = require("./adminResolvers");
@@ -509,7 +510,15 @@ const resolvers = {
      */
     freelancerJobHistory: async (
       _parent,
-      { search = "", sortBy = "newest", statusIn = null, page = 1, limit = 25 },
+      {
+        search = "",
+        sortBy = "newest",
+        statusIn = null,
+        employerIn = null,
+        jobTitleIn = null,
+        page = 1,
+        limit = 25,
+      },
       { session, loaders }
     ) => {
       if (!session?.user) throw new Error("Unauthorized: Please log in");
@@ -528,6 +537,12 @@ const resolvers = {
       const cleanStatusIn = Array.isArray(statusIn)
         ? statusIn.map((value) => String(value)).filter(Boolean)
         : [];
+      const cleanEmployerIn = Array.isArray(employerIn)
+        ? employerIn.map((value) => String(value)).filter(Boolean)
+        : [];
+      const cleanJobTitleIn = Array.isArray(jobTitleIn)
+        ? jobTitleIn.map((value) => String(value)).filter(Boolean)
+        : [];
 
       const query = {
         "assignedFreelancer.freelancerId": freelancerId,
@@ -535,6 +550,23 @@ const resolvers = {
           ? { $in: cleanStatusIn }
           : { $in: ["finished", "left"] },
       };
+
+      if (cleanJobTitleIn.length) {
+        query.title = { $in: cleanJobTitleIn };
+      }
+
+      if (cleanEmployerIn.length) {
+        const employerDocs = await Employer.find({
+          companyName: { $in: cleanEmployerIn },
+        })
+          .select("employerId")
+          .lean();
+        const employerIds = employerDocs
+          .map((entry) => entry.employerId)
+          .filter(Boolean);
+        query.employerId = { $in: employerIds };
+      }
+
       if (searchRegex) {
         query.$or = [
           { title: searchRegex },
@@ -551,14 +583,22 @@ const resolvers = {
       };
       const sortSpec = sortMap[sortBy] || sortMap.newest;
 
-      const [historyJobs, total, statusOptions] = await Promise.all([
+      const [historyJobs, total, statusOptions, employerIdOptions, jobTitleOptions] = await Promise.all([
         JobListing.find(query).sort(sortSpec).skip(safeSkip).limit(safeLimit).lean(),
         JobListing.countDocuments(query),
         JobListing.distinct("assignedFreelancer.status", {
           "assignedFreelancer.freelancerId": freelancerId,
           "assignedFreelancer.status": { $in: ["finished", "left"] },
         }),
+        JobListing.distinct("employerId", query),
+        JobListing.distinct("title", query),
       ]);
+
+      const employerOptionDocs = employerIdOptions.length
+        ? await Employer.find({ employerId: { $in: employerIdOptions } })
+            .select("companyName")
+            .lean()
+        : [];
 
       // Bulk fetch feedback (already batched in the REST version)
       const jobIds = historyJobs.map((j) => j.jobId);
@@ -672,7 +712,11 @@ const resolvers = {
         };
       });
 
-      const employerNames = [...new Set(jobs.map((job) => job.company).filter(Boolean))]
+      const employerNames = [...new Set(employerOptionDocs.map((entry) => entry.companyName).filter(Boolean))]
+        .sort((a, b) => String(a).localeCompare(String(b)));
+      const jobTitles = (jobTitleOptions || [])
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
         .sort((a, b) => String(a).localeCompare(String(b)));
       const totalPages = Math.ceil(total / safeLimit) || 1;
 
@@ -682,6 +726,7 @@ const resolvers = {
         filterOptions: {
           statuses: (statusOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
           employers: employerNames,
+          jobTitles,
         },
         pagination: {
           page: safePage,
