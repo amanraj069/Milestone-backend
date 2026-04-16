@@ -1,6 +1,13 @@
-const express = require('express');
-const feedbackController = require('../controllers/feedbackController');
+const express = require("express");
+const feedbackController = require("../controllers/feedbackController");
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
 const router = express.Router();
+
+// Invalidate feedback caches when new feedback is created
+router.use(invalidateCacheMiddleware("api/feedback"));
 
 /**
  * @swagger
@@ -134,22 +141,46 @@ const router = express.Router();
  */
 
 // Create feedback
-router.post('/', feedbackController.createFeedback);
+router.post("/", feedbackController.createFeedback);
 
 // Get feedbacks for a job
-router.get('/job/:jobId', feedbackController.getFeedbacksForJob);
+router.get(
+  "/job/:jobId",
+  cacheMiddleware(120),
+  feedbackController.getFeedbacksForJob
+);
 
 // Get feedbacks received by a user
-router.get('/user/:userId', feedbackController.getFeedbacksForUser);
+router.get(
+  "/user/:userId",
+  cacheMiddleware(120),
+  feedbackController.getFeedbacksForUser
+);
 
 // Get feedback statistics for a user
-router.get('/stats/:userId', feedbackController.getFeedbackStats);
+router.get(
+  "/stats/:userId",
+  cacheMiddleware(300),
+  feedbackController.getFeedbackStats
+);
 
 // Check if user can give feedback for a job
-router.get('/can-give/:jobId', feedbackController.canGiveFeedback);
+router.get(
+  "/can-give/:jobId",
+  cacheMiddleware(300),
+  feedbackController.canGiveFeedback
+);
 
 // Public routes (no authentication required for viewing)
-router.get('/public/user/:userId', feedbackController.getPublicFeedbacksForUser);
-router.get('/public/stats/:userId', feedbackController.getPublicFeedbackStats);
+router.get(
+  "/public/user/:userId",
+  cacheMiddleware(120),
+  feedbackController.getPublicFeedbacksForUser
+);
+router.get(
+  "/public/stats/:userId",
+  cacheMiddleware(300),
+  feedbackController.getPublicFeedbackStats
+);
 
 module.exports = router;

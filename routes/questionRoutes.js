@@ -1,6 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate question caches on mutations
+router.use(invalidateCacheMiddleware("api/questions"));
+const {
   getJobQuestions,
   postQuestion,
   postAnswer,
@@ -101,10 +108,10 @@ const {
  */
 
 // Get all questions for a job
-router.get("/job/:jobId", getJobQuestions);
+router.get("/job/:jobId", cacheMiddleware(300), getJobQuestions);
 
 // Check if user can answer questions for a job
-router.get("/job/:jobId/can-answer", canAnswerQuestions);
+router.get("/job/:jobId/can-answer", cacheMiddleware(300), canAnswerQuestions);
 
 // Post a new question for a job
 router.post("/job/:jobId", postQuestion);

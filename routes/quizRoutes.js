@@ -1,6 +1,13 @@
-const express = require('express');
-const quizController = require('../controllers/quizController');
+const express = require("express");
+const quizController = require("../controllers/quizController");
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
 const router = express.Router();
+
+// Invalidate quiz caches when attempts or modifications happen
+router.use(invalidateCacheMiddleware("api/quizzes"));
 
 /**
  * @swagger
@@ -149,25 +156,37 @@ const router = express.Router();
  */
 
 // List quizzes
-router.get('/', quizController.publicListQuizzes);
+router.get("/", cacheMiddleware(300), quizController.publicListQuizzes);
 
 // Get quiz for taking (no correct answers)
-router.get('/:id', quizController.getQuizForUser);
+router.get("/:id", cacheMiddleware(300), quizController.getQuizForUser);
 
 // Check attempt eligibility
-router.get('/:id/eligibility', quizController.checkAttemptEligibility);
+router.get(
+  "/:id/eligibility",
+  cacheMiddleware(60),
+  quizController.checkAttemptEligibility
+);
 
 // Start a quiz attempt (server-side timer + violation tracking)
-router.post('/:id/start', quizController.startAttempt);
+router.post("/:id/start", quizController.startAttempt);
 
 // Report a violation during an active attempt
-router.post('/report-violation', quizController.reportViolation);
+router.post("/report-violation", quizController.reportViolation);
 
 // Submit attempt
-router.post('/:id/attempt', quizController.submitAttempt);
+router.post("/:id/attempt", quizController.submitAttempt);
 
 // User endpoints
-router.get('/users/:userId/attempts', quizController.listUserAttempts);
-router.get('/users/:userId/badges', quizController.listUserBadges);
+router.get(
+  "/users/:userId/attempts",
+  cacheMiddleware(60),
+  quizController.listUserAttempts
+);
+router.get(
+  "/users/:userId/badges",
+  cacheMiddleware(120),
+  quizController.listUserBadges
+);
 
 module.exports = router;

@@ -2,6 +2,13 @@ const express = require("express");
 const router = express.Router();
 const blogController = require("../controllers/blogController");
 const { upload } = require("../middleware/imageUpload");
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate all blog caches when mutations happen
+router.use(invalidateCacheMiddleware("api/blogs"));
 
 /**
  * @swagger
@@ -210,26 +217,44 @@ const { upload } = require("../middleware/imageUpload");
  */
 
 // Public routes
-router.get("/api/blogs", blogController.getAllBlogs);
-router.get("/api/blogs/latest", blogController.getLatestBlogs);
-router.get("/api/blogs/featured", blogController.getFeaturedBlog);
-router.get("/api/blogs/:blogId", blogController.getBlogById);
+router.get("/api/blogs", cacheMiddleware(300), blogController.getAllBlogs);
+router.get(
+  "/api/blogs/latest",
+  cacheMiddleware(300),
+  blogController.getLatestBlogs
+);
+router.get(
+  "/api/blogs/featured",
+  cacheMiddleware(300),
+  blogController.getFeaturedBlog
+);
+router.get(
+  "/api/blogs/:blogId",
+  cacheMiddleware(300),
+  blogController.getBlogById
+);
 
 // Moderator routes (auth check done in controllers)
-router.get("/api/moderator/blogs", blogController.getModeratorBlogs);
+router.get(
+  "/api/moderator/blogs",
+  cacheMiddleware(300),
+  blogController.getModeratorBlogs
+);
 router.get(
   "/api/moderator/blogs/by-id/:blogId",
-  blogController.getModeratorBlogById,
+  cacheMiddleware(300),
+  blogController.getModeratorBlogById
 );
 router.get(
   "/api/moderator/blogs/by-slug/:slug",
-  blogController.getModeratorBlogBySlug,
+  cacheMiddleware(300),
+  blogController.getModeratorBlogBySlug
 );
 router.post("/api/moderator/blogs", blogController.createBlog);
 router.post(
   "/api/moderator/blogs/upload-image",
   upload.single("image"),
-  blogController.uploadBlogImage,
+  blogController.uploadBlogImage
 );
 router.put("/api/moderator/blogs/:blogId", blogController.updateBlog);
 router.delete("/api/moderator/blogs/:blogId", blogController.deleteBlog);
