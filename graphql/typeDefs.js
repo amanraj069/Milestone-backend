@@ -209,6 +209,9 @@ const typeDefs = `#graphql
   type ApplicationsResult {
     applications: [Application]
     stats: ApplicationStats
+    total: Int
+    filterOptions: ApplicationsFilterOptions
+    pagination: OffsetPagination
   }
 
   type EmployerApplication {
@@ -234,6 +237,27 @@ const typeDefs = `#graphql
     stats: ApplicationStats
     total: Int
     hasMore: Boolean
+    filterOptions: EmployerApplicationsFilterOptions
+    pagination: OffsetPagination
+  }
+
+  type ActiveJobsResult {
+    jobs: [ActiveJob]
+    total: Int
+    pagination: OffsetPagination
+  }
+
+  type HistoryJobsFilterOptions {
+    statuses: [String]
+    employers: [String]
+    jobTitles: [String]
+  }
+
+  type HistoryJobsResult {
+    jobs: [HistoryJob]
+    total: Int
+    filterOptions: HistoryJobsFilterOptions
+    pagination: OffsetPagination
   }
 
   type ChatConversation {
@@ -281,6 +305,27 @@ const typeDefs = `#graphql
     pending: Int
     accepted: Int
     rejected: Int
+  }
+
+  type OffsetPagination {
+    page: Int
+    limit: Int
+    total: Int
+    totalPages: Int
+    hasNextPage: Boolean
+    hasPrevPage: Boolean
+  }
+
+  type ApplicationsFilterOptions {
+    statuses: [String]
+    jobTypes: [String]
+  }
+
+  type EmployerApplicationsFilterOptions {
+    freelancers: [String]
+    jobs: [String]
+    statuses: [String]
+    ratings: [Float]
   }
 
   # ── Admin Dashboard Types ────────────────────────
@@ -866,6 +911,107 @@ const typeDefs = `#graphql
     description: String
   }
 
+  # --- EMPLOYER JOB LISTINGS ---
+
+  type EmployerJobListing {
+    jobId: String
+    title: String
+    budget: Float
+    location: String
+    jobType: String
+    experienceLevel: String
+    imageUrl: String
+    applicationDeadline: String
+    postedDate: String
+    remote: Boolean
+    isBoosted: Boolean
+    applicationCount: Int
+    applicationCap: Int
+    status: String
+    description: JobDescription
+  }
+
+  type EmployerJobListingsResult {
+    listings: [EmployerJobListing]
+    pagination: OffsetPagination
+  }
+
+  # --- EMPLOYER CURRENT FREELANCERS ---
+
+  type EmployerCurrentFreelancer {
+    freelancerId: String
+    userId: String
+    name: String
+    email: String
+    phone: String
+    picture: String
+    rating: Float
+    jobId: String
+    jobTitle: String
+    jobDescription: String
+    startDate: String
+    daysSinceStart: Int
+    hasRated: Boolean
+    employerRating: Float
+  }
+
+  type EmployerCurrentFreelancersStats {
+    total: Int
+    avgRating: Float
+    avgDays: Int
+    successRate: Int
+  }
+
+  type EmployerCurrentFreelancersFilterOptions {
+    names: [String]
+    jobRoles: [String]
+  }
+
+  type EmployerCurrentFreelancersResult {
+    freelancers: [EmployerCurrentFreelancer]
+    stats: EmployerCurrentFreelancersStats
+    pagination: OffsetPagination
+    filterOptions: EmployerCurrentFreelancersFilterOptions
+  }
+
+  # --- EMPLOYER WORK HISTORY ---
+
+  type EmployerWorkHistoryFreelancer {
+    userId: String
+    freelancerId: String
+    name: String
+    email: String
+    phone: String
+    location: String
+    picture: String
+    rating: Float
+    jobId: String
+    jobTitle: String
+    jobDescription: String
+    startDate: String
+    endDate: String
+    completedDate: String
+    status: String
+  }
+
+  type EmployerWorkHistoryStats {
+    total: Int
+    avgRating: Float
+    avgDays: Int
+    successRate: Int
+  }
+
+  type EmployerWorkHistoryFilterOptions {
+    statuses: [String]
+  }
+
+  type EmployerWorkHistoryResult {
+    freelancers: [EmployerWorkHistoryFreelancer]
+    stats: EmployerWorkHistoryStats
+    pagination: OffsetPagination
+    filterOptions: EmployerWorkHistoryFilterOptions
+  }
+
   # --- EMPLOYER DOMAIN TYPES ---
 
   type EmployerDashboardStats {
@@ -902,8 +1048,28 @@ const typeDefs = `#graphql
     pendingRequests: Int
   }
 
+  type EmployerTransactionsFilterOptions {
+    freelancers: [String]
+    jobs: [String]
+    statuses: [String]
+    milestones: [String]
+    paymentBuckets: [String]
+  }
+
+  type EmployerTransactionsSummary {
+    totalProjects: Int
+    totalBudget: Float
+    totalPaid: Float
+    activeProjects: Int
+    completedProjects: Int
+  }
+
   type EmployerTransactionsResult {
     data: [EmployerTransactionRecord]
+    total: Int
+    pagination: OffsetPagination
+    filterOptions: EmployerTransactionsFilterOptions
+    summary: EmployerTransactionsSummary
   }
 
   type EmployerTransactionDetail {
@@ -1430,13 +1596,84 @@ const typeDefs = `#graphql
     messagesWithUser(userId: String!, limit: Int = 50, offset: Int = 0): MessageResult!
 
     # Freelancer queries (replaces per-job Employer lookups)
-    freelancerActiveJobs: [ActiveJob]
-    freelancerJobHistory: [HistoryJob]
-    freelancerApplications: ApplicationsResult
-    employerApplications(status: String, sort: String, limit: Int, offset: Int): EmployerApplicationsResult
+    freelancerActiveJobs(
+      search: String
+      sortBy: String
+      page: Int = 1
+      limit: Int = 25
+    ): ActiveJobsResult
+    freelancerJobHistory(
+      search: String
+      sortBy: String
+      statusIn: [String]
+      employerIn: [String]
+      jobTitleIn: [String]
+      page: Int = 1
+      limit: Int = 25
+    ): HistoryJobsResult
+    freelancerApplications(
+      search: String
+      sortBy: String
+      statusIn: [String]
+      jobTypeIn: [String]
+      page: Int = 1
+      limit: Int = 25
+    ): ApplicationsResult
+    employerApplications(
+      status: String
+      sort: String
+      limit: Int
+      offset: Int
+      page: Int
+      search: String
+      freelancerIn: [String]
+      jobIn: [String]
+      statusIn: [String]
+      ratingIn: [Float]
+    ): EmployerApplicationsResult
+
+    # Employer job listings (replaces REST /api/employer/job-listings)
+    employerJobListings(
+      search: String
+      searchFeature: String
+      jobType: String
+      sortBy: String
+      page: Int = 1
+      limit: Int = 25
+    ): EmployerJobListingsResult
+
+    # Employer current freelancers (replaces REST /api/employer/current-freelancers)
+    employerCurrentFreelancers(
+      search: String
+      sortBy: String
+      page: Int = 1
+      limit: Int = 25
+      nameIn: [String]
+      jobRoleIn: [String]
+    ): EmployerCurrentFreelancersResult
+
+    # Employer work history (replaces REST /api/employer/work-history)
+    employerWorkHistory(
+      search: String
+      searchFeature: String
+      sortBy: String
+      page: Int = 1
+      limit: Int = 25
+      statusIn: [String]
+    ): EmployerWorkHistoryResult
 
     # Employer dashboard queries
-    employerTransactions: EmployerTransactionsResult
+    employerTransactions(
+      search: String
+      sortBy: String
+      statusIn: [String]
+      freelancerIn: [String]
+      jobIn: [String]
+      milestoneIn: [String]
+      paymentBucketIn: [String]
+      page: Int = 1
+      limit: Int = 25
+    ): EmployerTransactionsResult
     employerTransactionDetail(jobId: String!): EmployerTransactionDetail
     employerDashboardStats: EmployerDashboardStats
     employerApplicationDetail(applicationId: String!): EmployerApplicationDetail
