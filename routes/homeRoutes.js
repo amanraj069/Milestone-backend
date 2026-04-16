@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const home = require("../controllers/homeController");
+const { cacheMiddleware } = require("../middleware/cacheMiddleware");
 
 /**
  * @swagger
@@ -77,12 +78,20 @@ const home = require("../controllers/homeController");
  *         description: Freelancer not found
  */
 
-router.get("/home", home.getHome);
-router.get("/geocode", home.geocode);
-router.get("/geocode/reverse", home.reverseGeocode);
-router.get("/jobs/api", home.getPublicJobs);
-router.get("/jobs/api/:jobId", home.getJobDetail);
-router.get("/jobs/:jobId/applicants", home.getJobApplicants);
-router.get("/freelancer/:freelancerId", home.getFreelancerPublicProfile);
+router.get("/home", cacheMiddleware(120), home.getHome);
+router.get("/geocode", cacheMiddleware(3600), home.geocode); // Geocode results rarely change
+router.get("/geocode/reverse", cacheMiddleware(3600), home.reverseGeocode);
+router.get("/jobs/api", cacheMiddleware(120), home.getPublicJobs);
+router.get("/jobs/api/:jobId", cacheMiddleware(120), home.getJobDetail);
+router.get(
+  "/jobs/:jobId/applicants",
+  cacheMiddleware(60),
+  home.getJobApplicants
+); // Applicants change frequently
+router.get(
+  "/freelancer/:freelancerId",
+  cacheMiddleware(300),
+  home.getFreelancerPublicProfile
+);
 
 module.exports = router;

@@ -1,6 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate payment caches on mutations
+router.use(invalidateCacheMiddleware("api/payment"));
+const {
   createOrder,
   verifyPayment,
   getMyPayments,
@@ -17,6 +24,6 @@ router.post("/verify", verifyPayment);
 router.post("/fail", markPaymentFailed);
 
 // GET /api/payment/my-payments — Get logged-in user's payments
-router.get("/my-payments", getMyPayments);
+router.get("/my-payments", cacheMiddleware(300), getMyPayments);
 
 module.exports = router;

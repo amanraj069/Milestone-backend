@@ -3,6 +3,13 @@ const moderatorController = require("../controllers/moderatorController");
 const { upload } = require("../middleware/imageUpload");
 const { uploadRateLimiter } = require("../middleware/rateLimiter");
 const router = express.Router();
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate moderator caches on mutations
+router.use(invalidateCacheMiddleware("api/moderator"));
 
 // Inline moderator authentication check (consistent with auth pattern in controllers)
 // This is kept as inline middleware here for DRY principle since all moderator routes require it
@@ -401,13 +408,15 @@ const requireModerator = (req, res, next) => {
 router.get(
   "/complaints",
   requireModerator,
-  moderatorController.getAllComplaints,
+  cacheMiddleware(300),
+  moderatorController.getAllComplaints
 );
 
 router.get(
   "/complaints/:complaintId",
   requireModerator,
-  moderatorController.getComplaintById,
+  cacheMiddleware(300),
+  moderatorController.getComplaintById
 );
 
 router.put(
@@ -420,7 +429,8 @@ router.put(
 router.get(
   "/profile",
   requireModerator,
-  moderatorController.getModeratorProfile,
+  cacheMiddleware(300),
+  moderatorController.getModeratorProfile
 );
 
 router.post(
@@ -441,13 +451,15 @@ router.post(
 router.get(
   "/dashboard/stats",
   requireModerator,
-  moderatorController.getDashboardStats,
+  cacheMiddleware(300),
+  moderatorController.getDashboardStats
 );
 
 router.get(
   "/dashboard/activities",
   requireModerator,
-  moderatorController.getRecentActivities,
+  cacheMiddleware(300),
+  moderatorController.getRecentActivities
 );
 
 // Moderator quiz management (mounted at /api/moderator/quizzes)
@@ -458,13 +470,15 @@ router.use("/quizzes", requireModerator, moderatorQuizRoutes);
 router.get(
   "/freelancers",
   requireModerator,
-  moderatorController.getAllFreelancers,
+  cacheMiddleware(300),
+  moderatorController.getAllFreelancers
 );
 
 router.get(
   "/freelancers/:freelancerId/applications",
   requireModerator,
-  moderatorController.getFreelancerApplications,
+  cacheMiddleware(300),
+  moderatorController.getFreelancerApplications
 );
 
 router.delete(
@@ -474,12 +488,18 @@ router.delete(
 );
 
 // Employer routes
-router.get("/employers", requireModerator, moderatorController.getAllEmployers);
+router.get(
+  "/employers",
+  requireModerator,
+  cacheMiddleware(300),
+  moderatorController.getAllEmployers
+);
 
 router.get(
   "/employers/:employerId/job-listings",
   requireModerator,
-  moderatorController.getEmployerJobListings,
+  cacheMiddleware(300),
+  moderatorController.getEmployerJobListings
 );
 
 router.delete(
@@ -489,12 +509,18 @@ router.delete(
 );
 
 // Job Listing routes
-router.get("/jobs", requireModerator, moderatorController.getAllJobListings);
+router.get(
+  "/jobs",
+  requireModerator,
+  cacheMiddleware(300),
+  moderatorController.getAllJobListings
+);
 
 router.get(
   "/jobs/:jobId/applicants",
   requireModerator,
-  moderatorController.getJobApplicants,
+  cacheMiddleware(300),
+  moderatorController.getJobApplicants
 );
 
 router.delete(
@@ -507,7 +533,8 @@ router.delete(
 router.get(
   "/approvals/pending",
   requireModerator,
-  moderatorController.getPendingApprovals,
+  cacheMiddleware(300),
+  moderatorController.getPendingApprovals
 );
 
 router.post(
@@ -531,7 +558,8 @@ router.put(
 router.get(
   "/users/:userId/rating-history",
   requireModerator,
-  moderatorController.getRatingAuditHistory,
+  cacheMiddleware(300),
+  moderatorController.getRatingAuditHistory
 );
 
 router.post(

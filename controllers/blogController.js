@@ -7,8 +7,8 @@ const generateSlug = (title) => {
   return title
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '');
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "");
 };
 
 // Helper function to upload buffer to Cloudinary for blog images
@@ -369,7 +369,8 @@ exports.getModeratorBlogs = async (req, res) => {
     const rawPage = Number.parseInt(req.query.page, 10);
     const rawLimit = Number.parseInt(req.query.limit, 10);
     const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
-    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
+    const limit =
+      Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 100) : 25;
     const skip = (page - 1) * limit;
 
     const query = {};
@@ -386,7 +387,10 @@ exports.getModeratorBlogs = async (req, res) => {
 
     const searchText = String(search || "").trim();
     if (searchText) {
-      const regex = new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const regex = new RegExp(
+        searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "i"
+      );
       if (searchBy === "category") {
         query.category = regex;
       } else if (searchBy === "content") {

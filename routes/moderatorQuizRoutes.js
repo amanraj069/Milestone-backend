@@ -2,6 +2,13 @@ const express = require("express");
 const quizController = require("../controllers/quizController");
 const badgeController = require("../controllers/badgeController");
 const router = express.Router();
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate quiz caches on mutations
+router.use(invalidateCacheMiddleware("api/quizzes"));
 
 /**
  * @swagger
@@ -189,10 +196,10 @@ const router = express.Router();
 router.post("/", quizController.createQuiz);
 
 // List quizzes
-router.get("/", quizController.listQuizzes);
+router.get("/", cacheMiddleware(300), quizController.listQuizzes);
 
 // Get quiz
-router.get("/:id", quizController.getQuiz);
+router.get("/:id", cacheMiddleware(300), quizController.getQuiz);
 
 // Update quiz
 router.put("/:id", quizController.updateQuiz);
@@ -201,13 +208,13 @@ router.put("/:id", quizController.updateQuiz);
 router.delete("/:id", quizController.deleteQuiz);
 
 // Stats
-router.get("/:id/stats", quizController.getQuizStats);
+router.get("/:id/stats", cacheMiddleware(300), quizController.getQuizStats);
 
 // Detailed attempts
-router.get("/:id/attempts", quizController.getQuizAttempts);
+router.get("/:id/attempts", cacheMiddleware(300), quizController.getQuizAttempts);
 
 // Badge endpoints for moderator
 router.post("/badges", badgeController.createBadge);
-router.get("/badges/list", badgeController.listBadges);
+router.get("/badges/list", cacheMiddleware(300), badgeController.listBadges);
 
 module.exports = router;

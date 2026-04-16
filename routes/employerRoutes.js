@@ -1,5 +1,12 @@
 const express = require("express");
 const router = express.Router();
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate employer caches on mutations
+router.use(invalidateCacheMiddleware("api/employer"));
 const employerController = require("../controllers/employerController");
 const { upload, uploadLocalImage } = require("../middleware/imageUpload");
 const { upload: uploadPdf, uploadCloud: uploadPdfCloud, uploadVerification } = require("../middleware/pdfUpload");
@@ -549,11 +556,17 @@ const requireEmployer = (req, res, next) => {
  */
 
 // Job listing routes
-router.get("/job-listings", requireEmployer, employerController.getJobListings);
+router.get(
+  "/job-listings",
+  requireEmployer,
+  cacheMiddleware(300),
+  employerController.getJobListings
+);
 router.get(
   "/job-listings/fee-preview",
   requireEmployer,
-  employerController.getFeePreview,
+  cacheMiddleware(300),
+  employerController.getFeePreview
 );
 router.post(
   "/job-listings",
@@ -574,7 +587,8 @@ router.delete(
 router.get(
   "/job-listings/:jobId",
   requireEmployer,
-  employerController.getJobById,
+  cacheMiddleware(300),
+  employerController.getJobById
 );
 router.post(
   "/job-listings/:jobId/boost",
@@ -586,12 +600,14 @@ router.post(
 router.get(
   "/job_applications",
   requireEmployer,
-  asyncHandler(employerController.getJobApplications),
+  cacheMiddleware(300),
+  asyncHandler(employerController.getJobApplications)
 );
 router.get(
   "/job_applications/pending-count",
   requireEmployer,
-  asyncHandler(employerController.getPendingApplicationsCount),
+  cacheMiddleware(300),
+  asyncHandler(employerController.getPendingApplicationsCount)
 );
 router.post(
   "/job_applications/:applicationId/accept",
@@ -610,7 +626,8 @@ router.post(
 router.get(
   "/subscription",
   requireEmployer,
-  asyncHandler(employerController.getSubscription),
+  cacheMiddleware(300),
+  asyncHandler(employerController.getSubscription)
 );
 router.post(
   "/subscription/purchase",
@@ -635,20 +652,32 @@ router.post(
 router.get(
   "/current-freelancers",
   requireEmployer,
-  employerController.getCurrentFreelancers,
+  cacheMiddleware(300),
+  employerController.getCurrentFreelancers
 );
-router.get("/work-history", requireEmployer, employerController.getWorkHistory);
+router.get(
+  "/work-history",
+  requireEmployer,
+  cacheMiddleware(300),
+  employerController.getWorkHistory
+);
 
 // Complaint routes
 router.post("/complaints", requireEmployer, employerController.createComplaint);
 router.get(
   "/complaints",
   requireEmployer,
-  employerController.getEmployerComplaints,
+  cacheMiddleware(300),
+  employerController.getEmployerComplaints
 );
 
 // Profile routes
-router.get("/profile", requireEmployer, employerController.getEmployerProfile);
+router.get(
+  "/profile",
+  requireEmployer,
+  cacheMiddleware(300),
+  employerController.getEmployerProfile
+);
 router.put(
   "/profile",
   requireEmployer,
@@ -664,6 +693,7 @@ router.post(
 router.get(
   "/company-details",
   requireEmployer,
+  cacheMiddleware(300),
   employerController.getEmployerCompanyDetails
 );
 router.put(
@@ -690,14 +720,16 @@ router.post(
 router.get(
   "/dashboard/stats",
   requireEmployer,
-  employerController.getEmployerDashboardStats,
+  cacheMiddleware(300),
+  employerController.getEmployerDashboardStats
 );
 
 // Transactions routes
 router.get(
   "/transactions",
   requireEmployer,
-  employerController.getTransactions,
+  cacheMiddleware(300),
+  employerController.getTransactions
 );
 router.post(
   "/transactions/:jobId/milestones/:milestoneId/pay",
