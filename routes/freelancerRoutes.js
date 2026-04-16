@@ -6,6 +6,13 @@ const { upload: pdfUpload } = require("../middleware/pdfUpload");
 const { subscriptionRateLimiter, jobApplicationRateLimiter, uploadRateLimiter } = require("../middleware/rateLimiter");
 const asyncHandler = require("../middleware/asyncHandler");
 const router = express.Router();
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate freelancer caches on mutations
+router.use(invalidateCacheMiddleware("api/freelancer"));
 
 /**
  * @swagger
@@ -447,11 +454,13 @@ const requireFreelancer = (req, res, next) => {
 router.get(
   "/active_job",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerActiveJobs
 );
 router.get(
   "/active_job/api",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerActiveJobsAPI
 );
 router.delete(
@@ -462,17 +471,20 @@ router.delete(
 router.get(
   "/job_history",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerJobHistory
 );
 router.get(
   "/job_history/api",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerJobHistoryAPI
 );
 // Subscription - with rate limiter
 router.get(
   "/subscription",
   requireFreelancer,
+  cacheMiddleware(300),
   asyncHandler(freelancerController.getSubscription)
 );
 router.post(
@@ -492,6 +504,7 @@ router.post(
 router.get(
   "/profile",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerProfile
 );
 router.post(
@@ -529,11 +542,13 @@ router.post(
 router.get(
   "/applications",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerApplications
 );
 router.get(
   "/cover-message/last",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getLastCoverMessage
 );
 
@@ -546,6 +561,7 @@ router.post(
 router.get(
   "/complaints",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerComplaints
 );
 
@@ -553,11 +569,13 @@ router.get(
 router.get(
   "/payments",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerPayments
 );
 router.get(
   "/payments/:jobId",
   requireFreelancer,
+  cacheMiddleware(300),
   freelancerController.getFreelancerPaymentDetails
 );
 router.post(

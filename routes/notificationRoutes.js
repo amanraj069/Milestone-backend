@@ -1,6 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate notification caches on mutations
+router.use(invalidateCacheMiddleware("api/notifications"));
+const {
   getNotifications,
   getUnreadCount,
   markAsRead,
@@ -84,10 +91,10 @@ const {
  */
 
 // Get all notifications for current user
-router.get("/", getNotifications);
+router.get("/", cacheMiddleware(30), getNotifications);
 
 // Get unread notification count
-router.get("/unread-count", getUnreadCount);
+router.get("/unread-count", cacheMiddleware(30), getUnreadCount);
 
 // Mark all notifications as read
 router.put("/mark-all-read", markAllAsRead);

@@ -3,6 +3,13 @@ const adminController = require("../controllers/adminController");
 const { upload } = require("../middleware/imageUpload");
 const { uploadRateLimiter } = require("../middleware/rateLimiter");
 const router = express.Router();
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate admin caches on mutations
+router.use(invalidateCacheMiddleware("api/admin"));
 
 /**
  * @swagger
@@ -736,7 +743,12 @@ const requireAdmin = (req, res, next) => {
  */
 
 // Profile routes
-router.get("/profile", requireAdmin, adminController.getAdminProfile);
+router.get(
+  "/profile",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAdminProfile,
+);
 router.post(
   "/profile/update",
   requireAdmin,
@@ -754,28 +766,47 @@ router.post(
 router.get(
   "/dashboard/overview",
   requireAdmin,
+  cacheMiddleware(300),
   adminController.getDashboardOverview,
 );
 router.get(
   "/dashboard/activities",
   requireAdmin,
+  cacheMiddleware(300),
   adminController.getRecentActivities,
 );
 router.get(
   "/dashboard/revenue",
   requireAdmin,
+  cacheMiddleware(300),
   adminController.getDashboardRevenue,
 );
 
 // Revenue & Payments
-router.get("/revenue", requireAdmin, adminController.getRevenueStats);
-router.get("/payments", requireAdmin, adminController.getAllPayments);
+router.get(
+  "/revenue",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getRevenueStats,
+);
+router.get(
+  "/payments",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllPayments,
+);
 
 // Moderator management
-router.get("/moderators", requireAdmin, adminController.getAllModerators);
+router.get(
+  "/moderators",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllModerators,
+);
 router.get(
   "/moderators/:moderatorId/activity",
   requireAdmin,
+  cacheMiddleware(300),
   adminController.getModeratorActivity,
 );
 router.delete(
@@ -785,14 +816,29 @@ router.delete(
 );
 
 // All users management
-router.get("/users", requireAdmin, adminController.getAllUsers);
+router.get(
+  "/users",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllUsers,
+);
 router.delete("/users/:userId", requireAdmin, adminController.deleteUser);
 
 // Platform statistics
-router.get("/statistics", requireAdmin, adminController.getPlatformStats);
+router.get(
+  "/statistics",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getPlatformStats,
+);
 
 // Complaints
-router.get("/complaints", requireAdmin, adminController.getAllComplaints);
+router.get(
+  "/complaints",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllComplaints,
+);
 
 // Rating Adjustments
 router.put(
@@ -803,6 +849,7 @@ router.put(
 router.get(
   "/users/:userId/rating-history",
   requireAdmin,
+  cacheMiddleware(60),
   adminController.getRatingAuditHistory,
 );
 router.post(
@@ -812,23 +859,45 @@ router.post(
 );
 
 // Freelancers & Employers
-router.get("/freelancers", requireAdmin, adminController.getAllFreelancers);
+router.get(
+  "/freelancers",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllFreelancers,
+);
 router.get(
   "/freelancers/:freelancerId",
   requireAdmin,
+  cacheMiddleware(300),
   adminController.getFreelancerDetail,
 );
-router.get("/employers", requireAdmin, adminController.getAllEmployers);
+router.get(
+  "/employers",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllEmployers,
+);
 router.get(
   "/employers/:employerId",
   requireAdmin,
+  cacheMiddleware(300),
   adminController.getEmployerDetail,
 );
 
 // Job Listings
-router.get("/jobs", requireAdmin, adminController.getAllJobListings);
+router.get(
+  "/jobs",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllJobListings,
+);
 
 // Feedback
-router.get("/feedbacks", requireAdmin, adminController.getAllFeedbacks);
+router.get(
+  "/feedbacks",
+  requireAdmin,
+  cacheMiddleware(300),
+  adminController.getAllFeedbacks,
+);
 
 module.exports = router;

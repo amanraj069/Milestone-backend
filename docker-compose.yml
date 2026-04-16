@@ -21,6 +21,16 @@ services:
       retries: 5
       start_period: 20s
 
+  redis:
+    image: redis:7-alpine
+    container_name: milestone-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 60 1 --loglevel warning
+
   backend:
     build:
       context: .
@@ -40,6 +50,9 @@ services:
 
       # Backend app connection string used in database.js.
       MONGO_URL: ${MONGO_URL:-mongodb://root:rootpass@mongo:27017/milestone?authSource=admin}
+      
+      # Redis connection URL (Hardcoded for docker network)
+      REDIS_URL: redis://redis:6379
 
       # External service credentials (optional in local setup).
       EMAIL_SERVICE: ${EMAIL_SERVICE:-gmail}
@@ -72,3 +85,4 @@ services:
 
 volumes:
   mongo_data:
+  redis_data:

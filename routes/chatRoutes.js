@@ -3,6 +3,13 @@ const chatController = require("../controllers/chatController");
 const asyncHandler = require("../middleware/asyncHandler");
 
 const router = express.Router();
+const {
+  cacheMiddleware,
+  invalidateCacheMiddleware,
+} = require("../middleware/cacheMiddleware");
+
+// Invalidate chat caches on mutations
+router.use(invalidateCacheMiddleware("api/chat"));
 
 // Middleware to check authentication
 const requireAuth = (req, res, next) => {
@@ -119,6 +126,11 @@ router.put(
 );
 
 // Search users
-router.get("/search-users", requireAuth, asyncHandler(chatController.searchUsers));
+router.get(
+  "/search-users",
+  requireAuth,
+  cacheMiddleware(60),
+  asyncHandler(chatController.searchUsers)
+);
 
 module.exports = router;
