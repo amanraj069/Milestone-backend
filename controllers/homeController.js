@@ -81,80 +81,148 @@ exports.reverseGeocode = async (req, res) => {
 
 exports.getPublicJobs = async (req, res) => {
   try {
-    const now = new Date();
-    const jobs = await JobListing.find({
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, Number.parseInt(req.query.limit, 10) || 20),
+    );
+    const skip = (page - 1) * limit;
+
+    const publicJobsMatch = {
       status: "open",
       $or: [
         { applicationCap: null },
         { applicationCap: { $exists: false } },
         { $expr: { $lt: ["$applicants", "$applicationCap"] } },
       ],
-    })
-      .sort({ postedDate: -1 })
-      .lean();
+    };
 
-    // Get all employer IDs
-    const employerIds = [...new Set(jobs.map((job) => job.employerId))];
-
-    // Get employers with their user data to check subscription
-    const employers = await Employer.find({
-      employerId: { $in: employerIds },
-    }).lean();
-    const User = require("../models/user");
-    const employerUserIds = employers.map((emp) => emp.userId);
-    const users = await User.find({ userId: { $in: employerUserIds } }).lean();
-
-    // Create a map of employerId to subscription status
-    const subscriptionMap = {};
-    employers.forEach((emp) => {
-      const user = users.find((u) => u.userId === emp.userId);
-      subscriptionMap[emp.employerId] = user?.subscription === "Premium";
-    });
-
-    const formattedJobs = jobs.map((job) => {
-      const isPremium = subscriptionMap[job.employerId] || false;
-      // Boost is permanent for the job's lifetime (no expiry)
-      const isBoostedActive = job.isBoosted === true;
-
-      // Tier: 4 = prem+boosted, 3 = boosted, 2 = prem, 1 = normal
-      let tier = 1;
-      if (isPremium && isBoostedActive) tier = 4;
-      else if (isBoostedActive) tier = 3;
-      else if (isPremium) tier = 2;
-
-      return {
-        jobId: job.jobId,
-        employerId: job.employerId,
-        title: job.title,
-        imageUrl: job.imageUrl || "/assets/company_logo.jpg",
-        budget: {
-          amount: job.budget,
-          period: job.jobType === "contract" ? "fixed" : "monthly",
+    const [total, rawJobs] = await Promise.all([
+      JobListing.countDocuments(publicJobsMatch),
+      JobListing.aggregate([
+        { $match: publicJobsMatch },
+        {
+          $lookup: {
+            from: "employers",
+            localField: "employerId",
+            foreignField: "employerId",
+            as: "employer",
+          },
         },
-        location: job.location || "Remote",
-        locationCoordinates: job.locationCoordinates || null,
-        jobType: job.jobType,
-        experienceLevel: job.experienceLevel,
-        remote: job.remote,
-        postedDate: job.postedDate,
-        description: {
-          skills: job.description?.skills || [],
+        {
+          $unwind: {
+            path: "$employer",
+            preserveNullAndEmptyArrays: true,
+          },
         },
-        applicationCount: job.applicants || 0,
-        applicationCap: job.applicationCap || null,
-        isSponsored: isPremium, // has premium subscription
-        isBoosted: isBoostedActive, // has active boost (permanent for job lifetime)
-        tier, // for client-side sorting if needed
-      };
-    });
+        {
+          $lookup: {
+            from: "users",
+            localField: "employer.userId",
+            foreignField: "userId",
+            as: "employerUser",
+          },
+        },
+        {
+          $unwind: {
+            path: "$employerUser",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            isSponsored: { $eq: ["$employerUser.subscription", "Premium"] },
+            isBoosted: { $eq: ["$isBoosted", true] },
+          },
+        },
+        {
+          $addFields: {
+            tier: {
+              $switch: {
+                branches: [
+                  {
+                    case: {
+                      $and: [
+                        { $eq: ["$isSponsored", true] },
+                        { $eq: ["$isBoosted", true] },
+                      ],
+                    },
+                    then: 4,
+                  },
+                  { case: { $eq: ["$isBoosted", true] }, then: 3 },
+                  { case: { $eq: ["$isSponsored", true] }, then: 2 },
+                ],
+                default: 1,
+              },
+            },
+          },
+        },
+        { $sort: { tier: -1, postedDate: -1, _id: -1 } },
+        {
+          $project: {
+            _id: 0,
+            jobId: 1,
+            employerId: 1,
+            title: 1,
+            imageUrl: 1,
+            budget: 1,
+            jobType: 1,
+            location: 1,
+            locationCoordinates: 1,
+            experienceLevel: 1,
+            remote: 1,
+            postedDate: 1,
+            applicants: 1,
+            applicationCap: 1,
+            isSponsored: 1,
+            isBoosted: 1,
+            tier: 1,
+            descriptionSkills: "$description.skills",
+          },
+        },
+        { $skip: skip },
+        { $limit: limit },
+      ]),
+    ]);
 
-    // Sort by tier DESC (4→1), then newest first within same tier
-    formattedJobs.sort((a, b) => {
-      if (b.tier !== a.tier) return b.tier - a.tier;
-      return new Date(b.postedDate) - new Date(a.postedDate);
-    });
+    const jobs = rawJobs.map((job) => ({
+      jobId: job.jobId,
+      employerId: job.employerId,
+      title: job.title,
+      imageUrl: job.imageUrl || "/assets/company_logo.jpg",
+      budget: {
+        amount: job.budget,
+        period: job.jobType === "contract" ? "fixed" : "monthly",
+      },
+      location: job.location || "Remote",
+      locationCoordinates: job.locationCoordinates || null,
+      jobType: job.jobType,
+      experienceLevel: job.experienceLevel,
+      remote: job.remote,
+      postedDate: job.postedDate,
+      description: {
+        skills: Array.isArray(job.descriptionSkills) ? job.descriptionSkills : [],
+      },
+      applicationCount: job.applicants || 0,
+      applicationCap: job.applicationCap || null,
+      isSponsored: !!job.isSponsored,
+      isBoosted: !!job.isBoosted,
+      tier: job.tier || 1,
+    }));
 
-    return res.json({ success: true, jobs: formattedJobs });
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    return res.json({
+      success: true,
+      jobs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    });
   } catch (error) {
     console.error("Error fetching public jobs:", error);
     return res.status(500).json({

@@ -6,44 +6,61 @@ const User = require("../models/user");
 const Freelancer = require("../models/freelancer");
 const { v4: uuidv4 } = require("uuid");
 
+function mapBy(items, key) {
+  return new Map((items || []).map((item) => [item[key], item]));
+}
+
 // Get all questions for a job
 const getJobQuestions = async (req, res) => {
   try {
     const { jobId } = req.params;
 
-    const questions = await Question.find({ jobId }).sort({ createdAt: -1 });
+    const questions = await Question.find({ jobId }).sort({ createdAt: -1 }).lean();
 
-    // Populate askerPicture and answererPicture from User model if missing
-    const enrichedQuestions = await Promise.all(
-      questions.map(async (question) => {
-        const questionObj = question.toObject();
-        
-        // If askerPicture is missing or empty, fetch from User model
-        if (!questionObj.askerPicture || questionObj.askerPicture === "") {
-          const user = await User.findOne({ roleId: questionObj.askerId });
-          if (user && user.picture) {
-            questionObj.askerPicture = user.picture;
+    // Batch resolve missing pictures by roleId.
+    const missingRoleIds = new Set();
+    questions.forEach((question) => {
+      if (!question.askerPicture) {
+        missingRoleIds.add(question.askerId);
+      }
+      (question.answers || []).forEach((answer) => {
+        if (!answer.answererPicture) {
+          missingRoleIds.add(answer.answererId);
+        }
+      });
+    });
+
+    const roleIds = [...missingRoleIds].filter(Boolean);
+    const users = roleIds.length
+      ? await User.find({ roleId: { $in: roleIds } }).select("roleId picture").lean()
+      : [];
+    const userByRoleId = mapBy(users, "roleId");
+
+    const enrichedQuestions = questions.map((question) => {
+      const questionObj = {
+        ...question,
+        answers: [...(question.answers || [])],
+      };
+
+      if (!questionObj.askerPicture) {
+        const askerUser = userByRoleId.get(questionObj.askerId);
+        if (askerUser?.picture) {
+          questionObj.askerPicture = askerUser.picture;
+        }
+      }
+
+      questionObj.answers = questionObj.answers.map((answer) => {
+        if (!answer.answererPicture) {
+          const answererUser = userByRoleId.get(answer.answererId);
+          if (answererUser?.picture) {
+            return { ...answer, answererPicture: answererUser.picture };
           }
         }
+        return answer;
+      });
 
-        // Populate answerer pictures if missing
-        if (questionObj.answers && questionObj.answers.length > 0) {
-          questionObj.answers = await Promise.all(
-            questionObj.answers.map(async (answer) => {
-              if (!answer.answererPicture || answer.answererPicture === "") {
-                const user = await User.findOne({ roleId: answer.answererId });
-                if (user && user.picture) {
-                  answer.answererPicture = user.picture;
-                }
-              }
-              return answer;
-            })
-          );
-        }
-
-        return questionObj;
-      })
-    );
+      return questionObj;
+    });
 
     res.json({
       success: true,
@@ -138,56 +155,6 @@ const postQuestion = async (req, res) => {
       }
     }
 
-    // Also notify freelancers who are working/have worked on this specific job (so they can answer)
-    if (
-      job.assignedFreelancer &&
-      job.assignedFreelancer.freelancerId &&
-      job.assignedFreelancer.freelancerId !== user.roleId && // Don't notify the person asking
-      (job.assignedFreelancer.status === "working" ||
-        job.assignedFreelancer.status === "finished")
-    ) {
-      // Find the Freelancer document to get the userId
-      const freelancerDoc = await Freelancer.findOne({
-        freelancerId: job.assignedFreelancer.freelancerId,
-      });
-
-      if (freelancerDoc) {
-        // Now find the User using the userId from Freelancer document
-        const assignedFreelancerUser = await User.findOne({
-          userId: freelancerDoc.userId,
-        });
-
-        if (
-          assignedFreelancerUser &&
-          !notifiedUserIds.has(assignedFreelancerUser.userId)
-        ) {
-          const freelancerNotification = new Notification({
-            notificationId: uuidv4(),
-            userId: assignedFreelancerUser.userId,
-            type: "question_posted",
-            title: "New Question on a Job You Worked",
-            message: `Someone asked a question about "${job.title}" - you can help answer it!`,
-            jobId,
-            questionId: question.questionId,
-            fromUserId: user.id,
-            fromUserName: user.name || "A Freelancer",
-            read: false,
-          });
-
-          await freelancerNotification.save();
-          notifiedUserIds.add(assignedFreelancerUser.userId);
-
-          // Emit socket event if io is available
-          if (io) {
-            io.to(`user:${assignedFreelancerUser.userId}`).emit(
-              "notification:new",
-              freelancerNotification
-            );
-          }
-        }
-      }
-    }
-
     // Also notify freelancers who have worked/are working for this employer (on any job)
     // They might be able to help answer questions about the employer
     const employerJobs = await JobListing.find({
@@ -196,25 +163,96 @@ const postQuestion = async (req, res) => {
       "assignedFreelancer.status": { $in: ["working", "finished"] },
     });
 
+    const candidateFreelancerIds = new Set();
+
+    if (
+      job.assignedFreelancer &&
+      job.assignedFreelancer.freelancerId &&
+      job.assignedFreelancer.freelancerId !== user.roleId &&
+      (job.assignedFreelancer.status === "working" ||
+        job.assignedFreelancer.status === "finished")
+    ) {
+      candidateFreelancerIds.add(job.assignedFreelancer.freelancerId);
+    }
+
+    employerJobs.forEach((empJob) => {
+      if (empJob.assignedFreelancer?.freelancerId) {
+        candidateFreelancerIds.add(empJob.assignedFreelancer.freelancerId);
+      }
+    });
+
+    candidateFreelancerIds.delete(user.roleId);
+
+    const freelancerIds = [...candidateFreelancerIds];
+    const freelancerDocs = freelancerIds.length
+      ? await Freelancer.find({ freelancerId: { $in: freelancerIds } })
+          .select("freelancerId userId")
+          .lean()
+      : [];
+
+    const freelancerByFreelancerId = mapBy(freelancerDocs, "freelancerId");
+
+    const candidateUserIds = freelancerDocs
+      .map((freelancerDoc) => freelancerDoc.userId)
+      .filter(Boolean);
+    const candidateUsers = candidateUserIds.length
+      ? await User.find({ userId: { $in: candidateUserIds } })
+          .select("userId")
+          .lean()
+      : [];
+    const userByUserId = mapBy(candidateUsers, "userId");
+
+    const assignedFreelancerId = job.assignedFreelancer?.freelancerId;
+    const assignedFreelancerDoc = assignedFreelancerId
+      ? freelancerByFreelancerId.get(assignedFreelancerId)
+      : null;
+    const assignedFreelancerUser = assignedFreelancerDoc
+      ? userByUserId.get(assignedFreelancerDoc.userId)
+      : null;
+
+    if (
+      assignedFreelancerUser &&
+      !notifiedUserIds.has(assignedFreelancerUser.userId)
+    ) {
+      const freelancerNotification = new Notification({
+        notificationId: uuidv4(),
+        userId: assignedFreelancerUser.userId,
+        type: "question_posted",
+        title: "New Question on a Job You Worked",
+        message: `Someone asked a question about "${job.title}" - you can help answer it!`,
+        jobId,
+        questionId: question.questionId,
+        fromUserId: user.id,
+        fromUserName: user.name || "A Freelancer",
+        read: false,
+      });
+
+      await freelancerNotification.save();
+      notifiedUserIds.add(assignedFreelancerUser.userId);
+
+      if (io) {
+        io.to(`user:${assignedFreelancerUser.userId}`).emit(
+          "notification:new",
+          freelancerNotification
+        );
+      }
+    }
+
     for (const empJob of employerJobs) {
       // Skip if it's the same freelancer who asked the question
       if (empJob.assignedFreelancer.freelancerId === user.roleId) {
         continue;
       }
 
-      // Find the Freelancer document to get the userId
-      const freelancerDoc = await Freelancer.findOne({
-        freelancerId: empJob.assignedFreelancer.freelancerId,
-      });
+      const freelancerDoc = freelancerByFreelancerId.get(
+        empJob.assignedFreelancer.freelancerId
+      );
 
       if (!freelancerDoc) {
         continue;
       }
 
-      // Find the User using the userId from Freelancer document
-      const freelancerUser = await User.findOne({
-        userId: freelancerDoc.userId,
-      });
+      const freelancerUser = userByUserId.get(freelancerDoc.userId);
 
       // Skip if already notified or user not found
       if (!freelancerUser || notifiedUserIds.has(freelancerUser.userId)) {

@@ -24,6 +24,14 @@ function parseLocationCoordinates(raw) {
 exports.getJobListings = async (req, res) => {
   try {
     const employerId = req.session.user?.roleId;
+    const {
+      search = "",
+      searchFeature = "all",
+      jobType = "All Jobs",
+      sortBy = "newest-posted",
+      page = 1,
+      limit = 25,
+    } = req.query;
 
     if (!employerId) {
       return res.status(401).json({
@@ -32,9 +40,54 @@ exports.getJobListings = async (req, res) => {
       });
     }
 
-    const jobListings = await JobListing.find({ employerId }).sort({
-      postedDate: -1,
-    });
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeSkip = (safePage - 1) * safeLimit;
+    const searchText = String(search || "").trim();
+    const searchRegex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
+
+    const baseQuery = { employerId };
+
+    if (jobType === "Remote") {
+      baseQuery.$or = [{ remote: true }, { jobType: { $regex: /remote/i } }];
+    } else if (jobType !== "All Jobs") {
+      baseQuery.jobType = { $regex: new RegExp(String(jobType).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i") };
+    }
+
+    if (searchRegex) {
+      const searchConditions = [];
+      if (searchFeature === "jobRole") {
+        searchConditions.push({ title: searchRegex });
+      } else if (searchFeature === "skills") {
+        searchConditions.push({ "description.skills": { $elemMatch: { $regex: searchRegex } } });
+      } else if (searchFeature === "location") {
+        searchConditions.push({ location: searchRegex });
+      } else {
+        searchConditions.push({ title: searchRegex });
+        searchConditions.push({ location: searchRegex });
+        searchConditions.push({ "description.skills": { $elemMatch: { $regex: searchRegex } } });
+      }
+      baseQuery.$and = [...(baseQuery.$and || []), { $or: searchConditions }];
+    }
+
+    const sortMap = {
+      "oldest-posted": { postedDate: 1, _id: 1 },
+      "newest-posted": { postedDate: -1, _id: -1 },
+      "budget-high-low": { budget: -1, _id: -1 },
+      "budget-low-high": { budget: 1, _id: 1 },
+    };
+    const dbSort = sortMap[sortBy] || sortMap["newest-posted"];
+
+    const [jobListings, total] = await Promise.all([
+      JobListing.find(baseQuery)
+        .sort(dbSort)
+        .skip(safeSkip)
+        .limit(safeLimit)
+        .lean(),
+      JobListing.countDocuments(baseQuery),
+    ]);
 
     // Add application counts with a single grouped query (avoids N+1)
     const jobIds = jobListings.map((job) => job.jobId);
@@ -49,13 +102,25 @@ exports.getJobListings = async (req, res) => {
     });
 
     const jobListingsWithCount = jobListings.map((job) => ({
-      ...job.toObject(),
+      ...job,
       applicationCount: applicationCountMap[job.jobId] || 0,
     }));
 
+    const totalPages = Math.ceil(total / safeLimit) || 1;
+
     return res.json({
       success: true,
-      data: jobListingsWithCount,
+      data: {
+        listings: jobListingsWithCount,
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPrevPage: safePage > 1,
+        },
+      },
     });
   } catch (error) {
     console.error("Get job listings error:", error);
@@ -869,6 +934,14 @@ exports.purchaseSubscription = async (req, res) => {
 exports.getCurrentFreelancers = async (req, res) => {
   try {
     const employerId = req.session.user?.roleId;
+    const {
+      search = "",
+      sortBy = "rating-high-low",
+      page = 1,
+      limit = 25,
+      nameIn,
+      jobRoleIn,
+    } = req.query;
 
     if (!employerId) {
       return res.status(401).json({
@@ -877,97 +950,224 @@ exports.getCurrentFreelancers = async (req, res) => {
       });
     }
 
-    // Find all jobs with assigned freelancers that are currently working
-    const jobs = await JobListing.find({
-      employerId,
-      "assignedFreelancer.status": "working",
-    }).lean();
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeSkip = (safePage - 1) * safeLimit;
+    const searchText = String(search || "").trim();
+    const searchRegex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
 
-    const freelancerIds = jobs
-      .filter(
-        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId,
-      )
-      .map((job) => job.assignedFreelancer.freelancerId);
+    const cleanNameIn = Array.isArray(nameIn)
+      ? nameIn.map((value) => String(value || "").trim()).filter(Boolean)
+      : typeof nameIn === "string"
+        ? nameIn.split(",").map((value) => String(value || "").trim()).filter(Boolean)
+        : [];
 
-    if (freelancerIds.length === 0) {
-      return res.json({
-        success: true,
-        data: {
-          freelancers: [],
-          stats: {
-            total: 0,
-            avgRating: 0,
-            avgDays: 0,
-            successRate: 0,
+    const cleanJobRoleIn = Array.isArray(jobRoleIn)
+      ? jobRoleIn.map((value) => String(value || "").trim()).filter(Boolean)
+      : typeof jobRoleIn === "string"
+        ? jobRoleIn.split(",").map((value) => String(value || "").trim()).filter(Boolean)
+        : [];
+
+    const sortMap = {
+      "rating-high-low": { "freelancerUser.rating": -1, _id: -1 },
+      "rating-low-high": { "freelancerUser.rating": 1, _id: 1 },
+      "working-since-oldest": { daysSinceStart: -1, _id: -1 },
+      "working-since-newest": { daysSinceStart: 1, _id: 1 },
+      "name-a-z": { "freelancerUser.name": 1, _id: 1 },
+      "name-z-a": { "freelancerUser.name": -1, _id: -1 },
+    };
+    const dbSort = sortMap[sortBy] || sortMap["rating-high-low"];
+
+    const basePipeline = [
+      {
+        $match: {
+          employerId,
+          "assignedFreelancer.status": "working",
+          "assignedFreelancer.freelancerId": { $exists: true, $ne: null },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          jobId: 1,
+          title: 1,
+          description: 1,
+          assignedFreelancer: 1,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { freelancerRoleId: "$assignedFreelancer.freelancerId" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$roleId", "$$freelancerRoleId"] },
+                    { $eq: ["$role", "Freelancer"] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                userId: 1,
+                roleId: 1,
+                name: 1,
+                email: 1,
+                phone: 1,
+                picture: 1,
+                rating: 1,
+              },
+            },
+          ],
+          as: "freelancerUser",
+        },
+      },
+      {
+        $unwind: {
+          path: "$freelancerUser",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          daysSinceStart: {
+            $cond: [
+              { $ifNull: ["$assignedFreelancer.startDate", false] },
+              {
+                $dateDiff: {
+                  startDate: "$assignedFreelancer.startDate",
+                  endDate: "$$NOW",
+                  unit: "day",
+                },
+              },
+              0,
+            ],
           },
         },
-      });
+      },
+    ];
+
+    const extraMatch = {};
+    if (searchRegex) {
+      extraMatch.$or = [
+        { "freelancerUser.name": searchRegex },
+        { title: searchRegex },
+      ];
+    }
+    if (cleanNameIn.length) {
+      extraMatch["freelancerUser.name"] = { $in: cleanNameIn };
+    }
+    if (cleanJobRoleIn.length) {
+      extraMatch.title = { $in: cleanJobRoleIn };
+    }
+    if (Object.keys(extraMatch).length) {
+      basePipeline.push({ $match: extraMatch });
     }
 
-    // Get userIds for freelancers, then load user profiles
-    const freelancerRecords = await Freelancer.find({
-      freelancerId: { $in: freelancerIds },
-    })
-      .select("freelancerId userId")
-      .lean();
+    const [aggregateResult] = await JobListing.aggregate([
+      ...basePipeline,
+      {
+        $facet: {
+          rows: [
+            { $sort: dbSort },
+            { $skip: safeSkip },
+            { $limit: safeLimit },
+            {
+              $project: {
+                _id: 0,
+                freelancerId: "$assignedFreelancer.freelancerId",
+                userId: "$freelancerUser.userId",
+                name: { $ifNull: ["$freelancerUser.name", "Unknown"] },
+                email: { $ifNull: ["$freelancerUser.email", ""] },
+                phone: { $ifNull: ["$freelancerUser.phone", ""] },
+                picture: { $ifNull: ["$freelancerUser.picture", ""] },
+                rating: { $ifNull: ["$freelancerUser.rating", 0] },
+                jobId: "$jobId",
+                jobTitle: "$title",
+                jobDescription: {
+                  $ifNull: ["$description.text", { $ifNull: ["$description", ""] }],
+                },
+                startDate: "$assignedFreelancer.startDate",
+                daysSinceStart: { $ifNull: ["$daysSinceStart", 0] },
+                hasRated: { $ifNull: ["$assignedFreelancer.rated", false] },
+                employerRating: "$assignedFreelancer.employerRating",
+              },
+            },
+          ],
+          count: [{ $count: "total" }],
+          stats: [
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                avgRating: { $avg: { $ifNull: ["$freelancerUser.rating", 0] } },
+                avgDays: { $avg: { $ifNull: ["$daysSinceStart", 0] } },
+              },
+            },
+          ],
+          filterNames: [
+            {
+              $group: {
+                _id: "$freelancerUser.name",
+              },
+            },
+          ],
+          filterRoles: [
+            {
+              $group: {
+                _id: "$title",
+              },
+            },
+          ],
+        },
+      },
+    ]);
 
-    const userIds = freelancerRecords
-      .map((f) => f.userId)
-      .filter((id) => Boolean(id));
+    const rows = aggregateResult?.rows || [];
+    const total = aggregateResult?.count?.[0]?.total || 0;
+    const statsRow = aggregateResult?.stats?.[0] || {
+      total: 0,
+      avgRating: 0,
+      avgDays: 0,
+    };
 
-    const users = await User.find({ userId: { $in: userIds } })
-      .select("userId name email phone picture rating")
-      .lean();
-
-    // Build response with job details
-    const freelancersData = jobs.map((job) => {
-      const freelancerRecord = freelancerRecords.find(
-        (f) => f.freelancerId === job.assignedFreelancer.freelancerId,
-      );
-      const user = users.find((u) => u.userId === freelancerRecord?.userId);
-      const daysSinceStart = job.assignedFreelancer.startDate
-        ? Math.floor(
-            (Date.now() -
-              new Date(job.assignedFreelancer.startDate).getTime()) /
-              (1000 * 60 * 60 * 24),
-          )
-        : 0;
-
-      return {
-        freelancerId: job.assignedFreelancer.freelancerId,
-        userId: user?.userId || null, // Add userId for chat functionality
-        name: user?.name || "Unknown",
-        email: user?.email || "",
-        phone: user?.phone || "",
-        picture: user?.picture || "",
-        rating: user?.rating || 0,
-        jobId: job.jobId,
-        jobTitle: job.title,
-        jobDescription: job.description?.text || job.description || "",
-        startDate: job.assignedFreelancer.startDate,
-        daysSinceStart,
-        hasRated: job.assignedFreelancer.rated || false,
-        employerRating: job.assignedFreelancer.employerRating || null,
-      };
-    });
-
-    // Calculate stats
-    const avgRating =
-      freelancersData.reduce((sum, f) => sum + f.rating, 0) /
-      freelancersData.length;
-    const avgDays =
-      freelancersData.reduce((sum, f) => sum + f.daysSinceStart, 0) /
-      freelancersData.length;
+    const totalPages = Math.ceil(total / safeLimit) || 1;
+    const names = (aggregateResult?.filterNames || [])
+      .map((entry) => entry?._id)
+      .filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b)));
+    const jobRoles = (aggregateResult?.filterRoles || [])
+      .map((entry) => entry?._id)
+      .filter(Boolean)
+      .sort((a, b) => String(a).localeCompare(String(b)));
 
     return res.json({
       success: true,
       data: {
-        freelancers: freelancersData,
+        freelancers: rows,
         stats: {
-          total: freelancersData.length,
-          avgRating: parseFloat(avgRating.toFixed(1)),
-          avgDays: Math.round(avgDays),
+          total: statsRow.total || 0,
+          avgRating: Number((statsRow.avgRating || 0).toFixed(1)),
+          avgDays: Math.round(statsRow.avgDays || 0),
           successRate: 92,
+        },
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPrevPage: safePage > 1,
+        },
+        filterOptions: {
+          names,
+          jobRoles,
         },
       },
     });
@@ -984,6 +1184,14 @@ exports.getCurrentFreelancers = async (req, res) => {
 exports.getWorkHistory = async (req, res) => {
   try {
     const employerId = req.session.user?.roleId;
+    const {
+      search = "",
+      searchFeature = "all",
+      sortBy = "date-desc",
+      page = 1,
+      limit = 25,
+      statusIn,
+    } = req.query;
 
     if (!employerId) {
       return res.status(401).json({
@@ -992,112 +1200,223 @@ exports.getWorkHistory = async (req, res) => {
       });
     }
 
-    // Find all jobs with freelancers that finished work or left
-    const jobs = await JobListing.find({
-      employerId,
-      "assignedFreelancer.status": { $in: ["finished", "left"] },
-    }).lean();
+    const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeSkip = (safePage - 1) * safeLimit;
+    const searchText = String(search || "").trim();
+    const searchRegex = searchText
+      ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+      : null;
 
-    const freelancerIds = jobs
-      .filter(
-        (job) => job.assignedFreelancer && job.assignedFreelancer.freelancerId,
-      )
-      .map((job) => job.assignedFreelancer.freelancerId);
+    const requestedStatuses = Array.isArray(statusIn)
+      ? statusIn
+      : typeof statusIn === "string"
+        ? statusIn.split(",")
+        : [];
+    const cleanStatuses = requestedStatuses
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
 
-    if (freelancerIds.length === 0) {
-      return res.json({
-        success: true,
-        data: {
-          freelancers: [],
-          stats: {
-            total: 0,
-            avgRating: 0,
-            avgDays: 0,
-            successRate: 0,
-          },
-        },
-      });
+    const statusConstraint = cleanStatuses.length
+      ? cleanStatuses
+      : ["finished", "left"];
+
+    const searchMatch = {};
+    if (searchRegex) {
+      if (searchFeature === "name") {
+        searchMatch["freelancerUser.name"] = searchRegex;
+      } else if (searchFeature === "jobRole") {
+        searchMatch.title = searchRegex;
+      } else if (searchFeature === "location") {
+        searchMatch["freelancerUser.location"] = searchRegex;
+      } else {
+        searchMatch.$or = [
+          { "freelancerUser.name": searchRegex },
+          { title: searchRegex },
+          { "freelancerUser.location": searchRegex },
+        ];
+      }
     }
 
-    console.log("Work history - freelancerIds:", freelancerIds);
+    const sortMap = {
+      "date-desc": { "assignedFreelancer.endDate": -1, _id: -1 },
+      "date-asc": { "assignedFreelancer.endDate": 1, _id: 1 },
+      "name-asc": { "freelancerUser.name": 1, _id: 1 },
+      "name-desc": { "freelancerUser.name": -1, _id: -1 },
+      "rating-desc": { "freelancerUser.rating": -1, _id: -1 },
+      "rating-asc": { "freelancerUser.rating": 1, _id: 1 },
+    };
+    const dbSort = sortMap[sortBy] || sortMap["date-desc"];
 
-    // Get Freelancer records to fetch userId
-    const freelancerRecords = await Freelancer.find({
-      freelancerId: { $in: freelancerIds },
-    })
-      .select("freelancerId userId")
-      .lean();
+    const basePipeline = [
+      {
+        $match: {
+          employerId,
+          "assignedFreelancer.status": { $in: statusConstraint },
+          "assignedFreelancer.freelancerId": { $exists: true, $ne: null },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          jobId: 1,
+          title: 1,
+          description: 1,
+          assignedFreelancer: 1,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { freelancerRoleId: "$assignedFreelancer.freelancerId" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$roleId", "$$freelancerRoleId"] },
+                    { $eq: ["$role", "Freelancer"] },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                _id: 0,
+                userId: 1,
+                roleId: 1,
+                name: 1,
+                email: 1,
+                phone: 1,
+                picture: 1,
+                rating: 1,
+                location: 1,
+              },
+            },
+          ],
+          as: "freelancerUser",
+        },
+      },
+      {
+        $unwind: {
+          path: "$freelancerUser",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          completedDate: "$assignedFreelancer.endDate",
+          workDays: {
+            $cond: [
+              {
+                $and: [
+                  { $ifNull: ["$assignedFreelancer.startDate", false] },
+                  { $ifNull: ["$assignedFreelancer.endDate", false] },
+                ],
+              },
+              {
+                $dateDiff: {
+                  startDate: "$assignedFreelancer.startDate",
+                  endDate: "$assignedFreelancer.endDate",
+                  unit: "day",
+                },
+              },
+              0,
+            ],
+          },
+        },
+      },
+    ];
 
-    console.log("Work history - freelancerRecords:", freelancerRecords);
+    if (Object.keys(searchMatch).length) {
+      basePipeline.push({ $match: searchMatch });
+    }
 
-    // Get all users by roleId (most reliable way to fetch freelancer user data)
-    const usersByRoleId = await User.find({
-      roleId: { $in: freelancerIds },
-      role: "Freelancer",
-    })
-      .select("userId roleId name email phone picture rating location")
-      .lean();
+    const [aggregateResult] = await JobListing.aggregate([
+      ...basePipeline,
+      {
+        $facet: {
+          rows: [
+            { $sort: dbSort },
+            { $skip: safeSkip },
+            { $limit: safeLimit },
+            {
+              $project: {
+                _id: 0,
+                userId: "$freelancerUser.userId",
+                freelancerId: "$assignedFreelancer.freelancerId",
+                name: { $ifNull: ["$freelancerUser.name", "Unknown"] },
+                email: { $ifNull: ["$freelancerUser.email", ""] },
+                phone: { $ifNull: ["$freelancerUser.phone", ""] },
+                location: { $ifNull: ["$freelancerUser.location", ""] },
+                picture: { $ifNull: ["$freelancerUser.picture", ""] },
+                rating: { $ifNull: ["$freelancerUser.rating", 0] },
+                jobId: "$jobId",
+                jobTitle: "$title",
+                jobDescription: {
+                  $ifNull: ["$description.text", { $ifNull: ["$description", ""] }],
+                },
+                startDate: "$assignedFreelancer.startDate",
+                endDate: "$assignedFreelancer.endDate",
+                completedDate: "$assignedFreelancer.endDate",
+                status: "$assignedFreelancer.status",
+              },
+            },
+          ],
+          count: [{ $count: "total" }],
+          stats: [
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                avgRating: { $avg: { $ifNull: ["$freelancerUser.rating", 0] } },
+                avgDays: { $avg: { $ifNull: ["$workDays", 0] } },
+                finishedCount: {
+                  $sum: {
+                    $cond: [{ $eq: ["$assignedFreelancer.status", "finished"] }, 1, 0],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    ]);
 
-    console.log("Work history - users by roleId found:", usersByRoleId.length);
-
-    // Build response with job details
-    const freelancersData = jobs.map((job) => {
-      const freelancerRecord = freelancerRecords.find(
-        (f) => f.freelancerId === job.assignedFreelancer.freelancerId,
-      );
-
-      // Try to find user by roleId (most reliable)
-      let user = usersByRoleId.find(
-        (u) => u.roleId === job.assignedFreelancer.freelancerId,
-      );
-
-      // If not found by roleId, try by userId from freelancer record
-      if (!user && freelancerRecord?.userId) {
-        user = usersByRoleId.find((u) => u.userId === freelancerRecord.userId);
-      }
-
-      const result = {
-        userId: user?.userId || freelancerRecord?.userId || "",
-        freelancerId: job.assignedFreelancer.freelancerId,
-        name: user?.name || "Unknown",
-        email: user?.email || "",
-        phone: user?.phone || "",
-        location: user?.location || "",
-        picture: user?.picture || "",
-        rating: user?.rating || 0,
-        jobId: job.jobId,
-        jobTitle: job.title,
-        jobDescription: job.description?.text || job.description || "",
-        startDate: job.assignedFreelancer.startDate,
-        endDate: job.assignedFreelancer.endDate,
-        completedDate: job.assignedFreelancer.endDate,
-        status: job.assignedFreelancer.status,
-      };
-
-      console.log("Work history - freelancer data:", {
-        freelancerId: result.freelancerId,
-        userId: result.userId,
-        name: result.name,
-      });
-
-      return result;
-    });
-
-    // Calculate stats
-    const avgRating =
-      freelancersData.reduce((sum, f) => sum + f.rating, 0) /
-      freelancersData.length;
-    const completedProjects = freelancersData.length;
+    const rows = aggregateResult?.rows || [];
+    const total = aggregateResult?.count?.[0]?.total || 0;
+    const statsRow = aggregateResult?.stats?.[0] || {
+      total: 0,
+      avgRating: 0,
+      avgDays: 0,
+      finishedCount: 0,
+    };
+    const totalPages = Math.ceil(total / safeLimit) || 1;
+    const successRate =
+      statsRow.total > 0
+        ? Math.round((statsRow.finishedCount / statsRow.total) * 100)
+        : 0;
 
     return res.json({
       success: true,
       data: {
-        freelancers: freelancersData,
+        freelancers: rows,
         stats: {
-          total: completedProjects,
-          avgRating: parseFloat(avgRating.toFixed(1)),
-          avgDays: 15,
-          successRate: 98,
+          total: statsRow.total || 0,
+          avgRating: Number((statsRow.avgRating || 0).toFixed(1)),
+          avgDays: Math.round(statsRow.avgDays || 0),
+          successRate,
+        },
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPrevPage: safePage > 1,
+        },
+        filterOptions: {
+          statuses: ["finished", "left"],
         },
       },
     });
