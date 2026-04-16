@@ -12,8 +12,8 @@ const swaggerJsdoc = require("swagger-jsdoc");
 const rfs = require("rotating-file-stream");
 const hpp = require("hpp");
 const mongoSanitize = require("express-mongo-sanitize");
-const { ApolloServer } = require("@apollo/server");
-const { expressMiddleware } = require("@apollo/server/express4");
+const { createHandler } = require("graphql-http/lib/use/express");
+const { makeExecutableSchema } = require("@graphql-tools/schema");
 const typeDefs = require("./graphql/typeDefs");
 const resolvers = require("./graphql/resolvers");
 const { createLoaders } = require("./graphql/loaders");
@@ -383,25 +383,25 @@ app.set("io", io);
 async function startServer() {
   await connectDB;
 
-  // Create and start Apollo Server
-  const apolloServer = new ApolloServer({
+  // Create Executable Schema
+  const schema = makeExecutableSchema({
     typeDefs,
     resolvers,
-    introspection: true,
   });
-  await apolloServer.start();
 
-  // Mount GraphQL middleware — json() runs before expressMiddleware as a safety net.
-  // Session is already established globally via app.use(sessionMiddleware) above,
-  // so we do NOT apply sessionMiddleware again here (double-init breaks Express 5).
+  // Mount GraphQL middleware using graphql-http
   app.use(
     "/graphql",
     express.json(),
-    expressMiddleware(apolloServer, {
-      context: async ({ req }) => ({
-        session: req.session,
-        loaders: createLoaders(),
-      }),
+    createHandler({
+      schema,
+      context: async (req) => {
+        const expressReq = req?.raw || req;
+        return {
+          session: expressReq?.session,
+          loaders: createLoaders(),
+        };
+      },
     }),
   );
 

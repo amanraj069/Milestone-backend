@@ -81,6 +81,7 @@ const questionSchema = new Schema(
 
 // Index for efficient queries
 questionSchema.index({ jobId: 1 });
+questionSchema.index({ jobId: 1, createdAt: -1 });
 questionSchema.index({ askerId: 1 });
 
 const Question = mongoose.model("Question", questionSchema);

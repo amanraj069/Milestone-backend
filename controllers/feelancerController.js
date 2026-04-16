@@ -8,6 +8,13 @@ const Feedback = require("../models/Feedback");
 const Payment = require("../models/Payment");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
+const getPaginationParams = (query = {}) => {
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.max(1, Math.min(Number(query.limit) || 25, 100));
+  const skip = (page - 1) * limit;
+  return { page, limit, skip };
+};
+
 exports.getFreelancerActiveJobs = async (req, res) => {
   try {
     if (!req.session.user) {
@@ -247,86 +254,109 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
     }
 
     const freelancerId = req.session.user.roleId;
+    const { page, limit, skip } = getPaginationParams(req.query);
 
-    const activeJobs = await JobListing.find({
+    const baseQuery = {
       "assignedFreelancer.freelancerId": freelancerId,
       "assignedFreelancer.status": "working",
-    }).lean();
+    };
 
-    const employerIds = activeJobs
-      .map((job) => job.employerId)
-      .filter((id) => id);
-    const users = await User.find({ roleId: { $in: employerIds } })
-      .select("roleId userId")
-      .lean();
+    const [activeJobs, total] = await Promise.all([
+      JobListing.find(baseQuery)
+        .sort({ "assignedFreelancer.startDate": -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      JobListing.countDocuments(baseQuery),
+    ]);
 
-    const formattedJobs = await Promise.all(
-      activeJobs.map(async (job) => {
-        const paidAmount = job.milestones
-          .filter((milestone) => milestone.status === "paid")
-          .reduce(
-            (sum, milestone) => sum + (parseFloat(milestone.payment) || 0),
-            0,
-          );
+    const employerIds = [...new Set(activeJobs.map((job) => job.employerId).filter(Boolean))];
+    const [users, employers] = await Promise.all([
+      User.find({ roleId: { $in: employerIds }, role: "Employer" })
+        .select("roleId userId")
+        .lean(),
+      Employer.find({ employerId: { $in: employerIds } })
+        .select("employerId companyName")
+        .lean(),
+    ]);
 
-        const totalBudget = parseFloat(job.budget) || 0;
-        const progress =
-          totalBudget > 0 ? Math.min((paidAmount / totalBudget) * 100, 100) : 0;
+    const employerUserMap = {};
+    users.forEach((u) => {
+      employerUserMap[u.roleId] = u.userId;
+    });
 
-        const employer = await Employer.findOne({
-          employerId: job.employerId,
-        }).lean();
-        const companyName =
-          employer && employer.companyName && employer.companyName.trim()
-            ? employer.companyName
-            : "Unknown Company";
+    const employerNameMap = {};
+    employers.forEach((e) => {
+      employerNameMap[e.employerId] = e.companyName;
+    });
 
-        const user = users.find((u) => u.roleId === job.employerId);
+    const formattedJobs = activeJobs.map((job) => {
+      const milestones = job.milestones || [];
+      const paidAmount = milestones
+        .filter((milestone) => milestone.status === "paid")
+        .reduce((sum, milestone) => sum + (parseFloat(milestone.payment) || 0), 0);
 
-        // Calculate days since start
-        const startDate = job.assignedFreelancer?.startDate;
-        const daysSinceStart = startDate
-          ? Math.floor(
-              (Date.now() - new Date(startDate).getTime()) /
-                (1000 * 60 * 60 * 24),
-            )
-          : 0;
+      const totalBudget = parseFloat(job.budget) || 0;
+      const progress =
+        totalBudget > 0 ? Math.min((paidAmount / totalBudget) * 100, 100) : 0;
 
-        return {
-          id: job.jobId,
-          title: job.title,
-          company: companyName,
-          logo: job.imageUrl || "/assets/company_logo.jpg",
-          deadline: job.applicationDeadline
-            ? job.applicationDeadline.toLocaleDateString()
-            : "No deadline",
-          price: job.budget
-            ? `Rs.${parseFloat(job.budget).toFixed(2)}`
-            : "Not specified",
-          totalBudget: totalBudget,
-          paidAmount: paidAmount,
-          progress: Math.round(progress),
-          tech: job.description.skills || [],
-          employerUserId: user?.userId || "",
-          description: job.description?.text || job.description || "",
-          milestones: job.milestones || [],
-          milestonesCount: (job.milestones || []).length,
-          completedMilestones: (job.milestones || []).filter(
-            (m) => m.status === "paid",
-          ).length,
-          daysSinceStart: daysSinceStart,
-          startDate: startDate
-            ? new Date(startDate).toLocaleDateString()
-            : "Not set",
-          startDateRaw: startDate || null,
-        };
-      }),
-    );
+      const companyName =
+        employerNameMap[job.employerId] &&
+        String(employerNameMap[job.employerId]).trim()
+          ? employerNameMap[job.employerId]
+          : "Unknown Company";
+
+      // Calculate days since start
+      const startDate = job.assignedFreelancer?.startDate;
+      const daysSinceStart = startDate
+        ? Math.floor(
+            (Date.now() - new Date(startDate).getTime()) /
+              (1000 * 60 * 60 * 24),
+          )
+        : 0;
+
+      return {
+        id: job.jobId,
+        title: job.title,
+        company: companyName,
+        logo: job.imageUrl || "/assets/company_logo.jpg",
+        deadline: job.applicationDeadline
+          ? new Date(job.applicationDeadline).toLocaleDateString()
+          : "No deadline",
+        price: job.budget
+          ? `Rs.${parseFloat(job.budget).toFixed(2)}`
+          : "Not specified",
+        totalBudget,
+        paidAmount,
+        progress: Math.round(progress),
+        tech: job.description?.skills || [],
+        employerUserId: employerUserMap[job.employerId] || "",
+        description: job.description?.text || job.description || "",
+        milestones,
+        milestonesCount: milestones.length,
+        completedMilestones: milestones.filter((m) => m.status === "paid").length,
+        daysSinceStart,
+        startDate: startDate
+          ? new Date(startDate).toLocaleDateString()
+          : "Not set",
+        startDateRaw: startDate || null,
+      };
+    });
+
+    const totalPages = Math.ceil(total / limit) || 1;
 
     res.json({
       success: true,
       activeJobs: formattedJobs,
-      total: formattedJobs.length,
+      total,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
     });
   } catch (error) {
     console.error("Error fetching active jobs API:", error.message);
@@ -340,139 +370,142 @@ exports.getFreelancerActiveJobsAPI = async (req, res) => {
 // API endpoint for job history (JSON response)
 exports.getFreelancerJobHistoryAPI = async (req, res) => {
   try {
-    console.log("getFreelancerJobHistoryAPI called");
-    console.log("Session user:", req.session.user);
-
     if (!req.session.user) {
-      console.log("No session user - unauthorized");
       return res
         .status(401)
         .json({ success: false, error: "Unauthorized: Please log in" });
     }
 
     const freelancerId = req.session.user.roleId;
-    console.log("Fetching job history for freelancer:", freelancerId);
+    const { page, limit, skip } = getPaginationParams(req.query);
 
-    const historyJobs = await JobListing.find({
+    const baseQuery = {
       "assignedFreelancer.freelancerId": freelancerId,
       "assignedFreelancer.status": { $in: ["finished", "left"] },
-    }).lean();
+    };
 
-    console.log("Found history jobs:", historyJobs.length);
+    const [historyJobs, total] = await Promise.all([
+      JobListing.find(baseQuery)
+        .sort({ updatedAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      JobListing.countDocuments(baseQuery),
+    ]);
 
-    // Bulk-fetch feedback ratings for this freelancer across all history jobs
-    const userId = req.session.user.id;
     const jobIds = historyJobs.map((j) => j.jobId);
-    const feedbacks = await Feedback.find({
-      jobId: { $in: jobIds },
-      toUserId: userId,
-      toRole: "Freelancer",
-    }).lean();
+    const employerIds = [...new Set(historyJobs.map((job) => job.employerId).filter(Boolean))];
+
+    const userId = req.session.user.id;
+    const [feedbacks, employers, employerUsers] = await Promise.all([
+      Feedback.find({
+        jobId: { $in: jobIds },
+        toUserId: userId,
+        toRole: "Freelancer",
+      })
+        .select("jobId rating")
+        .lean(),
+      Employer.find({ employerId: { $in: employerIds } })
+        .select("employerId companyName userId")
+        .lean(),
+      User.find({ roleId: { $in: employerIds }, role: "Employer" })
+        .select("roleId userId")
+        .lean(),
+    ]);
+
     const feedbackByJob = {};
     feedbacks.forEach((fb) => {
       feedbackByJob[fb.jobId] = fb.rating;
     });
 
-    const formattedJobs = await Promise.all(
-      historyJobs.map(async (job) => {
-        const paidAmount = job.milestones
-          .filter((milestone) => milestone.status === "paid")
-          .reduce(
-            (sum, milestone) => sum + parseFloat(milestone.payment) || 0,
-            0,
-          );
+    const employerMap = {};
+    employers.forEach((e) => {
+      employerMap[e.employerId] = e;
+    });
 
-        const employer = await Employer.findOne({
-          employerId: job.employerId,
-        }).lean();
-        const companyName = employer ? employer.companyName : "Unknown Company";
+    const employerUserFallbackMap = {};
+    employerUsers.forEach((u) => {
+      employerUserFallbackMap[u.roleId] = u.userId;
+    });
 
-        // Get employerUserId - try from Employer record first, then fallback to User by roleId
-        let employerUserId = employer?.userId || "";
+    const formattedJobs = historyJobs.map((job) => {
+      const milestones = job.milestones || [];
+      const paidAmount = milestones
+        .filter((milestone) => milestone.status === "paid")
+        .reduce((sum, milestone) => sum + (parseFloat(milestone.payment) || 0), 0);
 
-        if (!employerUserId) {
-          console.log(
-            "Job history - No userId in Employer record, using fallback for:",
-            job.employerId,
-          );
-          const employerUser = await User.findOne({
-            roleId: job.employerId,
-            role: "Employer",
-          })
-            .select("userId")
-            .lean();
-          employerUserId = employerUser?.userId || "";
-          console.log("Job history - Fallback employerUserId:", employerUserId);
-        }
+      const employer = employerMap[job.employerId] || {};
+      const companyName = employer.companyName || "Unknown Company";
+      const employerUserId =
+        employer.userId || employerUserFallbackMap[job.employerId] || "";
 
-        console.log("Job history - employer data:", {
-          employerId: job.employerId,
-          employerUserId: employerUserId,
-          companyName,
-        });
+      // Calculate days since start
+      const startDate = job.assignedFreelancer?.startDate;
+      const daysSinceStart = startDate
+        ? Math.floor(
+            (Date.now() - new Date(startDate).getTime()) /
+              (1000 * 60 * 60 * 24),
+          )
+        : 0;
 
-        // Calculate days since start
-        const startDate = job.assignedFreelancer?.startDate;
-        const daysSinceStart = startDate
-          ? Math.floor(
-              (Date.now() - new Date(startDate).getTime()) /
-                (1000 * 60 * 60 * 24),
-            )
-          : 0;
+      const totalBudget = parseFloat(job.budget) || 0;
 
-        const totalBudget = parseFloat(job.budget) || 0;
+      return {
+        id: job.jobId,
+        _id: job.jobId,
+        title: job.title,
+        company: companyName,
+        logo: job.imageUrl || "/assets/company_logo.jpg",
+        status: job.assignedFreelancer.status,
+        tech: job.description?.skills || [],
+        employerUserId,
+        date: `${
+          job.assignedFreelancer?.startDate
+            ? new Date(job.assignedFreelancer.startDate).toLocaleDateString()
+            : "Unknown"
+        } - ${job.updatedAt ? new Date(job.updatedAt).toLocaleDateString() : "Unknown"}`,
+        price: paidAmount ? `Rs.${paidAmount.toFixed(2)}` : "Not paid",
+        paidAmount,
+        totalBudget,
+        rating:
+          feedbackByJob[job.jobId] ||
+          job.assignedFreelancer?.employerRating ||
+          null,
+        startDate: startDate
+          ? new Date(startDate).toLocaleDateString()
+          : "Not set",
+        startDateRaw: startDate || null,
+        endDateRaw: job.assignedFreelancer?.endDate || job.updatedAt || null,
+        daysSinceStart,
+        description: job.description?.text || job.description || "",
+        milestones,
+        milestonesCount: milestones.length,
+        completedMilestones: milestones.filter((m) => m.status === "paid").length,
+        progress: Math.round(
+          milestones.length > 0
+            ? (milestones.filter((m) => m.status === "paid").length /
+                milestones.length) *
+                100
+            : 0,
+        ),
+        cancelReason: job.assignedFreelancer?.cancelReason || null,
+      };
+    });
 
-        return {
-          id: job.jobId,
-          _id: job.jobId,
-          title: job.title,
-          company: companyName,
-          logo: job.imageUrl || "/assets/company_logo.jpg",
-          status: job.assignedFreelancer.status,
-          tech: job.description.skills || [],
-          employerUserId: employerUserId,
-          date: `${
-            job.assignedFreelancer.startDate
-              ? job.assignedFreelancer.startDate.toLocaleDateString()
-              : "Unknown"
-          } - ${
-            job.updatedAt ? job.updatedAt.toLocaleDateString() : "Unknown"
-          }`,
-          price: paidAmount ? `Rs.${paidAmount.toFixed(2)}` : "Not paid",
-          paidAmount: paidAmount,
-          totalBudget: totalBudget,
-          rating:
-            feedbackByJob[job.jobId] ||
-            job.assignedFreelancer.employerRating ||
-            null,
-          startDate: startDate
-            ? new Date(startDate).toLocaleDateString()
-            : "Not set",
-          startDateRaw: startDate || null,
-          endDateRaw: job.assignedFreelancer.endDate || job.updatedAt || null,
-          daysSinceStart: daysSinceStart,
-          description: job.description?.text || job.description || "",
-          milestones: job.milestones || [],
-          milestonesCount: (job.milestones || []).length,
-          completedMilestones: (job.milestones || []).filter(
-            (m) => m.status === "paid",
-          ).length,
-          progress: Math.round(
-            job.milestones.length > 0
-              ? (job.milestones.filter((m) => m.status === "paid").length /
-                  job.milestones.length) *
-                  100
-              : 0,
-          ),
-          cancelReason: job.assignedFreelancer.cancelReason || null,
-        };
-      }),
-    );
+    const totalPages = Math.ceil(total / limit) || 1;
 
     res.json({
       success: true,
       historyJobs: formattedJobs,
-      total: formattedJobs.length,
+      total,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
     });
   } catch (error) {
     console.error("Error fetching job history API:", error.message);
@@ -876,12 +909,23 @@ exports.getFreelancerApplications = async (req, res) => {
   try {
     const freelancerId = req.session.user.roleId;
 
-    const applications = await JobApplication.find({ freelancerId })
-      .sort({ appliedDate: -1 })
-      .lean();
+    const { page, limit, skip } = getPaginationParams(req.query);
+
+    const baseQuery = { freelancerId };
+
+    const [applications, total] = await Promise.all([
+      JobApplication.find(baseQuery)
+        .sort({ appliedDate: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      JobApplication.countDocuments(baseQuery),
+    ]);
 
     const jobIds = applications.map((app) => app.jobId);
-    const jobs = await JobListing.find({ jobId: { $in: jobIds } }).lean();
+    const jobs = await JobListing.find({ jobId: { $in: jobIds } })
+      .select("jobId title budget location jobType skillsRequired experienceLevel employerId")
+      .lean();
     const jobMap = {};
     jobs.forEach((job) => {
       jobMap[job.jobId] = job;
@@ -890,7 +934,9 @@ exports.getFreelancerApplications = async (req, res) => {
     const employerIds = jobs.map((job) => job.employerId).filter(Boolean);
     const employers = await Employer.find({
       employerId: { $in: employerIds },
-    }).lean();
+    })
+      .select("employerId companyName logo")
+      .lean();
     const employerMap = {};
     employers.forEach((emp) => {
       employerMap[emp.employerId] = emp;
@@ -921,8 +967,16 @@ exports.getFreelancerApplications = async (req, res) => {
     res.json({
       success: true,
       applications: result,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+        hasNextPage: page < (Math.ceil(total / limit) || 1),
+        hasPrevPage: page > 1,
+      },
       stats: {
-        total: result.length,
+        total,
         pending: result.filter((a) => a.status === "Pending").length,
         accepted: result.filter((a) => a.status === "Accepted").length,
         rejected: result.filter((a) => a.status === "Rejected").length,
