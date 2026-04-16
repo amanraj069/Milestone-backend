@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "jest --runInBand"
+    "test": "jest --config jest.config.js --runInBand",
+    "test:watch": "jest --config jest.config.js --watch",
+    "test:report": "jest --config jest.config.js --runInBand --coverage"
   },
   "repository": {
     "type": "git",
@@ -53,6 +55,7 @@
   "devDependencies": {
     "express-validator": "^7.0.1",
     "jest": "^29.6.1",
+    "jest-junit": "^16.0.0",
     "nodemon": "^3.1.10",
     "supertest": "^6.3.3"
   }
