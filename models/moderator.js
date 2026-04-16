@@ -15,4 +15,7 @@ const moderatorSchema = new Schema(
   { timestamps: true },
 );
 
+moderatorSchema.index({ userId: 1 });
+moderatorSchema.index({ createdAt: -1, _id: -1 });
+
 module.exports = mongoose.model("Moderator", moderatorSchema);

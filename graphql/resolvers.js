@@ -4,12 +4,16 @@ const JobApplication = require("../models/job_application");
 const UserBadge = require("../models/UserBadge");
 const User = require("../models/user");
 const Freelancer = require("../models/freelancer");
+const Employer = require("../models/employer");
 const Conversation = require("../models/conversation");
 const Message = require("../models/message");
 const adminResolvers = require("./adminResolvers");
 const employerResolvers = require("./employerResolvers");
+const moderatorResolvers = require("./moderatorResolvers");
 const Blog = require("../models/blog");
 const Complaint = require("../models/complaint");
+
+const { moderatorDeleteBlog, ...moderatorQueryResolvers } = moderatorResolvers;
 
 const toIsoString = (value) => {
   if (!value) return null;
@@ -356,17 +360,52 @@ const resolvers = {
      * Before: per-job Employer.findOne (N+1)
      * After:  DataLoader batches employer lookups
      */
-    freelancerActiveJobs: async (_parent, _args, { session, loaders }) => {
+    freelancerActiveJobs: async (
+      _parent,
+      { search = "", sortBy = "newest", page = 1, limit = 25 },
+      { session, loaders }
+    ) => {
       if (!session?.user) throw new Error("Unauthorized: Please log in");
       if (session.user.role !== "Freelancer")
         throw new Error("Access denied. Freelancer access required.");
 
       const freelancerId = session.user.roleId;
+      const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+      const safePage = Math.max(1, Number(page) || 1);
+      const safeSkip = (safePage - 1) * safeLimit;
+      const searchText = String(search || "").trim();
+      const searchRegex = searchText
+        ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+        : null;
 
-      const activeJobs = await JobListing.find({
+      const query = {
         "assignedFreelancer.freelancerId": freelancerId,
         "assignedFreelancer.status": "working",
-      }).lean();
+      };
+      if (searchRegex) {
+        query.$or = [
+          { title: searchRegex },
+          { "description.text": searchRegex },
+          { "description.skills": { $elemMatch: { $regex: searchRegex } } },
+        ];
+      }
+
+      const sortMap = {
+        newest: { "assignedFreelancer.startDate": -1, _id: -1 },
+        oldest: { "assignedFreelancer.startDate": 1, _id: 1 },
+        "budget-high": { budget: -1, _id: -1 },
+        "budget-low": { budget: 1, _id: 1 },
+        "progress-high": { updatedAt: -1, _id: -1 },
+        "progress-low": { updatedAt: 1, _id: 1 },
+        "days-high": { "assignedFreelancer.startDate": 1, _id: 1 },
+        "days-low": { "assignedFreelancer.startDate": -1, _id: -1 },
+      };
+      const sortSpec = sortMap[sortBy] || sortMap.newest;
+
+      const [activeJobs, total] = await Promise.all([
+        JobListing.find(query).sort(sortSpec).skip(safeSkip).limit(safeLimit).lean(),
+        JobListing.countDocuments(query),
+      ]);
 
       // Batch-load all employers and employer users via DataLoader
       const employerIds = activeJobs
@@ -386,7 +425,7 @@ const resolvers = {
       const userMap = {};
       employerIds.forEach((id, i) => (userMap[id] = employerUsers[i]));
 
-      return activeJobs.map((job) => {
+      const jobs = activeJobs.map((job) => {
         const paidAmount = job.milestones
           .filter((m) => m.status === "paid")
           .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
@@ -444,6 +483,20 @@ const resolvers = {
             : null,
         };
       });
+
+      const totalPages = Math.ceil(total / safeLimit) || 1;
+      return {
+        jobs,
+        total,
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPrevPage: safePage > 1,
+        },
+      };
     },
 
     // ──────────────────────────────────────────────
@@ -456,18 +509,97 @@ const resolvers = {
      * After:  DataLoader batches employer + user lookups;
      *         feedback already bulk-fetched
      */
-    freelancerJobHistory: async (_parent, _args, { session, loaders }) => {
+    freelancerJobHistory: async (
+      _parent,
+      {
+        search = "",
+        sortBy = "newest",
+        statusIn = null,
+        employerIn = null,
+        jobTitleIn = null,
+        page = 1,
+        limit = 25,
+      },
+      { session, loaders }
+    ) => {
       if (!session?.user) throw new Error("Unauthorized: Please log in");
       if (session.user.role !== "Freelancer")
         throw new Error("Access denied. Freelancer access required.");
 
       const freelancerId = session.user.roleId;
       const userId = session.user.id;
+      const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+      const safePage = Math.max(1, Number(page) || 1);
+      const safeSkip = (safePage - 1) * safeLimit;
+      const searchText = String(search || "").trim();
+      const searchRegex = searchText
+        ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+        : null;
+      const cleanStatusIn = Array.isArray(statusIn)
+        ? statusIn.map((value) => String(value)).filter(Boolean)
+        : [];
+      const cleanEmployerIn = Array.isArray(employerIn)
+        ? employerIn.map((value) => String(value)).filter(Boolean)
+        : [];
+      const cleanJobTitleIn = Array.isArray(jobTitleIn)
+        ? jobTitleIn.map((value) => String(value)).filter(Boolean)
+        : [];
 
-      const historyJobs = await JobListing.find({
+      const query = {
         "assignedFreelancer.freelancerId": freelancerId,
-        "assignedFreelancer.status": { $in: ["finished", "left"] },
-      }).lean();
+        "assignedFreelancer.status": cleanStatusIn.length
+          ? { $in: cleanStatusIn }
+          : { $in: ["finished", "left"] },
+      };
+
+      if (cleanJobTitleIn.length) {
+        query.title = { $in: cleanJobTitleIn };
+      }
+
+      if (cleanEmployerIn.length) {
+        const employerDocs = await Employer.find({
+          companyName: { $in: cleanEmployerIn },
+        })
+          .select("employerId")
+          .lean();
+        const employerIds = employerDocs
+          .map((entry) => entry.employerId)
+          .filter(Boolean);
+        query.employerId = { $in: employerIds };
+      }
+
+      if (searchRegex) {
+        query.$or = [
+          { title: searchRegex },
+          { "description.text": searchRegex },
+          { "description.skills": { $elemMatch: { $regex: searchRegex } } },
+        ];
+      }
+
+      const sortMap = {
+        newest: { "assignedFreelancer.endDate": -1, updatedAt: -1, _id: -1 },
+        oldest: { "assignedFreelancer.endDate": 1, updatedAt: 1, _id: 1 },
+        "earned-high": { budget: -1, _id: -1 },
+        "earned-low": { budget: 1, _id: 1 },
+      };
+      const sortSpec = sortMap[sortBy] || sortMap.newest;
+
+      const [historyJobs, total, statusOptions, employerIdOptions, jobTitleOptions] = await Promise.all([
+        JobListing.find(query).sort(sortSpec).skip(safeSkip).limit(safeLimit).lean(),
+        JobListing.countDocuments(query),
+        JobListing.distinct("assignedFreelancer.status", {
+          "assignedFreelancer.freelancerId": freelancerId,
+          "assignedFreelancer.status": { $in: ["finished", "left"] },
+        }),
+        JobListing.distinct("employerId", query),
+        JobListing.distinct("title", query),
+      ]);
+
+      const employerOptionDocs = employerIdOptions.length
+        ? await Employer.find({ employerId: { $in: employerIdOptions } })
+            .select("companyName")
+            .lean()
+        : [];
 
       // Bulk fetch feedback (already batched in the REST version)
       const jobIds = historyJobs.map((j) => j.jobId);
@@ -501,7 +633,7 @@ const resolvers = {
         (id, i) => (userMap[id] = employerUsers[i])
       );
 
-      return historyJobs.map((job) => {
+      const jobs = historyJobs.map((job) => {
         const paidAmount = job.milestones
           .filter((m) => m.status === "paid")
           .reduce((sum, m) => sum + (parseFloat(m.payment) || 0), 0);
@@ -580,6 +712,32 @@ const resolvers = {
           cancelReason: job.assignedFreelancer.cancelReason || null,
         };
       });
+
+      const employerNames = [...new Set(employerOptionDocs.map((entry) => entry.companyName).filter(Boolean))]
+        .sort((a, b) => String(a).localeCompare(String(b)));
+      const jobTitles = (jobTitleOptions || [])
+        .map((entry) => String(entry || "").trim())
+        .filter(Boolean)
+        .sort((a, b) => String(a).localeCompare(String(b)));
+      const totalPages = Math.ceil(total / safeLimit) || 1;
+
+      return {
+        jobs,
+        total,
+        filterOptions: {
+          statuses: (statusOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+          employers: employerNames,
+          jobTitles,
+        },
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPrevPage: safePage > 1,
+        },
+      };
     },
 
     // ──────────────────────────────────────────────
@@ -591,7 +749,18 @@ const resolvers = {
      */
     employerApplications: async (
       _parent,
-      { status = "all", sort = "premium_oldest", limit = 50, offset = 0 },
+      {
+        status = "all",
+        sort = "premium_oldest",
+        limit = 25,
+        offset = 0,
+        page = null,
+        search = "",
+        freelancerIn = null,
+        jobIn = null,
+        statusIn = null,
+        ratingIn = null,
+      },
       { session }
     ) => {
       if (!session?.user) throw new Error("Unauthorized: Please log in");
@@ -603,8 +772,27 @@ const resolvers = {
         throw new Error("Employer roleId not found in session");
       }
 
-      const boundedLimit = Math.max(1, Math.min(limit || 50, 500));
-      const safeOffset = Math.max(0, offset || 0);
+      const boundedLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+      const safePage = Number.isFinite(Number(page)) && Number(page) > 0
+        ? Number(page)
+        : Math.floor(Math.max(0, Number(offset) || 0) / boundedLimit) + 1;
+      const safeOffset = (safePage - 1) * boundedLimit;
+      const searchText = String(search || "").trim();
+      const searchRegex = searchText
+        ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+        : null;
+      const cleanFreelancerIn = Array.isArray(freelancerIn)
+        ? freelancerIn.map((value) => String(value)).filter(Boolean)
+        : [];
+      const cleanJobIn = Array.isArray(jobIn)
+        ? jobIn.map((value) => String(value)).filter(Boolean)
+        : [];
+      const cleanStatusIn = Array.isArray(statusIn)
+        ? statusIn.map((value) => String(value)).filter(Boolean)
+        : [];
+      const cleanRatingIn = Array.isArray(ratingIn)
+        ? ratingIn.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+        : [];
 
       const jobs = await JobListing.find({ employerId })
         .select("jobId title")
@@ -625,72 +813,174 @@ const resolvers = {
         };
       }
 
-      const query = { jobId: { $in: jobIds } };
+      const matchQuery = { jobId: { $in: jobIds } };
       if (status && status !== "all") {
-        query.status = status;
+        matchQuery.status = status;
+      }
+      if (cleanStatusIn.length) {
+        matchQuery.status = { $in: cleanStatusIn };
       }
 
-      const applications = await JobApplication.find(query).lean();
-      const freelancerIds = [
-        ...new Set(applications.map((app) => app.freelancerId).filter(Boolean)),
-      ];
+      const sortStage =
+        sort === "newest"
+          ? { appliedDate: -1, _id: -1 }
+          : sort === "oldest"
+          ? { appliedDate: 1, _id: 1 }
+          : sort === "name_asc"
+          ? { freelancerName: 1, _id: 1 }
+          : sort === "name_desc"
+          ? { freelancerName: -1, _id: -1 }
+          : sort === "rating_desc"
+          ? { skillRating: -1, _id: -1 }
+          : sort === "rating_asc"
+          ? { skillRating: 1, _id: 1 }
+          : { isPremium: -1, appliedDate: 1, _id: 1 };
 
-      const users = await User.find({ roleId: { $in: freelancerIds } })
-        .select("roleId userId name picture email phone rating subscription")
-        .lean();
+      const [facet] = await JobApplication.aggregate([
+        { $match: matchQuery },
+        {
+          $lookup: {
+            from: "users",
+            localField: "freelancerId",
+            foreignField: "roleId",
+            as: "freelancerUser",
+          },
+        },
+        {
+          $unwind: {
+            path: "$freelancerUser",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: "job_listings",
+            localField: "jobId",
+            foreignField: "jobId",
+            as: "job",
+          },
+        },
+        {
+          $unwind: {
+            path: "$job",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            freelancerName: "$freelancerUser.name",
+            freelancerEmail: "$freelancerUser.email",
+            freelancerPhone: "$freelancerUser.phone",
+            freelancerPicture: "$freelancerUser.picture",
+            freelancerUserId: "$freelancerUser.userId",
+            skillRating: { $ifNull: ["$freelancerUser.rating", 0] },
+            isPremium: { $eq: ["$freelancerUser.subscription", "Premium"] },
+            jobTitle: "$job.title",
+          },
+        },
+        ...(searchRegex
+          ? [
+              {
+                $match: {
+                  $or: [
+                    { freelancerName: searchRegex },
+                    { freelancerEmail: searchRegex },
+                    { jobTitle: searchRegex },
+                  ],
+                },
+              },
+            ]
+          : []),
+        ...(cleanFreelancerIn.length
+          ? [{ $match: { freelancerName: { $in: cleanFreelancerIn } } }]
+          : []),
+        ...(cleanJobIn.length
+          ? [{ $match: { jobTitle: { $in: cleanJobIn } } }]
+          : []),
+        ...(cleanRatingIn.length
+          ? [{ $match: { skillRating: { $in: cleanRatingIn } } }]
+          : []),
+        {
+          $facet: {
+            rows: [
+              { $sort: sortStage },
+              { $skip: safeOffset },
+              { $limit: boundedLimit },
+              {
+                $project: {
+                  _id: 0,
+                  applicationId: 1,
+                  jobId: 1,
+                  freelancerId: 1,
+                  status: 1,
+                  appliedDate: { $ifNull: ["$appliedDate", "$createdAt"] },
+                  coverMessage: 1,
+                  resumeLink: 1,
+                  freelancerUserId: 1,
+                  freelancerName: { $ifNull: ["$freelancerName", "Unknown Freelancer"] },
+                  freelancerPicture: "$freelancerPicture",
+                  freelancerEmail: "$freelancerEmail",
+                  freelancerPhone: "$freelancerPhone",
+                  skillRating: 1,
+                  jobTitle: { $ifNull: ["$jobTitle", "Unknown Job"] },
+                  isPremium: 1,
+                },
+              },
+            ],
+            total: [{ $count: "count" }],
+            stats: [
+              {
+                $group: {
+                  _id: "$status",
+                  count: { $sum: 1 },
+                },
+              },
+            ],
+            filterOptions: [
+              {
+                $group: {
+                  _id: null,
+                  freelancers: { $addToSet: "$freelancerName" },
+                  jobs: { $addToSet: "$jobTitle" },
+                  statuses: { $addToSet: "$status" },
+                  ratings: { $addToSet: "$skillRating" },
+                },
+              },
+            ],
+          },
+        },
+      ]);
 
-      const jobMap = new Map(jobs.map((job) => [job.jobId, job]));
-      const userMap = new Map(users.map((entry) => [entry.roleId, entry]));
-
-      const enriched = applications.map((application) => {
-        const freelancer = userMap.get(application.freelancerId);
-        const job = jobMap.get(application.jobId);
-
-        return {
-          applicationId: application.applicationId,
-          jobId: application.jobId,
-          freelancerId: application.freelancerId,
-          status: application.status,
-          appliedDate:
-            application.appliedDate?.toISOString?.() || application.appliedDate,
-          coverMessage: application.coverMessage,
-          resumeLink: application.resumeLink,
-          freelancerUserId: freelancer?.userId || null,
-          freelancerName: freelancer?.name || "Unknown Freelancer",
-          freelancerPicture: freelancer?.picture || null,
-          freelancerEmail: freelancer?.email || null,
-          freelancerPhone: freelancer?.phone || null,
-          skillRating: Number(freelancer?.rating || 0),
-          jobTitle: job?.title || "Unknown Job",
-          isPremium: freelancer?.subscription === "Premium",
-        };
-      });
-
-      if (sort === "newest") {
-        enriched.sort((a, b) => new Date(b.appliedDate) - new Date(a.appliedDate));
-      } else if (sort === "oldest") {
-        enriched.sort((a, b) => new Date(a.appliedDate) - new Date(b.appliedDate));
-      } else {
-        enriched.sort((a, b) => {
-          if (a.isPremium && !b.isPremium) return -1;
-          if (!a.isPremium && b.isPremium) return 1;
-          return new Date(a.appliedDate) - new Date(b.appliedDate);
-        });
-      }
-
-      const total = enriched.length;
-      const paginated = enriched.slice(safeOffset, safeOffset + boundedLimit);
+      const rows = facet?.rows || [];
+      const total = facet?.total?.[0]?.count || 0;
+      const statsMap = Object.fromEntries((facet?.stats || []).map((row) => [row._id, row.count]));
+      const totalPages = Math.ceil(total / boundedLimit) || 1;
+      const optionBucket = facet?.filterOptions?.[0] || {};
 
       return {
-        applications: paginated,
+        applications: rows,
         stats: {
           total,
-          pending: enriched.filter((app) => app.status === "Pending").length,
-          accepted: enriched.filter((app) => app.status === "Accepted").length,
-          rejected: enriched.filter((app) => app.status === "Rejected").length,
+          pending: statsMap.Pending || 0,
+          accepted: statsMap.Accepted || 0,
+          rejected: statsMap.Rejected || 0,
         },
         total,
-        hasMore: safeOffset + paginated.length < total,
+        hasMore: safeOffset + rows.length < total,
+        filterOptions: {
+          freelancers: (optionBucket.freelancers || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+          jobs: (optionBucket.jobs || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+          statuses: (optionBucket.statuses || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+          ratings: (optionBucket.ratings || []).map((value) => Number(value)).filter((value) => Number.isFinite(value)).sort((a, b) => a - b),
+        },
+        pagination: {
+          page: safePage,
+          limit: boundedLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPrevPage: safePage > 1,
+        },
       };
     },
 
@@ -862,75 +1152,184 @@ const resolvers = {
      */
     // ── Admin dashboard queries (delegated to adminResolvers.js) ──
     ...adminResolvers,
+    ...moderatorQueryResolvers,
     ...employerResolvers,
 
-    freelancerApplications: async (_parent, _args, { session, loaders }) => {
+    freelancerApplications: async (_parent, args, { session }) => {
       if (!session?.user) throw new Error("Unauthorized: Please log in");
       if (session.user.role !== "Freelancer")
         throw new Error("Access denied. Freelancer access required.");
 
+      const {
+        search = "",
+        sortBy = "date-newest",
+        statusIn = null,
+        jobTypeIn = null,
+        page = 1,
+        limit = 25,
+      } = args || {};
+
       const freelancerId = session.user.roleId;
+      const safeLimit = Math.max(1, Math.min(Number(limit) || 25, 100));
+      const safePage = Math.max(1, Number(page) || 1);
+      const safeSkip = (safePage - 1) * safeLimit;
+      const searchText = String(search || "").trim();
+      const searchRegex = searchText
+        ? new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+        : null;
+      const cleanStatusIn = Array.isArray(statusIn)
+        ? statusIn.map((value) => String(value)).filter(Boolean)
+        : [];
+      const cleanJobTypeIn = Array.isArray(jobTypeIn)
+        ? jobTypeIn.map((value) => String(value)).filter(Boolean)
+        : [];
 
-      const applications = await JobApplication.find({ freelancerId })
-        .sort({ appliedDate: -1 })
-        .lean();
+      const baseMatch = { freelancerId };
+      if (cleanStatusIn.length) {
+        baseMatch.status = { $in: cleanStatusIn };
+      }
 
-      // Batch-load jobs
-      const jobIds = applications.map((app) => app.jobId);
-      const jobs = await Promise.all(
-        [...new Set(jobIds)].map((id) => loaders.jobByJobId.load(id))
-      );
+      const sortMap = {
+        "date-newest": { appliedDate: -1, _id: -1 },
+        "date-oldest": { appliedDate: 1, _id: 1 },
+        "budget-high": { budget: -1, _id: -1 },
+        "budget-low": { budget: 1, _id: 1 },
+        status: { status: 1, _id: 1 },
+      };
+      const dbSort = sortMap[sortBy] || sortMap["date-newest"];
 
-      // We need full job data for the response, so fetch separately
-      const fullJobs = await JobListing.find({
-        jobId: { $in: jobIds },
-      }).lean();
-      const jobMap = {};
-      fullJobs.forEach((job) => (jobMap[job.jobId] = job));
+      const pipeline = [
+        { $match: baseMatch },
+        {
+          $lookup: {
+            from: "job_listings",
+            localField: "jobId",
+            foreignField: "jobId",
+            as: "job",
+          },
+        },
+        {
+          $unwind: {
+            path: "$job",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: "employers",
+            localField: "job.employerId",
+            foreignField: "employerId",
+            as: "employer",
+          },
+        },
+        {
+          $unwind: {
+            path: "$employer",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            jobTitle: { $ifNull: ["$job.title", "N/A"] },
+            company: { $ifNull: ["$employer.companyName", "Unknown"] },
+            jobType: { $ifNull: ["$job.jobType", "N/A"] },
+            budget: { $toDouble: { $ifNull: ["$job.budget", 0] } },
+            location: { $ifNull: ["$job.location", "N/A"] },
+            experienceLevel: { $ifNull: ["$job.experienceLevel", "N/A"] },
+            skillsRequired: {
+              $cond: [
+                { $isArray: "$job.skillsRequired" },
+                "$job.skillsRequired",
+                {
+                  $cond: [
+                    { $isArray: "$job.description.skills" },
+                    "$job.description.skills",
+                    [],
+                  ],
+                },
+              ],
+            },
+            logo: "$employer.logo",
+          },
+        },
+      ];
 
-      // Batch-load employers
-      const employerIds = fullJobs
-        .map((job) => job.employerId)
-        .filter(Boolean);
-      const uniqueEmployerIds = [...new Set(employerIds)];
+      if (cleanJobTypeIn.length) {
+        pipeline.push({ $match: { jobType: { $in: cleanJobTypeIn } } });
+      }
 
-      const employers = await Promise.all(
-        uniqueEmployerIds.map((id) => loaders.employerByEmployerId.load(id))
-      );
-      const employerMap = {};
-      uniqueEmployerIds.forEach(
-        (id, i) => (employerMap[id] = employers[i])
-      );
+      if (searchRegex) {
+        pipeline.push({
+          $match: {
+            $or: [{ jobTitle: searchRegex }, { company: searchRegex }],
+          },
+        });
+      }
 
-      const result = applications.map((app) => {
-        const job = jobMap[app.jobId] || {};
-        const employer = employerMap[job.employerId] || {};
+      const [facet] = await JobApplication.aggregate([
+        ...pipeline,
+        {
+          $facet: {
+            rows: [
+              { $sort: dbSort },
+              { $skip: safeSkip },
+              { $limit: safeLimit },
+              {
+                $project: {
+                  _id: 0,
+                  applicationId: 1,
+                  jobId: 1,
+                  jobTitle: 1,
+                  company: 1,
+                  logo: 1,
+                  appliedDate: { $ifNull: ["$appliedDate", "$createdAt"] },
+                  status: 1,
+                  coverMessage: 1,
+                  resumeLink: 1,
+                  budget: 1,
+                  location: 1,
+                  jobType: 1,
+                  skillsRequired: 1,
+                  experienceLevel: 1,
+                },
+              },
+            ],
+            total: [{ $count: "count" }],
+            stats: [{ $group: { _id: "$status", count: { $sum: 1 } } }],
+            jobTypeOptions: [{ $group: { _id: "$jobType" } }],
+          },
+        },
+      ]);
 
-        return {
-          applicationId: app.applicationId,
-          jobId: app.jobId,
-          jobTitle: job.title || "N/A",
-          company: employer.companyName || "Unknown",
-          logo: employer.logo || null,
-          appliedDate: app.appliedDate?.toISOString?.() || app.appliedDate,
-          status: app.status,
-          coverMessage: app.coverMessage,
-          resumeLink: app.resumeLink,
-          budget: job.budget || 0,
-          location: job.location || "N/A",
-          jobType: job.jobType || "N/A",
-          skillsRequired: job.skillsRequired || [],
-          experienceLevel: job.experienceLevel || "N/A",
-        };
-      });
+      const result = facet?.rows || [];
+      const total = facet?.total?.[0]?.count || 0;
+      const totalPages = Math.ceil(total / safeLimit) || 1;
+      const statsMap = Object.fromEntries(((facet?.stats || [])).map((row) => [row._id, row.count]));
+      const jobTypeOptions = (facet?.jobTypeOptions || [])
+        .map((row) => row?._id)
+        .filter(Boolean)
+        .sort((a, b) => String(a).localeCompare(String(b)));
 
       return {
         applications: result,
         stats: {
-          total: result.length,
-          pending: result.filter((a) => a.status === "Pending").length,
-          accepted: result.filter((a) => a.status === "Accepted").length,
-          rejected: result.filter((a) => a.status === "Rejected").length,
+          total,
+          pending: statsMap.Pending || 0,
+          accepted: statsMap.Accepted || 0,
+          rejected: statsMap.Rejected || 0,
+        },
+        total,
+        filterOptions: {
+          statuses: ["Pending", "Accepted", "Rejected"],
+          jobTypes: (jobTypeOptions || []).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+        },
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages,
+          hasNextPage: safePage < totalPages,
+          hasPrevPage: safePage > 1,
         },
       };
     },
@@ -979,6 +1378,11 @@ const resolvers = {
         featuredBlog: featuredBlog || null,
       };
     },
+  },
+
+  Mutation: {
+    moderatorDeleteBlog: async (_parent, args, context) =>
+      moderatorDeleteBlog(_parent, args, context),
   },
 
   // ──────────────────────────────────────────────

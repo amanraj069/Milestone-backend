@@ -52,6 +52,81 @@ function calculatePlatformFee(durationDays, applicantCount) {
   return Math.max(2, Math.min(8, Math.round(rate * 10) / 10));
 }
 
+function encodeCursor(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64");
+}
+
+function decodeCursor(cursor) {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
+    if (!parsed?.createdAt || !parsed?.id) return null;
+    const createdAt = new Date(parsed.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id: parsed.id };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function encodePaymentCursor(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64");
+}
+
+function decodePaymentCursor(cursor) {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
+    if (!parsed?.updatedAt || !parsed?.jobObjectId || !parsed?.milestoneId) {
+      return null;
+    }
+    const updatedAt = new Date(parsed.updatedAt);
+    if (Number.isNaN(updatedAt.getTime())) return null;
+    return {
+      updatedAt,
+      jobObjectId: parsed.jobObjectId,
+      milestoneId: parsed.milestoneId,
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function encodePlatformFeeCursor(payload) {
+  return Buffer.from(JSON.stringify(payload)).toString("base64");
+}
+
+function decodePlatformFeeCursor(cursor) {
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
+    if (!parsed?.postedDate || !parsed?.id) return null;
+    const postedDate = new Date(parsed.postedDate);
+    if (Number.isNaN(postedDate.getTime())) return null;
+    return { postedDate, id: parsed.id };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function escapeRegex(text) {
+  return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function uniqueSorted(values, numeric = false) {
+  const uniqueValues = Array.from(
+    new Set(values.filter((value) => value !== undefined && value !== null && value !== "")),
+  );
+
+  if (numeric) {
+    return uniqueValues
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b);
+  }
+
+  return uniqueValues
+    .map((value) => String(value))
+    .sort((a, b) => a.localeCompare(b));
+}
+
 // ── Query Resolvers ─────────────────────────────
 
 const adminResolvers = {
@@ -280,72 +355,746 @@ const adminResolvers = {
   },
 
   // ──────────────────────────────────────────────
+  //  PLATFORM FEE COLLECTIONS (PAGINATED)
+  // ──────────────────────────────────────────────
+
+  adminPlatformFeeCollections: async (
+    _parent,
+    { first = 10, after = null },
+    { session },
+  ) => {
+    requireAdmin(session);
+
+    const normalizedFirst = Math.min(100, Math.max(1, Number(first) || 10));
+    const cursor = after ? decodePlatformFeeCursor(after) : null;
+
+    if (after && !cursor) {
+      throw new Error("Invalid cursor");
+    }
+
+    const baseFilter = { budget: { $gt: 0 } };
+    const queryFilter = cursor
+      ? {
+          ...baseFilter,
+          $or: [
+            { postedDate: { $lt: cursor.postedDate } },
+            { postedDate: cursor.postedDate, _id: { $lt: cursor.id } },
+          ],
+        }
+      : baseFilter;
+
+    const [total, jobsRaw] = await Promise.all([
+      JobListing.countDocuments(baseFilter),
+      JobListing.find(queryFilter)
+        .select(
+          "_id jobId title budget postedDate applicationDeadline applicants status employerId",
+        )
+        .sort({ postedDate: -1, _id: -1 })
+        .limit(normalizedFirst + 1)
+        .lean(),
+    ]);
+
+    const hasNextPage = jobsRaw.length > normalizedFirst;
+    const jobs = hasNextPage ? jobsRaw.slice(0, normalizedFirst) : jobsRaw;
+
+    if (!jobs.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
+
+    const jobIds = jobs.map((j) => j.jobId);
+    const employerIds = [...new Set(jobs.map((j) => j.employerId))];
+
+    const [appCounts, employers] = await Promise.all([
+      JobApplication.aggregate([
+        { $match: { jobId: { $in: jobIds } } },
+        { $group: { _id: "$jobId", count: { $sum: 1 } } },
+      ]),
+      Employer.find({ employerId: { $in: employerIds } })
+        .select("employerId companyName userId")
+        .lean(),
+    ]);
+
+    const appCountMap = Object.fromEntries(
+      appCounts.map((a) => [a._id, a.count]),
+    );
+    const employerMap = new Map(employers.map((e) => [e.employerId, e]));
+
+    const employerUserIds = employers.map((e) => e.userId);
+    const employerUsers = await User.find({ userId: { $in: employerUserIds } })
+      .select("userId name")
+      .lean();
+    const employerUserMap = new Map(
+      employerUsers.map((u) => [u.userId, u.name]),
+    );
+
+    const edges = jobs.map((job) => {
+      const postedDate = new Date(job.postedDate);
+      const deadline = new Date(job.applicationDeadline);
+      const durationDays = Math.max(
+        1,
+        Math.ceil((deadline - postedDate) / (1000 * 60 * 60 * 24)) || 1,
+      );
+      const applicantCount = appCountMap[job.jobId] || job.applicants || 0;
+      const feeRate = calculatePlatformFee(durationDays, applicantCount);
+      const feeAmount = Math.round((job.budget || 0) * (feeRate / 100) * 100) / 100;
+      const employer = employerMap.get(job.employerId);
+
+      return {
+        node: {
+          jobId: job.jobId,
+          title: job.title,
+          budget: job.budget,
+          durationDays,
+          applicantCount,
+          feeRate,
+          feeAmount,
+          postedDate: job.postedDate,
+          status: job.status,
+          employerName: employerUserMap.get(employer?.userId) || "Unknown",
+          companyName: employer?.companyName || "Unknown",
+        },
+        cursor: encodePlatformFeeCursor({
+          postedDate: job.postedDate,
+          id: String(job._id),
+        }),
+      };
+    });
+
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+    };
+  },
+
+  // ──────────────────────────────────────────────
   //  PAYMENTS
   // ──────────────────────────────────────────────
 
-  adminPayments: async (_parent, _args, { session }) => {
+  adminPayments: async (
+    _parent,
+    {
+      first = 25,
+      after = null,
+      search = "",
+      jobTitleIn = null,
+      milestoneIn = null,
+      employerIn = null,
+      freelancerIn = null,
+      statusIn = null,
+      sortBy = "date",
+      sortOrder = "desc",
+    },
+    { session },
+  ) => {
     requireAdmin(session);
 
-    const [jobsWithPaid, jobsWithPending] = await Promise.all([
-      JobListing.find({ "milestones.status": "paid" })
-        .select("jobId title budget employerId milestones assignedFreelancer status updatedAt").lean(),
-      JobListing.find({ "milestones.status": { $in: ["not-paid", "in-progress"] } })
-        .select("jobId title budget employerId milestones assignedFreelancer status updatedAt").lean(),
-    ]);
+    const normalizedFirst = Math.min(100, Math.max(1, Number(first) || 25));
+    const allowedSortBy = new Set(["date", "amount", "jobTitle"]);
+    const normalizedSortBy = allowedSortBy.has(sortBy) ? sortBy : "date";
+    const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc" ? "asc" : "desc";
+    const sortDir = normalizedSortOrder === "asc" ? 1 : -1;
 
-    const allPaymentJobs = [...jobsWithPaid, ...jobsWithPending];
-    const empIds = [...new Set(allPaymentJobs.map((j) => j.employerId))];
-    const flIds = [...new Set(allPaymentJobs.filter((j) => j.assignedFreelancer?.freelancerId).map((j) => j.assignedFreelancer.freelancerId))];
-
-    const [employers, freelancers] = await Promise.all([
-      Employer.find({ employerId: { $in: empIds } }).select("employerId companyName userId").lean(),
-      Freelancer.find({ freelancerId: { $in: flIds } }).select("freelancerId userId").lean(),
-    ]);
-    const allUserIds = [...employers.map((e) => e.userId), ...freelancers.map((f) => f.userId)];
-    const users = await User.find({ userId: { $in: allUserIds } }).select("userId name email").lean();
-
-    const payments = [];
-
-    const processJobs = (jobs, statusFilter, mapStatus) => {
-      jobs.forEach((job) => {
-        const employer = employers.find((e) => e.employerId === job.employerId);
-        const employerUser = users.find((u) => u.userId === employer?.userId);
-        const freelancer = freelancers.find((f) => f.freelancerId === job.assignedFreelancer?.freelancerId);
-        const freelancerUser = users.find((u) => u.userId === freelancer?.userId);
-        job.milestones.filter(statusFilter).forEach((milestone) => {
-          payments.push({
-            jobId: job.jobId, jobTitle: job.title,
-            milestoneId: milestone.milestoneId,
-            milestoneDescription: milestone.description,
-            amount: parseFloat(milestone.payment) || 0,
-            status: mapStatus(milestone),
-            employerName: employerUser?.name || "Unknown",
-            companyName: employer?.companyName || "Unknown",
-            freelancerName: freelancerUser?.name || "Unknown",
-            date: job.updatedAt?.toISOString?.() || job.updatedAt,
-          });
-        });
-      });
+    const normalizeStatus = (value) => {
+      const clean = String(value || "").trim().toLowerCase();
+      if (clean === "paid") return "Paid";
+      if (clean === "pending" || clean === "not-paid" || clean === "not paid") return "Pending";
+      if (clean === "in progress" || clean === "in-progress") return "In Progress";
+      return null;
     };
 
-    processJobs(jobsWithPaid, (m) => m.status === "paid", () => "Paid");
-    processJobs(jobsWithPending, (m) => m.status === "not-paid" || m.status === "in-progress",
-      (m) => m.status === "in-progress" ? "In Progress" : "Pending");
+    const cleanJobTitleIn = Array.isArray(jobTitleIn) ? jobTitleIn.filter(Boolean) : [];
+    const cleanMilestoneIn = Array.isArray(milestoneIn) ? milestoneIn.filter(Boolean) : [];
+    const cleanEmployerIn = Array.isArray(employerIn) ? employerIn.filter(Boolean) : [];
+    const cleanFreelancerIn = Array.isArray(freelancerIn) ? freelancerIn.filter(Boolean) : [];
+    const cleanStatusIn = Array.isArray(statusIn)
+      ? statusIn
+          .map((value) => normalizeStatus(value))
+          .filter(Boolean)
+      : [];
 
-    payments.sort((a, b) => new Date(b.date) - new Date(a.date));
-    return { payments, total: payments.length };
+    const andFilters = [];
+    if (cleanJobTitleIn.length) andFilters.push({ jobTitle: { $in: cleanJobTitleIn } });
+    if (cleanMilestoneIn.length) andFilters.push({ milestoneDescription: { $in: cleanMilestoneIn } });
+    if (cleanEmployerIn.length) andFilters.push({ employerName: { $in: cleanEmployerIn } });
+    if (cleanFreelancerIn.length) andFilters.push({ freelancerName: { $in: cleanFreelancerIn } });
+    if (cleanStatusIn.length) andFilters.push({ paymentStatusLabel: { $in: cleanStatusIn } });
+
+    const searchText = String(search || "").trim();
+    if (searchText) {
+      const regex = new RegExp(escapeRegex(searchText), "i");
+      andFilters.push({
+        $or: [
+          { jobTitle: regex },
+          { milestoneDescription: regex },
+          { employerName: regex },
+          { freelancerName: regex },
+          { companyName: regex },
+        ],
+      });
+    }
+
+    const encodePaymentsCursor = (payload) =>
+      Buffer.from(JSON.stringify(payload)).toString("base64");
+    const decodePaymentsCursor = (cursorValue) => {
+      try {
+        const parsed = JSON.parse(Buffer.from(cursorValue, "base64").toString("utf8"));
+        if (!parsed?.id || !parsed?.milestoneId || !parsed?.sortBy || !parsed?.sortOrder) {
+          return null;
+        }
+        return parsed;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const cursor = after ? decodePaymentsCursor(after) : null;
+    if (after && !cursor) {
+      throw new Error("Invalid cursor");
+    }
+    if (
+      cursor &&
+      (cursor.sortBy !== normalizedSortBy || cursor.sortOrder !== normalizedSortOrder)
+    ) {
+      throw new Error("Invalid cursor for requested sorting");
+    }
+
+    const paymentStatuses = ["paid", "not-paid", "in-progress"];
+    const commonStages = [
+      { $match: { "milestones.status": { $in: paymentStatuses } } },
+      { $unwind: "$milestones" },
+      { $match: { "milestones.status": { $in: paymentStatuses } } },
+      {
+        $lookup: {
+          from: "employers",
+          localField: "employerId",
+          foreignField: "employerId",
+          as: "employer",
+        },
+      },
+      {
+        $unwind: {
+          path: "$employer",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "employer.userId",
+          foreignField: "userId",
+          as: "employerUser",
+        },
+      },
+      {
+        $unwind: {
+          path: "$employerUser",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "freelancers",
+          localField: "assignedFreelancer.freelancerId",
+          foreignField: "freelancerId",
+          as: "freelancer",
+        },
+      },
+      {
+        $unwind: {
+          path: "$freelancer",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "freelancer.userId",
+          foreignField: "userId",
+          as: "freelancerUser",
+        },
+      },
+      {
+        $unwind: {
+          path: "$freelancerUser",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          jobObjectIdString: { $toString: "$_id" },
+          jobTitle: { $ifNull: ["$title", "N/A"] },
+          milestoneId: { $ifNull: [{ $toString: "$milestones.milestoneId" }, ""] },
+          milestoneDescription: { $ifNull: ["$milestones.description", "N/A"] },
+          milestonePaymentValue: {
+            $convert: {
+              input: "$milestones.payment",
+              to: "double",
+              onError: 0,
+              onNull: 0,
+            },
+          },
+          paymentStatusLabel: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$milestones.status", "paid"] }, then: "Paid" },
+                { case: { $eq: ["$milestones.status", "in-progress"] }, then: "In Progress" },
+              ],
+              default: "Pending",
+            },
+          },
+          employerName: { $ifNull: ["$employerUser.name", "Unknown"] },
+          companyName: { $ifNull: ["$employer.companyName", "Unknown"] },
+          freelancerName: { $ifNull: ["$freelancerUser.name", "Unknown"] },
+          dateValue: "$updatedAt",
+        },
+      },
+      ...(andFilters.length
+        ? [{ $match: andFilters.length === 1 ? andFilters[0] : { $and: andFilters } }]
+        : []),
+    ];
+
+    const sortFieldMap = {
+      date: "dateValue",
+      amount: "milestonePaymentValue",
+      jobTitle: "jobTitle",
+    };
+    const sortField = sortFieldMap[normalizedSortBy];
+    const dataStages = [...commonStages];
+
+    if (cursor) {
+      const cmp = sortDir === 1 ? "$gt" : "$lt";
+      const cursorValue =
+        normalizedSortBy === "date"
+          ? new Date(cursor.sortValue)
+          : normalizedSortBy === "amount"
+            ? Number(cursor.sortValue) || 0
+            : String(cursor.sortValue || "");
+
+      dataStages.push({
+        $match: {
+          $or: [
+            { [sortField]: { [cmp]: cursorValue } },
+            {
+              [sortField]: cursorValue,
+              jobObjectIdString: { [cmp]: String(cursor.id) },
+            },
+            {
+              [sortField]: cursorValue,
+              jobObjectIdString: String(cursor.id),
+              milestoneId: { [cmp]: String(cursor.milestoneId || "") },
+            },
+          ],
+        },
+      });
+    }
+
+    dataStages.push(
+      { $sort: { [sortField]: sortDir, jobObjectIdString: sortDir, milestoneId: sortDir } },
+      { $limit: normalizedFirst + 1 },
+      {
+        $project: {
+          jobId: 1,
+          jobTitle: 1,
+          milestoneId: 1,
+          milestoneDescription: 1,
+          amount: "$milestonePaymentValue",
+          status: "$paymentStatusLabel",
+          employerName: 1,
+          companyName: 1,
+          freelancerName: 1,
+          date: "$dateValue",
+          sortFieldValue: `$${sortField}`,
+          jobObjectIdString: 1,
+        },
+      },
+    );
+
+    const [totalAgg, paymentRows, summaryAgg] = await Promise.all([
+      JobListing.aggregate([...commonStages, { $count: "total" }]),
+      JobListing.aggregate(dataStages),
+      JobListing.aggregate([
+        ...commonStages,
+        {
+          $group: {
+            _id: "$paymentStatusLabel",
+            amount: { $sum: "$milestonePaymentValue" },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const total = totalAgg[0]?.total || 0;
+    const summary = {
+      totalTransactions: total,
+      paidTotal: 0,
+      pendingTotal: 0,
+      inProgressTotal: 0,
+      paidCount: 0,
+      pendingCount: 0,
+      inProgressCount: 0,
+    };
+    summaryAgg.forEach((item) => {
+      if (item._id === "Paid") {
+        summary.paidTotal = item.amount || 0;
+        summary.paidCount = item.count || 0;
+      }
+      if (item._id === "Pending") {
+        summary.pendingTotal = item.amount || 0;
+        summary.pendingCount = item.count || 0;
+      }
+      if (item._id === "In Progress") {
+        summary.inProgressTotal = item.amount || 0;
+        summary.inProgressCount = item.count || 0;
+      }
+    });
+
+    const hasNextPage = paymentRows.length > normalizedFirst;
+    const rows = hasNextPage ? paymentRows.slice(0, normalizedFirst) : paymentRows;
+
+    const edges = rows.map((row) => ({
+      node: {
+        jobId: row.jobId,
+        jobTitle: row.jobTitle,
+        milestoneId: row.milestoneId,
+        milestoneDescription: row.milestoneDescription,
+        amount: row.amount || 0,
+        status: row.status,
+        employerName: row.employerName,
+        companyName: row.companyName,
+        freelancerName: row.freelancerName,
+        date: row.date?.toISOString?.() || row.date,
+      },
+      cursor: encodePaymentsCursor({
+        sortBy: normalizedSortBy,
+        sortOrder: normalizedSortOrder,
+        sortValue:
+          normalizedSortBy === "date"
+            ? row.date?.toISOString?.() || row.date
+            : row.sortFieldValue,
+        id: row.jobObjectIdString,
+        milestoneId: row.milestoneId,
+      }),
+    }));
+
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+      summary,
+    };
+  },
+
+  adminPaymentsMeta: async (_parent, _args, { session }) => {
+    requireAdmin(session);
+
+    const paymentStatuses = ["paid", "not-paid", "in-progress"];
+    const baseStages = [
+      { $match: { "milestones.status": { $in: paymentStatuses } } },
+      { $unwind: "$milestones" },
+      { $match: { "milestones.status": { $in: paymentStatuses } } },
+      {
+        $lookup: {
+          from: "employers",
+          localField: "employerId",
+          foreignField: "employerId",
+          as: "employer",
+        },
+      },
+      {
+        $unwind: {
+          path: "$employer",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "employer.userId",
+          foreignField: "userId",
+          as: "employerUser",
+        },
+      },
+      {
+        $unwind: {
+          path: "$employerUser",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "freelancers",
+          localField: "assignedFreelancer.freelancerId",
+          foreignField: "freelancerId",
+          as: "freelancer",
+        },
+      },
+      {
+        $unwind: {
+          path: "$freelancer",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "freelancer.userId",
+          foreignField: "userId",
+          as: "freelancerUser",
+        },
+      },
+      {
+        $unwind: {
+          path: "$freelancerUser",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          jobTitle: { $ifNull: ["$title", "N/A"] },
+          milestoneDescription: { $ifNull: ["$milestones.description", "N/A"] },
+          milestonePaymentValue: {
+            $convert: {
+              input: "$milestones.payment",
+              to: "double",
+              onError: 0,
+              onNull: 0,
+            },
+          },
+          paymentStatusLabel: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$milestones.status", "paid"] }, then: "Paid" },
+                { case: { $eq: ["$milestones.status", "in-progress"] }, then: "In Progress" },
+              ],
+              default: "Pending",
+            },
+          },
+          employerName: { $ifNull: ["$employerUser.name", "Unknown"] },
+          freelancerName: { $ifNull: ["$freelancerUser.name", "Unknown"] },
+        },
+      },
+    ];
+
+    const [totalAgg, summaryAgg, optionsAgg] = await Promise.all([
+      JobListing.aggregate([...baseStages, { $count: "total" }]),
+      JobListing.aggregate([
+        ...baseStages,
+        {
+          $group: {
+            _id: "$paymentStatusLabel",
+            amount: { $sum: "$milestonePaymentValue" },
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      JobListing.aggregate([
+        ...baseStages,
+        {
+          $group: {
+            _id: null,
+            jobs: { $addToSet: "$jobTitle" },
+            milestones: { $addToSet: "$milestoneDescription" },
+            employers: { $addToSet: "$employerName" },
+            freelancers: { $addToSet: "$freelancerName" },
+            statuses: { $addToSet: "$paymentStatusLabel" },
+          },
+        },
+      ]),
+    ]);
+
+    const totalTransactions = totalAgg[0]?.total || 0;
+    const summary = {
+      totalTransactions,
+      paidTotal: 0,
+      pendingTotal: 0,
+      inProgressTotal: 0,
+      paidCount: 0,
+      pendingCount: 0,
+      inProgressCount: 0,
+    };
+
+    summaryAgg.forEach((item) => {
+      if (item._id === "Paid") {
+        summary.paidTotal = item.amount || 0;
+        summary.paidCount = item.count || 0;
+      }
+      if (item._id === "Pending") {
+        summary.pendingTotal = item.amount || 0;
+        summary.pendingCount = item.count || 0;
+      }
+      if (item._id === "In Progress") {
+        summary.inProgressTotal = item.amount || 0;
+        summary.inProgressCount = item.count || 0;
+      }
+    });
+
+    const options = optionsAgg[0] || {};
+    return {
+      summary,
+      filterOptions: {
+        jobs: uniqueSorted(options.jobs || []),
+        milestones: uniqueSorted(options.milestones || []),
+        employers: uniqueSorted(options.employers || []),
+        freelancers: uniqueSorted(options.freelancers || []),
+        statuses: uniqueSorted(options.statuses || []),
+      },
+    };
   },
 
   // ──────────────────────────────────────────────
   //  USERS
   // ──────────────────────────────────────────────
 
-  adminUsers: async (_parent, _args, { session }) => {
+  adminUsers: async (
+    _parent,
+    {
+      first = 25,
+      after = null,
+      search = "",
+      roleIn = null,
+      subscriptionIn = null,
+      locationIn = null,
+      ratingIn = null,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    },
+    { session },
+  ) => {
     requireAdmin(session);
 
-    const users = await User.find({ role: { $ne: "" } })
-      .select("userId name email role subscription picture location rating createdAt subscriptionDuration subscriptionExpiryDate")
-      .sort({ createdAt: -1 }).lean();
+    const safeFirst = Math.min(100, Math.max(1, Number(first) || 25));
+    const allowedSortFields = new Set(["createdAt", "name", "rating"]);
+    const normalizedSortBy = allowedSortFields.has(sortBy)
+      ? sortBy
+      : "createdAt";
+    const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc"
+      ? "asc"
+      : "desc";
+    const sortDir = normalizedSortOrder === "asc" ? 1 : -1;
+
+    const baseFilter = { role: { $ne: "" } };
+    const andFilters = [baseFilter];
+
+    const cleanRoleIn = Array.isArray(roleIn)
+      ? roleIn.filter(Boolean)
+      : [];
+    const cleanSubscriptionIn = Array.isArray(subscriptionIn)
+      ? subscriptionIn.filter(Boolean)
+      : [];
+    const cleanLocationIn = Array.isArray(locationIn)
+      ? locationIn.filter(Boolean)
+      : [];
+    const cleanRatingIn = Array.isArray(ratingIn)
+      ? ratingIn
+          .map((v) => Number(v))
+          .filter((v) => Number.isFinite(v))
+      : [];
+
+    if (cleanRoleIn.length) {
+      andFilters.push({ role: { $in: cleanRoleIn } });
+    }
+    if (cleanSubscriptionIn.length) {
+      andFilters.push({ subscription: { $in: cleanSubscriptionIn } });
+    }
+    if (cleanLocationIn.length) {
+      andFilters.push({ location: { $in: cleanLocationIn } });
+    }
+    if (cleanRatingIn.length) {
+      andFilters.push({ rating: { $in: cleanRatingIn } });
+    }
+
+    const searchText = String(search || "").trim();
+    if (searchText) {
+      const regex = new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      andFilters.push({
+        $or: [
+          { name: regex },
+          { email: regex },
+          { location: regex },
+        ],
+      });
+    }
+
+    const encodeUserCursor = (payload) =>
+      Buffer.from(JSON.stringify(payload)).toString("base64");
+    const decodeUserCursor = (cursorValue) => {
+      try {
+        const parsed = JSON.parse(
+          Buffer.from(cursorValue, "base64").toString("utf8"),
+        );
+        if (!parsed?.id || !parsed?.sortBy || !parsed?.sortOrder) return null;
+        return parsed;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const cursor = after ? decodeUserCursor(after) : null;
+    if (
+      cursor &&
+      (cursor.sortBy !== normalizedSortBy ||
+        cursor.sortOrder !== normalizedSortOrder)
+    ) {
+      throw new Error("Invalid cursor for requested sorting");
+    }
+
+    const preCursorFilter =
+      andFilters.length === 1 ? andFilters[0] : { $and: andFilters };
+    const queryFilters = [...andFilters];
+
+    if (cursor) {
+      const cmp = sortDir === 1 ? "$gt" : "$lt";
+      const cursorValue =
+        normalizedSortBy === "createdAt"
+          ? new Date(cursor.sortValue)
+          : cursor.sortValue;
+
+      queryFilters.push({
+        $or: [
+          { [normalizedSortBy]: { [cmp]: cursorValue } },
+          {
+            [normalizedSortBy]: cursorValue,
+            _id: { [cmp]: cursor.id },
+          },
+        ],
+      });
+    }
+
+    const queryFilter =
+      queryFilters.length === 1 ? queryFilters[0] : { $and: queryFilters };
+    const querySort = { [normalizedSortBy]: sortDir, _id: sortDir };
+
+    const [usersRaw, total] = await Promise.all([
+      User.find(queryFilter)
+        .select("_id userId name email role subscription picture location rating createdAt subscriptionDuration subscriptionExpiryDate")
+        .sort(querySort)
+        .limit(safeFirst + 1)
+        .lean(),
+      User.countDocuments(preCursorFilter),
+    ]);
+
+    const hasNextPage = usersRaw.length > safeFirst;
+    const users = hasNextPage ? usersRaw.slice(0, safeFirst) : usersRaw;
+
+    if (!users.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
 
     const userIds = users.map((u) => u.userId);
     const [freelancers, employers, moderators] = await Promise.all([
@@ -358,7 +1107,7 @@ const adminResolvers = {
     const empMap = Object.fromEntries(employers.map((e) => [e.userId, e.employerId]));
     const modMap = Object.fromEntries(moderators.map((m) => [m.userId, m.moderatorId]));
 
-    const result = users.map((u) => {
+    const edges = users.map((u) => {
       let roleId = null, profilePath = null;
       if (u.role === "Freelancer" && flMap[u.userId]) {
         roleId = flMap[u.userId]; profilePath = `/admin/freelancers/${roleId}`;
@@ -368,61 +1117,374 @@ const adminResolvers = {
         roleId = modMap[u.userId]; profilePath = `/admin/moderators/${roleId}`;
       }
       return {
-        ...u, roleId, profilePath,
-        createdAt: u.createdAt?.toISOString?.() || u.createdAt,
-        subscriptionExpiryDate: u.subscriptionExpiryDate?.toISOString?.() || u.subscriptionExpiryDate,
+        node: {
+          ...u,
+          roleId,
+          profilePath,
+          createdAt: u.createdAt?.toISOString?.() || u.createdAt,
+          subscriptionExpiryDate:
+            u.subscriptionExpiryDate?.toISOString?.() ||
+            u.subscriptionExpiryDate,
+        },
+        cursor: encodeUserCursor({
+          sortBy: normalizedSortBy,
+          sortOrder: normalizedSortOrder,
+          sortValue:
+            normalizedSortBy === "createdAt"
+              ? u.createdAt?.toISOString?.() || u.createdAt
+              : u[normalizedSortBy],
+          id: String(u._id),
+        }),
       };
     });
 
-    return { users: result, total: result.length };
+    const endCursor = edges.length ? edges[edges.length - 1].cursor : null;
+
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor,
+      },
+      total,
+    };
+  },
+
+  adminUsersMeta: async (_parent, _args, { session }) => {
+    requireAdmin(session);
+
+    const roleFilter = { role: { $ne: "" } };
+    const [
+      total,
+      freelancers,
+      employers,
+      moderators,
+      admins,
+      roles,
+      subscriptions,
+      locations,
+      ratings,
+    ] = await Promise.all([
+      User.countDocuments(roleFilter),
+      User.countDocuments({ role: "Freelancer" }),
+      User.countDocuments({ role: "Employer" }),
+      User.countDocuments({ role: "Moderator" }),
+      User.countDocuments({ role: "Admin" }),
+      User.distinct("role", roleFilter),
+      User.distinct("subscription", roleFilter),
+      User.distinct("location", roleFilter),
+      User.distinct("rating", roleFilter),
+    ]);
+
+    return {
+      summary: {
+        total,
+        freelancers,
+        employers,
+        moderators,
+        admins,
+      },
+      filterOptions: {
+        roles: uniqueSorted(roles),
+        subscriptions: uniqueSorted(subscriptions),
+        locations: uniqueSorted(locations),
+        ratings: uniqueSorted(ratings, true),
+      },
+    };
   },
 
   // ──────────────────────────────────────────────
   //  FREELANCERS LIST
   // ──────────────────────────────────────────────
 
-  adminFreelancers: async (_parent, _args, { session }) => {
+  adminFreelancers: async (
+    _parent,
+    {
+      first = 25,
+      after = null,
+      search = "",
+      locationIn = null,
+      ratingIn = null,
+      subscriptionIn = null,
+      statusIn = null,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    },
+    { session },
+  ) => {
     requireAdmin(session);
 
-    const freelancers = await Freelancer.find({}).lean();
-    const freelancerUserIds = freelancers.map((f) => f.userId);
-    const users = await User.find({ userId: { $in: freelancerUserIds } })
-      .select("userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate")
-      .lean();
+    const normalizedFirst = Math.min(100, Math.max(1, Number(first) || 25));
+    const allowedSort = new Set(["createdAt", "name", "rating", "applicationsCount"]);
+    const normalizedSortBy = allowedSort.has(sortBy) ? sortBy : "createdAt";
+    const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc" ? "asc" : "desc";
+    const sortDir = normalizedSortOrder === "asc" ? 1 : -1;
 
-    const roleIds = freelancers.map((f) => f.freelancerId);
-    const [applicationCounts, activeJobs] = await Promise.all([
-      JobApplication.aggregate([
-        { $match: { freelancerId: { $in: roleIds } } },
-        { $group: { _id: "$freelancerId", count: { $sum: 1 } } },
-      ]),
-      JobListing.find({ "assignedFreelancer.freelancerId": { $in: roleIds }, "assignedFreelancer.status": "working" })
-        .select("assignedFreelancer.freelancerId").lean(),
+    const cleanLocationIn = Array.isArray(locationIn) ? locationIn.filter(Boolean) : [];
+    const cleanRatingIn = Array.isArray(ratingIn)
+      ? ratingIn.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+      : [];
+    const cleanSubscriptionIn = Array.isArray(subscriptionIn) ? subscriptionIn.filter(Boolean) : [];
+    const cleanStatusIn = Array.isArray(statusIn)
+      ? statusIn.map((value) => String(value).toLowerCase()).filter((value) => ["working", "available"].includes(value))
+      : [];
+
+    const andConditions = [{ "user.role": "Freelancer" }];
+
+    if (cleanLocationIn.length) {
+      andConditions.push({ "user.location": { $in: cleanLocationIn } });
+    }
+    if (cleanRatingIn.length) {
+      andConditions.push({ "user.rating": { $in: cleanRatingIn } });
+    }
+    if (cleanSubscriptionIn.length) {
+      andConditions.push({ "user.subscription": { $in: cleanSubscriptionIn } });
+    }
+
+    const searchText = String(search || "").trim();
+    if (searchText) {
+      const regex = new RegExp(escapeRegex(searchText), "i");
+      andConditions.push({
+        $or: [
+          { "user.name": regex },
+          { "user.email": regex },
+          { "user.location": regex },
+          { "user.phone": regex },
+        ],
+      });
+    }
+
+    const baseMatch = andConditions.length === 1 ? andConditions[0] : { $and: andConditions };
+
+    const encodeFreelancerCursor = (payload) =>
+      Buffer.from(JSON.stringify(payload)).toString("base64");
+    const decodeFreelancerCursor = (value) => {
+      try {
+        const parsed = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+        if (!parsed?.id || !parsed?.sortBy || !parsed?.sortOrder) return null;
+        return parsed;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const cursor = after ? decodeFreelancerCursor(after) : null;
+    if (
+      cursor &&
+      (cursor.sortBy !== normalizedSortBy || cursor.sortOrder !== normalizedSortOrder)
+    ) {
+      throw new Error("Invalid cursor for requested sorting");
+    }
+
+    const sortFieldMap = {
+      createdAt: "user.createdAt",
+      name: "user.name",
+      rating: "user.rating",
+      applicationsCount: "applicationsCount",
+    };
+    const sortField = sortFieldMap[normalizedSortBy];
+
+    const commonPipeline = [
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "userId",
+          as: "user",
+        },
+      },
+      { $unwind: "$user" },
+      { $match: baseMatch },
+      {
+        $lookup: {
+          from: "job_applications",
+          let: { freelancerId: "$freelancerId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$freelancerId", "$$freelancerId"] } } },
+            { $count: "count" },
+          ],
+          as: "applicationMeta",
+        },
+      },
+      {
+        $lookup: {
+          from: "job_listings",
+          let: { freelancerId: "$freelancerId" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$assignedFreelancer.freelancerId", "$$freelancerId"] },
+                    { $eq: ["$assignedFreelancer.status", "working"] },
+                  ],
+                },
+              },
+            },
+            { $limit: 1 },
+          ],
+          as: "activeJobs",
+        },
+      },
+      {
+        $addFields: {
+          applicationsCount: {
+            $ifNull: [{ $arrayElemAt: ["$applicationMeta.count", 0] }, 0],
+          },
+          isCurrentlyWorking: { $gt: [{ $size: "$activeJobs" }, 0] },
+        },
+      },
+    ];
+
+    if (cleanStatusIn.length) {
+      const wantsWorking = cleanStatusIn.includes("working");
+      const wantsAvailable = cleanStatusIn.includes("available");
+      if (wantsWorking && !wantsAvailable) {
+        commonPipeline.push({ $match: { isCurrentlyWorking: true } });
+      } else if (!wantsWorking && wantsAvailable) {
+        commonPipeline.push({ $match: { isCurrentlyWorking: false } });
+      }
+    }
+
+    const totalPipeline = [...commonPipeline, { $count: "count" }];
+
+    const dataPipeline = [...commonPipeline];
+    if (cursor) {
+      const cmp = sortDir === 1 ? "$gt" : "$lt";
+      const cursorValue = normalizedSortBy === "createdAt"
+        ? new Date(cursor.sortValue)
+        : cursor.sortValue;
+
+      dataPipeline.push({
+        $match: {
+          $or: [
+            { [sortField]: { [cmp]: cursorValue } },
+            {
+              [sortField]: cursorValue,
+              freelancerId: { [cmp]: String(cursor.id) },
+            },
+          ],
+        },
+      });
+    }
+
+    dataPipeline.push(
+      { $sort: { [sortField]: sortDir, freelancerId: sortDir } },
+      { $limit: normalizedFirst + 1 },
+      {
+        $project: {
+          freelancerId: 1,
+          userId: 1,
+          skills: 1,
+          createdAt: 1,
+          applicationsCount: 1,
+          isCurrentlyWorking: 1,
+          "user.name": 1,
+          "user.email": 1,
+          "user.phone": 1,
+          "user.picture": 1,
+          "user.location": 1,
+          "user.rating": 1,
+          "user.createdAt": 1,
+          "user.subscription": 1,
+          "user.subscriptionDuration": 1,
+          "user.subscriptionExpiryDate": 1,
+        },
+      },
+    );
+
+    const [totalResult, rowsRaw] = await Promise.all([
+      Freelancer.aggregate(totalPipeline),
+      Freelancer.aggregate(dataPipeline),
     ]);
 
-    const applicationMap = {};
-    applicationCounts.forEach((item) => { applicationMap[item._id] = item.count; });
-    const workingFreelancerIds = new Set(activeJobs.map((job) => job.assignedFreelancer.freelancerId));
+    const total = totalResult?.[0]?.count || 0;
+    const hasNextPage = rowsRaw.length > normalizedFirst;
+    const rows = hasNextPage ? rowsRaw.slice(0, normalizedFirst) : rowsRaw;
 
-    const result = freelancers.map((freelancer) => {
-      const user = users.find((u) => u.userId === freelancer.userId);
-      return {
-        freelancerId: freelancer.freelancerId, userId: freelancer.userId,
-        name: user?.name || "N/A", email: user?.email || "N/A",
-        phone: user?.phone || "N/A", picture: user?.picture || "",
-        location: user?.location || "N/A", rating: user?.rating || 0,
+    const edges = rows.map((freelancer) => ({
+      node: {
+        freelancerId: freelancer.freelancerId,
+        userId: freelancer.userId,
+        name: freelancer.user?.name || "N/A",
+        email: freelancer.user?.email || "N/A",
+        phone: freelancer.user?.phone || "N/A",
+        picture: freelancer.user?.picture || "",
+        location: freelancer.user?.location || "N/A",
+        rating: freelancer.user?.rating || 0,
         skills: freelancer.skills?.length || 0,
-        subscription: user?.subscription || "Basic",
-        isPremium: user?.subscription === "Premium",
-        subscriptionDuration: user?.subscriptionDuration || null,
-        subscriptionExpiryDate: user?.subscriptionExpiryDate?.toISOString?.() || user?.subscriptionExpiryDate || null,
-        applicationsCount: applicationMap[freelancer.freelancerId] || 0,
-        isCurrentlyWorking: workingFreelancerIds.has(freelancer.freelancerId),
-        joinedDate: (user?.createdAt || freelancer.createdAt)?.toISOString?.() || null,
-      };
-    });
+        subscription: freelancer.user?.subscription || "Basic",
+        isPremium: freelancer.user?.subscription === "Premium",
+        subscriptionDuration: freelancer.user?.subscriptionDuration || null,
+        subscriptionExpiryDate:
+          freelancer.user?.subscriptionExpiryDate?.toISOString?.() ||
+          freelancer.user?.subscriptionExpiryDate ||
+          null,
+        applicationsCount: freelancer.applicationsCount || 0,
+        isCurrentlyWorking: !!freelancer.isCurrentlyWorking,
+        joinedDate:
+          freelancer.user?.createdAt?.toISOString?.() ||
+          freelancer.user?.createdAt ||
+          freelancer.createdAt?.toISOString?.() ||
+          freelancer.createdAt ||
+          null,
+      },
+      cursor: encodeFreelancerCursor({
+        sortBy: normalizedSortBy,
+        sortOrder: normalizedSortOrder,
+        sortValue:
+          normalizedSortBy === "createdAt"
+            ? freelancer.user?.createdAt?.toISOString?.() || freelancer.user?.createdAt
+            : freelancer[normalizedSortBy] ?? freelancer.user?.[normalizedSortBy],
+        id: freelancer.freelancerId,
+      }),
+    }));
 
-    return { freelancers: result, total: result.length };
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+    };
+  },
+
+  adminFreelancersMeta: async (_parent, _args, { session }) => {
+    requireAdmin(session);
+
+    const [
+      total,
+      premium,
+      locations,
+      ratings,
+      subscriptions,
+      workingFreelancerIds,
+    ] = await Promise.all([
+      User.countDocuments({ role: "Freelancer" }),
+      User.countDocuments({ role: "Freelancer", subscription: "Premium" }),
+      User.distinct("location", { role: "Freelancer" }),
+      User.distinct("rating", { role: "Freelancer" }),
+      User.distinct("subscription", { role: "Freelancer" }),
+      JobListing.distinct("assignedFreelancer.freelancerId", {
+        "assignedFreelancer.freelancerId": { $exists: true, $ne: null },
+        "assignedFreelancer.status": "working",
+      }),
+    ]);
+
+    return {
+      summary: {
+        total,
+        working: workingFreelancerIds.length,
+        premium,
+      },
+      filterOptions: {
+        locations: uniqueSorted(locations),
+        ratings: uniqueSorted(ratings, true),
+        subscriptions: uniqueSorted(subscriptions),
+        statuses: ["Working", "Available"],
+      },
+    };
   },
 
   // ──────────────────────────────────────────────
@@ -498,44 +1560,453 @@ const adminResolvers = {
   //  EMPLOYERS LIST
   // ──────────────────────────────────────────────
 
-  adminEmployers: async (_parent, _args, { session }) => {
+  adminEmployers: async (
+    _parent,
+    {
+      first = 25,
+      after = null,
+      search = "",
+      companyIn = null,
+      locationIn = null,
+      ratingIn = null,
+      subscriptionIn = null,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    },
+    { session },
+  ) => {
     requireAdmin(session);
 
-    const employers = await Employer.find({}).lean();
-    const employerUserIds = employers.map((e) => e.userId);
-    const users = await User.find({ userId: { $in: employerUserIds } })
-      .select("userId name email phone picture location rating createdAt subscription subscriptionDuration subscriptionExpiryDate")
-      .lean();
+    const normalizedFirst = Math.min(100, Math.max(1, Number(first) || 25));
+    const allowedSort = new Set(["createdAt", "name", "rating", "jobListingsCount", "hiredCount"]);
+    const normalizedSortBy = allowedSort.has(sortBy) ? sortBy : "createdAt";
+    const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc" ? "asc" : "desc";
+    const sortDir = normalizedSortOrder === "asc" ? 1 : -1;
 
-    const empIds = employers.map((e) => e.employerId);
-    const jobCounts = await JobListing.aggregate([
-      { $match: { employerId: { $in: empIds } } },
-      { $group: { _id: "$employerId", count: { $sum: 1 } } },
+    const cleanCompanyIn = Array.isArray(companyIn) ? companyIn.filter(Boolean) : [];
+    const cleanLocationIn = Array.isArray(locationIn) ? locationIn.filter(Boolean) : [];
+    const cleanRatingIn = Array.isArray(ratingIn)
+      ? ratingIn.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+      : [];
+    const cleanSubscriptionIn = Array.isArray(subscriptionIn) ? subscriptionIn.filter(Boolean) : [];
+
+    const andConditions = [{ "user.role": "Employer" }];
+    if (cleanCompanyIn.length) {
+      andConditions.push({ companyName: { $in: cleanCompanyIn } });
+    }
+    if (cleanLocationIn.length) {
+      andConditions.push({ "user.location": { $in: cleanLocationIn } });
+    }
+    if (cleanRatingIn.length) {
+      andConditions.push({ "user.rating": { $in: cleanRatingIn } });
+    }
+    if (cleanSubscriptionIn.length) {
+      andConditions.push({ "user.subscription": { $in: cleanSubscriptionIn } });
+    }
+
+    const searchText = String(search || "").trim();
+    if (searchText) {
+      const regex = new RegExp(escapeRegex(searchText), "i");
+      andConditions.push({
+        $or: [
+          { "user.name": regex },
+          { "user.email": regex },
+          { "user.phone": regex },
+          { "user.location": regex },
+          { companyName: regex },
+        ],
+      });
+    }
+
+    const baseMatch = andConditions.length === 1 ? andConditions[0] : { $and: andConditions };
+
+    const encodeEmployerCursor = (payload) =>
+      Buffer.from(JSON.stringify(payload)).toString("base64");
+    const decodeEmployerCursor = (value) => {
+      try {
+        const parsed = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+        if (!parsed?.id || !parsed?.sortBy || !parsed?.sortOrder) return null;
+        return parsed;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const cursor = after ? decodeEmployerCursor(after) : null;
+    if (
+      cursor &&
+      (cursor.sortBy !== normalizedSortBy || cursor.sortOrder !== normalizedSortOrder)
+    ) {
+      throw new Error("Invalid cursor for requested sorting");
+    }
+
+    const sortFieldMap = {
+      createdAt: "user.createdAt",
+      name: "user.name",
+      rating: "user.rating",
+      jobListingsCount: "jobListingsCount",
+      hiredCount: "hiredCount",
+    };
+    const sortField = sortFieldMap[normalizedSortBy];
+
+    const commonPipeline = [
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "userId",
+          as: "user",
+        },
+      },
+      { $unwind: "$user" },
+      { $match: baseMatch },
+      {
+        $lookup: {
+          from: "job_listings",
+          let: { employerId: "$employerId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$employerId", "$$employerId"] } } },
+            { $count: "count" },
+          ],
+          as: "jobMeta",
+        },
+      },
+      {
+        $addFields: {
+          jobListingsCount: {
+            $ifNull: [{ $arrayElemAt: ["$jobMeta.count", 0] }, 0],
+          },
+          currentHires: { $size: { $ifNull: ["$currentFreelancers", []] } },
+          pastHires: { $size: { $ifNull: ["$previouslyWorkedFreelancers", []] } },
+        },
+      },
+      {
+        $addFields: {
+          hiredCount: { $add: ["$currentHires", "$pastHires"] },
+        },
+      },
+    ];
+
+    const totalPipeline = [...commonPipeline, { $count: "count" }];
+    const dataPipeline = [...commonPipeline];
+
+    if (cursor) {
+      const cmp = sortDir === 1 ? "$gt" : "$lt";
+      const cursorValue = normalizedSortBy === "createdAt"
+        ? new Date(cursor.sortValue)
+        : cursor.sortValue;
+
+      dataPipeline.push({
+        $match: {
+          $or: [
+            { [sortField]: { [cmp]: cursorValue } },
+            {
+              [sortField]: cursorValue,
+              employerId: { [cmp]: String(cursor.id) },
+            },
+          ],
+        },
+      });
+    }
+
+    dataPipeline.push(
+      { $sort: { [sortField]: sortDir, employerId: sortDir } },
+      { $limit: normalizedFirst + 1 },
+      {
+        $project: {
+          employerId: 1,
+          userId: 1,
+          companyName: 1,
+          createdAt: 1,
+          jobListingsCount: 1,
+          hiredCount: 1,
+          currentHires: 1,
+          pastHires: 1,
+          "user.name": 1,
+          "user.email": 1,
+          "user.phone": 1,
+          "user.picture": 1,
+          "user.location": 1,
+          "user.rating": 1,
+          "user.createdAt": 1,
+          "user.subscription": 1,
+          "user.subscriptionDuration": 1,
+          "user.subscriptionExpiryDate": 1,
+        },
+      },
+    );
+
+    const [totalResult, rowsRaw] = await Promise.all([
+      Employer.aggregate(totalPipeline),
+      Employer.aggregate(dataPipeline),
     ]);
-    const jobCountMap = {};
-    jobCounts.forEach((item) => { jobCountMap[item._id] = item.count; });
 
-    const result = employers.map((employer) => {
-      const user = users.find((u) => u.userId === employer.userId);
-      const currentHires = employer.currentFreelancers?.length || 0;
-      const pastHires = employer.previouslyWorkedFreelancers?.length || 0;
-      return {
-        employerId: employer.employerId, userId: employer.userId,
-        name: user?.name || "N/A", email: user?.email || "N/A",
-        phone: user?.phone || "N/A", picture: user?.picture || "",
-        location: user?.location || "N/A",
+    const total = totalResult?.[0]?.count || 0;
+    const hasNextPage = rowsRaw.length > normalizedFirst;
+    const rows = hasNextPage ? rowsRaw.slice(0, normalizedFirst) : rowsRaw;
+
+    const edges = rows.map((employer) => ({
+      node: {
+        employerId: employer.employerId,
+        userId: employer.userId,
+        name: employer.user?.name || "N/A",
+        email: employer.user?.email || "N/A",
+        phone: employer.user?.phone || "N/A",
+        picture: employer.user?.picture || "",
+        location: employer.user?.location || "N/A",
         companyName: employer.companyName || "N/A",
-        rating: user?.rating || 0, subscription: user?.subscription || "Basic",
-        isPremium: user?.subscription === "Premium",
-        subscriptionDuration: user?.subscriptionDuration || null,
-        subscriptionExpiryDate: user?.subscriptionExpiryDate?.toISOString?.() || null,
-        jobListingsCount: jobCountMap[employer.employerId] || 0,
-        hiredCount: currentHires + pastHires, currentHires, pastHires,
-        joinedDate: (user?.createdAt || employer.createdAt)?.toISOString?.() || null,
+        rating: employer.user?.rating || 0,
+        subscription: employer.user?.subscription || "Basic",
+        isPremium: employer.user?.subscription === "Premium",
+        subscriptionDuration: employer.user?.subscriptionDuration || null,
+        subscriptionExpiryDate:
+          employer.user?.subscriptionExpiryDate?.toISOString?.() ||
+          employer.user?.subscriptionExpiryDate ||
+          null,
+        jobListingsCount: employer.jobListingsCount || 0,
+        hiredCount: employer.hiredCount || 0,
+        currentHires: employer.currentHires || 0,
+        pastHires: employer.pastHires || 0,
+        joinedDate:
+          employer.user?.createdAt?.toISOString?.() ||
+          employer.user?.createdAt ||
+          employer.createdAt?.toISOString?.() ||
+          employer.createdAt ||
+          null,
+      },
+      cursor: encodeEmployerCursor({
+        sortBy: normalizedSortBy,
+        sortOrder: normalizedSortOrder,
+        sortValue:
+          normalizedSortBy === "createdAt"
+            ? employer.user?.createdAt?.toISOString?.() || employer.user?.createdAt
+            : employer[normalizedSortBy] ?? employer.user?.[normalizedSortBy],
+        id: employer.employerId,
+      }),
+    }));
+
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+    };
+  },
+
+  adminEmployersMeta: async (_parent, _args, { session }) => {
+    requireAdmin(session);
+
+    const [
+      total,
+      premium,
+      companies,
+      locations,
+      ratings,
+      subscriptions,
+      totalJobListings,
+    ] = await Promise.all([
+      User.countDocuments({ role: "Employer" }),
+      User.countDocuments({ role: "Employer", subscription: "Premium" }),
+      Employer.distinct("companyName", {}),
+      User.distinct("location", { role: "Employer" }),
+      User.distinct("rating", { role: "Employer" }),
+      User.distinct("subscription", { role: "Employer" }),
+      JobListing.countDocuments({}),
+    ]);
+
+    return {
+      summary: {
+        total,
+        premium,
+        totalJobListings,
+      },
+      filterOptions: {
+        companies: uniqueSorted(companies),
+        locations: uniqueSorted(locations),
+        ratings: uniqueSorted(ratings, true),
+        subscriptions: uniqueSorted(subscriptions),
+      },
+    };
+  },
+
+  adminModerators: async (
+    _parent,
+    {
+      first = 25,
+      after = null,
+      search = "",
+      locationIn = null,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    },
+    { session },
+  ) => {
+    requireAdmin(session);
+
+    const normalizedFirst = Math.min(100, Math.max(1, Number(first) || 25));
+    const normalizedSortBy = ["createdAt", "name"].includes(sortBy) ? sortBy : "createdAt";
+    const normalizedSortOrder = String(sortOrder).toLowerCase() === "asc" ? "asc" : "desc";
+    const sortDir = normalizedSortOrder === "asc" ? 1 : -1;
+
+    const cleanLocationIn = Array.isArray(locationIn) ? locationIn.filter(Boolean) : [];
+    const andFilters = [{ role: "Moderator" }];
+
+    if (cleanLocationIn.length) {
+      andFilters.push({ location: { $in: cleanLocationIn } });
+    }
+
+    const searchText = String(search || "").trim();
+    if (searchText) {
+      const regex = new RegExp(escapeRegex(searchText), "i");
+      andFilters.push({
+        $or: [
+          { name: regex },
+          { email: regex },
+          { location: regex },
+        ],
+      });
+    }
+
+    const preCursorFilter = andFilters.length === 1 ? andFilters[0] : { $and: andFilters };
+
+    const encodeModeratorCursor = (payload) =>
+      Buffer.from(JSON.stringify(payload)).toString("base64");
+    const decodeModeratorCursor = (value) => {
+      try {
+        const parsed = JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+        if (!parsed?.id || !parsed?.sortBy || !parsed?.sortOrder) return null;
+        return parsed;
+      } catch (_error) {
+        return null;
+      }
+    };
+
+    const cursor = after ? decodeModeratorCursor(after) : null;
+    if (
+      cursor &&
+      (cursor.sortBy !== normalizedSortBy || cursor.sortOrder !== normalizedSortOrder)
+    ) {
+      throw new Error("Invalid cursor for requested sorting");
+    }
+
+    const queryFilters = [...andFilters];
+    if (cursor) {
+      const cmp = sortDir === 1 ? "$gt" : "$lt";
+      const cursorValue = normalizedSortBy === "createdAt"
+        ? new Date(cursor.sortValue)
+        : cursor.sortValue;
+
+      queryFilters.push({
+        $or: [
+          { [normalizedSortBy]: { [cmp]: cursorValue } },
+          { [normalizedSortBy]: cursorValue, userId: { [cmp]: String(cursor.id) } },
+        ],
+      });
+    }
+
+    const queryFilter = queryFilters.length === 1 ? queryFilters[0] : { $and: queryFilters };
+    const [usersRaw, total] = await Promise.all([
+      User.find(queryFilter)
+        .select("userId roleId name email picture location createdAt")
+        .sort({ [normalizedSortBy]: sortDir, userId: sortDir })
+        .limit(normalizedFirst + 1)
+        .lean(),
+      User.countDocuments(preCursorFilter),
+    ]);
+
+    const hasNextPage = usersRaw.length > normalizedFirst;
+    const users = hasNextPage ? usersRaw.slice(0, normalizedFirst) : usersRaw;
+
+    if (!users.length) {
+      return {
+        edges: [],
+        pageInfo: { hasNextPage: false, endCursor: null },
+        total,
+      };
+    }
+
+    const moderatorDocs = await Moderator.find({ userId: { $in: users.map((user) => user.userId) } })
+      .select("moderatorId userId")
+      .lean();
+    const moderatorByUserId = new Map(
+      moderatorDocs.map((moderator) => [moderator.userId, moderator]),
+    );
+
+    const [resolvedComplaints, totalComplaints, blogsCreated] = await Promise.all([
+      Complaint.countDocuments({
+        status: "Resolved",
+        resolvedAt: { $exists: true, $ne: null },
+      }),
+      Complaint.countDocuments({}),
+      Blog.countDocuments({}),
+    ]);
+
+    const edges = users.map((user) => {
+      const moderator = moderatorByUserId.get(user.userId);
+      const moderatorId = moderator?.moderatorId || user.roleId || user.userId;
+
+      return {
+        node: {
+          moderatorId,
+          userId: user.userId,
+          name: user.name || "N/A",
+          email: user.email || "N/A",
+          picture: user.picture || "",
+          location: user.location || "N/A",
+          joinedDate: user.createdAt?.toISOString?.() || user.createdAt || null,
+          complaintsResolved: resolvedComplaints,
+          totalComplaints: totalComplaints,
+          blogsCreated,
+        },
+        cursor: encodeModeratorCursor({
+          sortBy: normalizedSortBy,
+          sortOrder: normalizedSortOrder,
+          sortValue:
+            normalizedSortBy === "createdAt"
+              ? user.createdAt?.toISOString?.() || user.createdAt
+              : user[normalizedSortBy],
+          id: user.userId,
+        }),
       };
     });
 
-    return { employers: result, total: result.length };
+    return {
+      edges,
+      pageInfo: {
+        hasNextPage,
+        endCursor: edges.length ? edges[edges.length - 1].cursor : null,
+      },
+      total,
+    };
+  },
+
+  adminModeratorsMeta: async (_parent, _args, { session }) => {
+    requireAdmin(session);
+
+    const [total, locations, complaintsResolved, totalComplaints, blogsCreated] = await Promise.all([
+      User.countDocuments({ role: "Moderator" }),
+      User.distinct("location", { role: "Moderator" }),
+      Complaint.countDocuments({
+        status: "Resolved",
+        resolvedAt: { $exists: true, $ne: null },
+      }),
+      Complaint.countDocuments({}),
+      Blog.countDocuments({}),
+    ]);
+
+    return {
+      summary: {
+        total,
+        complaintsResolved,
+        totalComplaints,
+        blogsCreated,
+      },
+      filterOptions: {
+        locations: uniqueSorted(locations),
+      },
+    };
   },
 
   // ──────────────────────────────────────────────
