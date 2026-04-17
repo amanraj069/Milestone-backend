@@ -34,8 +34,11 @@ const feedbackRoutes = require("./routes/feedbackRoutes");
 const questionRoutes = require("./routes/questionRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
+const { searchRouter, reindexRouter } = require("./routes/searchRoutes");
 const { errorHandler, notFound } = require("./middleware/errorHandler");
 const chatLogger = require("./utils/chatLogger");
+const { registerSolrHooks } = require("./services/solrSync");
+const solrClient = require("./config/solr");
 
 const app = express();
 const server = http.createServer(app);
@@ -204,6 +207,8 @@ app.use("/api/feedback", feedbackRoutes);
 app.use("/api/questions", questionRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/search", searchRouter);
+app.use("/api/admin", reindexRouter);
 
 // Use Apollo GraphQL endpoint mounted in startServer().
 // Do not mount legacy graphql-http handler on /graphql as it can shadow Apollo.
@@ -382,6 +387,20 @@ app.set("io", io);
 // Initialize Apollo Server and start the HTTP server
 async function startServer() {
   await connectDB;
+
+  // ── Solr setup ──────────────────────────────────────
+  // Register Mongoose → Solr sync hooks
+  registerSolrHooks();
+
+  // Check if Solr is reachable at startup
+  const solrAlive = await solrClient.ping(solrClient.cores.jobs);
+  if (solrAlive) {
+    console.log("[Solr] Connected to Solr successfully");
+  } else {
+    console.warn(
+      "[Solr] Solr is not reachable. Search will use MongoDB fallback until Solr is available.",
+    );
+  }
 
   // Create Executable Schema
   const schema = makeExecutableSchema({

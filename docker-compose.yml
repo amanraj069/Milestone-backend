@@ -40,6 +40,8 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      solr:
+        condition: service_healthy
     ports:
       - "9000:9000"
     environment:
@@ -54,6 +56,11 @@ services:
       # Redis connection URL (Hardcoded for docker network)
       REDIS_URL: redis://redis:6379
 
+      # Solr connection (Docker network hostname)
+      SOLR_BASE_URL: http://solr:8983/solr
+      SOLR_CORE_JOBS: jobs
+      SOLR_CORE_BLOGS: blogs
+
       # External service credentials (optional in local setup).
       EMAIL_SERVICE: ${EMAIL_SERVICE:-gmail}
       EMAIL_USER: ${EMAIL_USER:-}
@@ -67,6 +74,28 @@ services:
       # Keep runtime-generated files persisted between container restarts.
       - ./logs:/app/logs
       - ./uploads:/app/uploads
+
+  solr:
+    image: solr:9
+    container_name: milestone-solr
+    restart: unless-stopped
+    ports:
+      - "8983:8983"
+    volumes:
+      - solr_data:/var/solr
+      - ./solr/configsets:/opt/solr/server/solr/configsets/milestone
+    command: >
+      bash -c "
+        precreate-core jobs /opt/solr/server/solr/configsets/milestone;
+        precreate-core blogs /opt/solr/server/solr/configsets/milestone;
+        exec solr-foreground
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8983/solr/jobs/admin/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   frontend:
     build:
@@ -86,3 +115,4 @@ services:
 volumes:
   mongo_data:
   redis_data:
+  solr_data:

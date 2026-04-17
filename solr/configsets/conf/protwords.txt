@@ -1,0 +1,17 @@
+# Protected words — words listed here will not be stemmed.
+# Add domain-specific terms that should remain exact (e.g. technology names).
+JavaScript
+TypeScript
+React
+Node
+MongoDB
+PostgreSQL
+GraphQL
+AWS
+Docker
+Kubernetes
+Python
+Django
+Flask
+Redis
+Nginx

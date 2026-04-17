@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Milestone Platform — Shared Solr Managed Schema
+  Used by both "jobs" and "blogs" cores.
+  Fields that only apply to one core are simply left empty in the other.
+-->
+<schema name="milestone" version="1.6">
+
+  <!-- ============================== -->
+  <!--         Field Types             -->
+  <!-- ============================== -->
+
+  <!-- Exact-match string (for IDs, facets, filters) -->
+  <fieldType name="string" class="solr.StrField" sortMissingLast="true" docValues="true" />
+
+  <!-- Boolean -->
+  <fieldType name="boolean" class="solr.BoolField" sortMissingLast="true" />
+
+  <!-- Numeric types -->
+  <fieldType name="pint" class="solr.IntPointField" docValues="true" />
+  <fieldType name="pfloat" class="solr.FloatPointField" docValues="true" />
+  <fieldType name="plong" class="solr.LongPointField" docValues="true" />
+  <fieldType name="pdouble" class="solr.DoublePointField" docValues="true" />
+
+  <!-- Date -->
+  <fieldType name="pdate" class="solr.DatePointField" docValues="true" />
+
+  <!-- Full-text English with stemming, stopwords, and synonyms -->
+  <fieldType name="text_en" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory" />
+      <filter class="solr.StopFilterFactory" ignoreCase="true" words="lang/stopwords_en.txt" />
+      <filter class="solr.LowerCaseFilterFactory" />
+      <filter class="solr.EnglishPossessiveFilterFactory" />
+      <filter class="solr.KeywordMarkerFilterFactory" protected="protwords.txt" />
+      <filter class="solr.PorterStemFilterFactory" />
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory" />
+      <filter class="solr.StopFilterFactory" ignoreCase="true" words="lang/stopwords_en.txt" />
+      <filter class="solr.LowerCaseFilterFactory" />
+      <filter class="solr.EnglishPossessiveFilterFactory" />
+      <filter class="solr.KeywordMarkerFilterFactory" protected="protwords.txt" />
+      <filter class="solr.PorterStemFilterFactory" />
+    </analyzer>
+  </fieldType>
+
+  <!-- Lightweight text for autocomplete / suggest (no stemming) -->
+  <fieldType name="text_suggest" class="solr.TextField" positionIncrementGap="100">
+    <analyzer type="index">
+      <tokenizer class="solr.StandardTokenizerFactory" />
+      <filter class="solr.LowerCaseFilterFactory" />
+      <filter class="solr.EdgeNGramFilterFactory" minGramSize="2" maxGramSize="25" />
+    </analyzer>
+    <analyzer type="query">
+      <tokenizer class="solr.StandardTokenizerFactory" />
+      <filter class="solr.LowerCaseFilterFactory" />
+    </analyzer>
+  </fieldType>
+
+  <!-- ============================== -->
+  <!--           Fields                -->
+  <!-- ============================== -->
+
+  <!-- Universal primary key -->
+  <field name="id" type="string" indexed="true" stored="true" required="true" />
+
+  <!-- Discriminator so both cores share schema cleanly -->
+  <field name="doc_type" type="string" indexed="true" stored="true" default="job" />
+
+  <!-- ── Job Listing fields ─────────────────────────── -->
+  <field name="title" type="text_en" indexed="true" stored="true" />
+  <field name="description" type="text_en" indexed="true" stored="true" />
+  <field name="skills" type="text_en" indexed="true" stored="true" multiValued="true" />
+  <field name="skills_facet" type="string" indexed="true" stored="false" multiValued="true" />
+  <field name="category" type="string" indexed="true" stored="true" />
+  <field name="status" type="string" indexed="true" stored="true" />
+  <field name="budget" type="pfloat" indexed="true" stored="true" />
+  <field name="jobType" type="string" indexed="true" stored="true" />
+  <field name="experienceLevel" type="string" indexed="true" stored="true" />
+  <field name="remote" type="boolean" indexed="true" stored="true" />
+  <field name="location" type="text_en" indexed="true" stored="true" />
+  <field name="location_str" type="string" indexed="true" stored="true" />
+  <field name="postedDate" type="pdate" indexed="true" stored="true" />
+  <field name="applicationDeadline" type="pdate" indexed="true" stored="true" />
+  <field name="employerId" type="string" indexed="true" stored="true" />
+  <field name="imageUrl" type="string" indexed="false" stored="true" />
+  <field name="isBoosted" type="boolean" indexed="true" stored="true" />
+  <field name="applicants" type="pint" indexed="true" stored="true" />
+
+  <!-- ── Blog fields ────────────────────────────────── -->
+  <field name="author" type="text_en" indexed="true" stored="true" />
+  <field name="tagline" type="text_en" indexed="true" stored="true" />
+  <field name="slug" type="string" indexed="true" stored="true" />
+  <field name="readTime" type="pint" indexed="true" stored="true" />
+  <field name="views" type="pint" indexed="true" stored="true" />
+  <field name="likes" type="pint" indexed="true" stored="true" />
+  <field name="featured" type="boolean" indexed="true" stored="true" />
+
+  <!-- ── Suggest field (used by autocomplete) ──────── -->
+  <field name="suggest_field" type="text_suggest" indexed="true" stored="false" multiValued="true" />
+
+  <!-- ── Catch-all field for eDisMax fallback ───────── -->
+  <field name="_text_" type="text_en" indexed="true" stored="false" multiValued="true" />
+
+  <!-- Solr internal version field -->
+  <field name="_version_" type="plong" indexed="false" stored="false" />
+
+  <!-- ============================== -->
+  <!--         Copy Fields             -->
+  <!-- ============================== -->
+
+  <!-- Populate the catch-all _text_ field -->
+  <copyField source="title" dest="_text_" />
+  <copyField source="description" dest="_text_" />
+  <copyField source="skills" dest="_text_" />
+  <copyField source="location" dest="_text_" />
+  <copyField source="author" dest="_text_" />
+  <copyField source="tagline" dest="_text_" />
+
+  <!-- Populate suggest field for autocomplete -->
+  <copyField source="title" dest="suggest_field" />
+  <copyField source="skills" dest="suggest_field" />
+  <copyField source="category" dest="suggest_field" />
+
+  <!-- Facet-friendly copy of skills -->
+  <copyField source="skills" dest="skills_facet" />
+
+  <!-- ============================== -->
+  <!--        Unique Key               -->
+  <!-- ============================== -->
+  <uniqueKey>id</uniqueKey>
+
+</schema>

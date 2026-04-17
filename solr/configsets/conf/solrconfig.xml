@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Milestone Platform — Solr Configuration
+  Configures eDisMax search, highlighting, suggest/autocomplete, and spellcheck.
+-->
+<config>
+
+  <luceneMatchVersion>9.0</luceneMatchVersion>
+
+  <!-- ============================== -->
+  <!--       Directory Factory         -->
+  <!-- ============================== -->
+  <directoryFactory name="DirectoryFactory"
+                    class="${solr.directoryFactory:solr.NRTCachingDirectoryFactory}" />
+
+  <schemaFactory class="ClassicIndexSchemaFactory" />
+
+  <!-- ============================== -->
+  <!--         Update Handler          -->
+  <!-- ============================== -->
+  <requestHandler name="/update" class="solr.UpdateRequestHandler">
+    <lst name="defaults">
+      <str name="update.chain">add-unknown-fields-to-the-schema</str>
+    </lst>
+  </requestHandler>
+
+  <!-- ============================== -->
+  <!--    Primary Search Handler       -->
+  <!--    (eDisMax with boosts)        -->
+  <!-- ============================== -->
+  <requestHandler name="/select" class="solr.SearchHandler">
+    <lst name="defaults">
+      <!-- Use eDisMax for relevance-ranked search -->
+      <str name="defType">edismax</str>
+
+      <!-- Query fields with boosts: title most important, then skills, then description -->
+      <str name="qf">title^3 skills^2 description^1.5 location^1 author^1 tagline^1.2</str>
+
+      <!-- Phrase boosts: exact phrase matches rank even higher -->
+      <str name="pf">title^5 description^2</str>
+
+      <!-- Minimum match: at least 75% of terms must match -->
+      <str name="mm">75%</str>
+
+      <!-- Tie-breaker for multi-field matching -->
+      <float name="tie">0.1</float>
+
+      <!-- Default operator -->
+      <str name="q.op">OR</str>
+
+      <!-- Return these fields by default -->
+      <str name="fl">*,score</str>
+
+      <!-- Rows per page -->
+      <int name="rows">10</int>
+
+      <!-- ── Highlighting ──────────────────── -->
+      <str name="hl">true</str>
+      <str name="hl.fl">title,description,tagline</str>
+      <str name="hl.tag.pre">&lt;mark&gt;</str>
+      <str name="hl.tag.post">&lt;/mark&gt;</str>
+      <str name="hl.snippets">3</str>
+      <str name="hl.fragsize">150</str>
+      <str name="hl.method">unified</str>
+
+      <!-- ── Faceting ─────────────────────── -->
+      <str name="facet">true</str>
+      <str name="facet.mincount">1</str>
+    </lst>
+  </requestHandler>
+
+  <!-- ============================== -->
+  <!--     Suggest / Autocomplete      -->
+  <!-- ============================== -->
+  <searchComponent name="suggest" class="solr.SuggestComponent">
+    <lst name="suggester">
+      <str name="name">mileSuggester</str>
+      <str name="lookupImpl">AnalyzingInfixLookupFactory</str>
+      <str name="dictionaryImpl">DocumentDictionaryFactory</str>
+      <str name="field">suggest_field</str>
+      <str name="suggestAnalyzerFieldType">text_suggest</str>
+      <str name="buildOnStartup">true</str>
+      <str name="buildOnCommit">true</str>
+    </lst>
+  </searchComponent>
+
+  <requestHandler name="/suggest" class="solr.SearchHandler" startup="lazy">
+    <lst name="defaults">
+      <str name="suggest">true</str>
+      <str name="suggest.count">8</str>
+      <str name="suggest.dictionary">mileSuggester</str>
+    </lst>
+    <arr name="components">
+      <str>suggest</str>
+    </arr>
+  </requestHandler>
+
+  <!-- ============================== -->
+  <!--         Spellcheck              -->
+  <!-- ============================== -->
+  <searchComponent name="spellcheck" class="solr.SpellCheckComponent">
+    <lst name="spellchecker">
+      <str name="name">default</str>
+      <str name="field">_text_</str>
+      <str name="classname">solr.DirectSolrSpellChecker</str>
+      <str name="distanceMeasure">internal</str>
+      <float name="accuracy">0.5</float>
+      <int name="maxEdits">2</int>
+      <int name="minPrefix">1</int>
+      <int name="maxInspections">5</int>
+      <int name="minQueryLength">3</int>
+      <float name="maxQueryFrequency">0.01</float>
+    </lst>
+  </searchComponent>
+
+  <!-- ============================== -->
+  <!--         Admin Handlers          -->
+  <!-- ============================== -->
+  <requestHandler name="/admin/ping" class="solr.PingRequestHandler">
+    <lst name="invariants">
+      <str name="q">*:*</str>
+    </lst>
+    <lst name="defaults">
+      <str name="echoParams">all</str>
+    </lst>
+  </requestHandler>
+
+  <!-- Real-time get handler -->
+  <requestHandler name="/get" class="solr.RealTimeGetHandler">
+    <lst name="defaults">
+      <str name="omitHeader">true</str>
+    </lst>
+  </requestHandler>
+
+  <!-- ============================== -->
+  <!--      Update Processors          -->
+  <!-- ============================== -->
+  <updateRequestProcessorChain name="add-unknown-fields-to-the-schema">
+    <processor class="solr.LogUpdateProcessorFactory" />
+    <processor class="solr.RunUpdateProcessorFactory" />
+  </updateRequestProcessorChain>
+
+</config>
