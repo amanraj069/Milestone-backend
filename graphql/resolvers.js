@@ -12,6 +12,8 @@ const employerResolvers = require("./employerResolvers");
 const moderatorResolvers = require("./moderatorResolvers");
 const Blog = require("../models/blog");
 
+const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+
 const { moderatorDeleteBlog, ...moderatorQueryResolvers } = moderatorResolvers;
 
 const toIsoString = (value) => {
@@ -1087,7 +1089,7 @@ const resolvers = {
         status: application.status,
         appliedDate: toIsoString(application.appliedDate),
         coverMessage: application.coverMessage || "",
-        resumeLink: application.resumeLink || freelancerProfile?.resume || "",
+        resumeLink: SHARED_RESUME_URL,
         freelancerName: freelancerUser?.name || "Unknown Freelancer",
         freelancerPicture: freelancerUser?.picture || null,
         freelancerEmail: freelancerUser?.email || null,
@@ -1133,7 +1135,7 @@ const resolvers = {
           hasPortfolio: Array.isArray(freelancerProfile?.portfolio)
             ? freelancerProfile.portfolio.length > 0
             : false,
-          hasResume: Boolean(application.resumeLink || freelancerProfile?.resume),
+          hasResume: true,
           feedbackCount: feedbackTotal,
           averageFeedbackRating: avgFeedbackRating,
         },

@@ -2,6 +2,8 @@ const JobListing = require("../models/job_listing");
 const User = require("../models/user");
 const JobApplication = require("../models/job_application");
 
+const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+
 const requireEmployer = (context) => {
   const user = context.session?.user;
   if (!user || user.role !== "Employer" || !user.roleId) {
@@ -636,7 +638,10 @@ const employerResolvers = {
       },
     ]);
 
-    const rows = facet?.rows || [];
+    const rows = (facet?.rows || []).map((row) => ({
+      ...row,
+      resumeLink: SHARED_RESUME_URL,
+    }));
     const total = facet?.total?.[0]?.count || 0;
     const statsMap = Object.fromEntries((facet?.stats || []).map((row) => [row._id, row.count]));
     const totalPages = Math.ceil(total / boundedLimit) || 1;

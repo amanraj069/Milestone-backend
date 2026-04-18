@@ -18,6 +18,8 @@ const Blog = require("../models/blog");
 const Moderator = require("../models/moderator");
 const Subscription = require("../models/subscription");
 
+const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+
 // ── Helpers ─────────────────────────────────────
 
 function requireAdmin(session) {
@@ -1545,7 +1547,7 @@ const adminResolvers = {
       experience: (freelancer.experience || []).map((e) => JSON.stringify(e)),
       education: (freelancer.education || []).map((e) => JSON.stringify(e)),
       portfolio: (freelancer.portfolio || []).map((p) => JSON.stringify(p)),
-      resume: freelancer.resume || "",
+      resume: SHARED_RESUME_URL,
       isCurrentlyWorking: !!activeJob,
       currentJobTitle: activeJob?.title || null,
       applicationsCount: applications.length,
