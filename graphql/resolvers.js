@@ -12,7 +12,7 @@ const employerResolvers = require("./employerResolvers");
 const moderatorResolvers = require("./moderatorResolvers");
 const Blog = require("../models/blog");
 
-const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
 
 const { moderatorDeleteBlog, ...moderatorQueryResolvers } = moderatorResolvers;
 

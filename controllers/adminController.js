@@ -15,7 +15,7 @@ const RatingAudit = require("../models/RatingAudit");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 const { v4: uuidv4 } = require("uuid");
 
-const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
 
 function getPaginationParams(query, defaultLimit = 25, maxLimit = 100) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);

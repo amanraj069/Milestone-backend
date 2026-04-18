@@ -8,7 +8,7 @@ const Feedback = require("../models/Feedback");
 const Payment = require("../models/Payment");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
-const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
 
 const getPaginationParams = (query = {}) => {
   const page = Math.max(1, Number(query.page) || 1);

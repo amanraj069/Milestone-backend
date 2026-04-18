@@ -18,7 +18,7 @@ const Blog = require("../models/blog");
 const Moderator = require("../models/moderator");
 const Subscription = require("../models/subscription");
 
-const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
 
 // ── Helpers ─────────────────────────────────────
 

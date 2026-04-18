@@ -2,7 +2,7 @@ const JobListing = require("../models/job_listing");
 const User = require("../models/user");
 const JobApplication = require("../models/job_application");
 
-const SHARED_RESUME_URL = "/uploads/resumes/shared-resume.pdf";
+const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
 
 const requireEmployer = (context) => {
   const user = context.session?.user;
