@@ -44,13 +44,15 @@ const app = express();
 const server = http.createServer(app);
 
 // Global allowed origins for CORS
+// Strip trailing slashes from configured origin so the comparison
+// matches the browser-sent Origin header (which never has a trailing slash).
 const allowedOrigins = [
   process.env.FRONTEND_ORIGIN,
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:3002",
   "http://localhost:5173",
-].filter(Boolean);
+].filter(Boolean).map(o => o.replace(/\/+$/, ''));
 
 app.use(
   helmet({
@@ -173,6 +175,15 @@ if (isProduction) {
   app.set("trust proxy", 1);
 }
 
+// Detect whether the frontend and backend share the same origin.
+// When they do (e.g. behind a reverse-proxy) we can use 'lax'.
+// 'none' + secure:true is only viable over HTTPS.
+const frontendOrigin = (process.env.FRONTEND_ORIGIN || "").replace(/\/+$/, "");
+const backendOrigin = `http://localhost:${PORT}`;
+const isSameOrigin = frontendOrigin === backendOrigin;
+// Use secure cookies ONLY when the frontend is served over HTTPS
+const useSecureCookies = frontendOrigin.startsWith("https://");
+
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
   resave: false,
@@ -180,9 +191,9 @@ const sessionMiddleware = session({
   proxy: isProduction,
   cookie: {
     maxAge: 24 * 60 * 60 * 1000,
-    secure: isProduction, // Set to true for HTTPS
+    secure: useSecureCookies,
     httpOnly: true,
-    sameSite: isProduction ? "none" : "lax", // Required for cross-site cookies
+    sameSite: useSecureCookies ? "none" : "lax",
   },
 });
 
