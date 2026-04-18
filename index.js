@@ -175,14 +175,10 @@ if (isProduction) {
   app.set("trust proxy", 1);
 }
 
-// Detect whether the frontend and backend share the same origin.
-// When they do (e.g. behind a reverse-proxy) we can use 'lax'.
-// 'none' + secure:true is only viable over HTTPS.
-const frontendOrigin = (process.env.FRONTEND_ORIGIN || "").replace(/\/+$/, "");
-const backendOrigin = `http://localhost:${PORT}`;
-const isSameOrigin = frontendOrigin === backendOrigin;
-// Use secure cookies ONLY when the frontend is served over HTTPS
-const useSecureCookies = frontendOrigin.startsWith("https://");
+// Cookie security is driven by NODE_ENV:
+// - production (.env on server): secure:true + sameSite:"none" for cross-origin HTTPS
+// - development (.env locally):  secure:false + sameSite:"lax" for HTTP localhost
+const useSecureCookies = isProduction;
 
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || "dev_session_secret_change_me",
