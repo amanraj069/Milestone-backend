@@ -9,6 +9,15 @@ set -euo pipefail
 FRONTEND_REPO_PATH="${1:-}"
 BRANCH="${2:-main}"
 TARGET="${3:-all}"
+USE_SUDO_DOCKER=0
+
+run_compose() {
+  if [[ "${USE_SUDO_DOCKER}" -eq 1 ]]; then
+    sudo docker compose "$@"
+  else
+    docker compose "$@"
+  fi
+}
 
 if [[ -z "${FRONTEND_REPO_PATH}" ]]; then
   echo "Error: frontend repo path is required."
@@ -31,6 +40,19 @@ if [[ "${TARGET}" != "backend" && "${TARGET}" != "frontend" && "${TARGET}" != "a
   exit 1
 fi
 
+if ! docker ps >/dev/null 2>&1; then
+  if sudo -n docker ps >/dev/null 2>&1; then
+    USE_SUDO_DOCKER=1
+    echo "Info: docker socket requires elevated permissions, using sudo for docker compose."
+  else
+    echo "Error: Docker daemon is not accessible for user '${USER}'."
+    echo "Fix one of these on VM:"
+    echo "  1) Add user to docker group: sudo usermod -aG docker ${USER}"
+    echo "  2) Allow passwordless sudo for docker commands"
+    exit 1
+  fi
+fi
+
 echo "[1/5] Preparing deployment target: ${TARGET}"
 
 if [[ "${TARGET}" == "backend" || "${TARGET}" == "all" ]]; then
@@ -50,21 +72,21 @@ if [[ "${TARGET}" == "frontend" || "${TARGET}" == "all" ]]; then
 fi
 
 echo "[4/5] Verifying Docker Compose configuration..."
-docker compose config >/dev/null
+run_compose config >/dev/null
 
 if [[ "${TARGET}" == "backend" ]]; then
   echo "[5/5] Rebuilding backend only..."
-  docker compose up -d mongo redis solr
-  docker compose up -d --build backend
+  run_compose up -d mongo redis solr
+  run_compose up -d --build backend
 elif [[ "${TARGET}" == "frontend" ]]; then
   echo "[5/5] Rebuilding frontend only..."
-  docker compose up -d --build frontend
+  run_compose up -d --build frontend
 else
   echo "[5/5] Rebuilding full stack..."
-  docker compose up -d --build --remove-orphans
+  run_compose up -d --build --remove-orphans
 fi
 
 echo "Deployment status:"
-docker compose ps
+run_compose ps
 
 echo "Deployment completed successfully."
