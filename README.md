@@ -78,7 +78,7 @@ The setup is structured for clean local development and predictable deployment b
 
 ### frontend
 
-- Built from `../m-frontend/Dockerfile`
+- Built from `../Milestone-frontend/Dockerfile`
 - Serves optimized Vite output via Nginx
 - Exposes port `3000` on host (container port `80`)
 - Uses build arg `VITE_BACKEND_URL` (default `http://localhost:9000`)
@@ -158,4 +158,59 @@ docker compose exec backend sh
 ```bash
 docker compose down -v
 docker compose up -d --build
+```
+
+## Auto Deploy To VM (No Docker Hub)
+
+This project supports direct VM deployment without pushing images to Docker Hub.
+When you push to `main`, GitHub Actions connects to your VM over SSH, pulls latest
+backend + frontend code, and runs:
+
+```bash
+docker compose up -d --build --remove-orphans
+```
+
+### Workflow File
+
+- `.github/workflows/deploy-vm.yml`
+
+### VM Deploy Script
+
+- `scripts/deploy-vm.sh`
+
+### Required GitHub Secrets
+
+- `VM_HOST`: Public IP or hostname of your VM
+- `VM_USER`: SSH user on VM
+- `VM_SSH_KEY`: Private key content (PEM/OpenSSH) used by GitHub Actions
+- `VM_BACKEND_PATH`: Absolute backend repo path on VM
+- `VM_FRONTEND_PATH`: Absolute frontend repo path on VM
+
+### Required VM Layout
+
+Backend and frontend should exist as two git repos on VM. Example:
+
+```text
+/opt/apps/m-backend
+/opt/apps/Milestone-frontend
+```
+
+The backend compose file builds frontend with `../Milestone-frontend`, so these paths must
+be sibling-compatible in your VM layout.
+
+### VM One-Time Setup
+
+1. Install Docker and Docker Compose plugin.
+2. Clone backend and frontend repos on VM.
+3. Create backend `.env` file in backend repo path.
+4. Ensure VM user can run Docker (`docker ps` works without sudo).
+5. Push to `main` or run workflow manually from GitHub Actions.
+
+### Manual Run On VM
+
+You can run the same deployment manually:
+
+```bash
+cd /opt/apps/m-backend
+./scripts/deploy-vm.sh /opt/apps/Milestone-frontend main
 ```

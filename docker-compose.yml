@@ -14,8 +14,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test:
-        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: [ "CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -52,7 +51,7 @@ services:
 
       # Backend app connection string used in database.js.
       MONGO_URL: ${MONGO_URL:-mongodb://root:rootpass@mongo:27017/milestone?authSource=admin}
-      
+
       # Redis connection URL (Hardcoded for docker network)
       REDIS_URL: redis://redis:6379
 
@@ -91,7 +90,11 @@ services:
         exec solr-foreground
       "
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8983/solr/jobs/admin/ping || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8983/solr/jobs/admin/ping || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -99,7 +102,7 @@ services:
 
   frontend:
     build:
-      context: ../m-frontend
+      context: ../Milestone-frontend
       dockerfile: Dockerfile
       args:
         # Build-time URL consumed by Vite for API/GraphQL/socket calls.
