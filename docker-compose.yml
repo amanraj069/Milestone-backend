@@ -107,6 +107,8 @@ services:
       args:
         # Build-time URL consumed by Vite for API/GraphQL/socket calls.
         VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:9000}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:9000}
+        VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID}
     container_name: milestone-frontend
     restart: unless-stopped
     depends_on:
