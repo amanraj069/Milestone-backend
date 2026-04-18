@@ -233,7 +233,7 @@ router.post("/login", loginLimiter, auth.login);
 router.post("/logout", logoutLimiter, auth.logout);
 
 // Get user info with rate limiting
-router.get("/me", getUserInfoLimiter, cacheMiddleware(60), auth.me);
+router.get("/me", getUserInfoLimiter, auth.me);
 
 // Forgot password routes with rate limiting
 router.post(

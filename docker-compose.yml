@@ -46,7 +46,7 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-9000}
-      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-https://milestone.aman-raj.me}
       SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_change_me}
 
       # Backend app connection string used in database.js.
