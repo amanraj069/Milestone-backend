@@ -187,3 +187,12 @@ pnpm-lock.yaml
 # Local development files
 public/uploads/
 storage/
+
+# Deployment SSH key material (never commit private/public keys)
+.secrets/ssh/*
+!.secrets/ssh/.gitkeep
+*.pem
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub

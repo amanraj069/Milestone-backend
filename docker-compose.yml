@@ -14,8 +14,7 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test:
-        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: [ "CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -45,14 +44,14 @@ services:
     ports:
       - "9000:9000"
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: ${NODE_ENV}
       PORT: ${PORT:-9000}
-      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
       SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_change_me}
 
       # Backend app connection string used in database.js.
       MONGO_URL: ${MONGO_URL:-mongodb://root:rootpass@mongo:27017/milestone?authSource=admin}
-      
+
       # Redis connection URL (Hardcoded for docker network)
       REDIS_URL: redis://redis:6379
 
@@ -91,7 +90,11 @@ services:
         exec solr-foreground
       "
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8983/solr/jobs/admin/ping || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8983/solr/jobs/admin/ping || exit 1",
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -99,11 +102,13 @@ services:
 
   frontend:
     build:
-      context: ../m-frontend
+      context: ../Milestone-frontend
       dockerfile: Dockerfile
       args:
         # Build-time URL consumed by Vite for API/GraphQL/socket calls.
         VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:9000}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:9000}
+        VITE_RAZORPAY_KEY_ID: ${VITE_RAZORPAY_KEY_ID}
     container_name: milestone-frontend
     restart: unless-stopped
     depends_on:
