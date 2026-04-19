@@ -76,13 +76,16 @@ run_compose config >/dev/null
 
 if [[ "${TARGET}" == "backend" ]]; then
   echo "[5/5] Rebuilding backend only..."
+  run_compose rm -fsv backend || true
   run_compose up -d mongo redis solr
-  run_compose up -d --build backend
+  run_compose up -d --build --no-deps backend
 elif [[ "${TARGET}" == "frontend" ]]; then
   echo "[5/5] Rebuilding frontend only..."
-  run_compose up -d --build frontend
+  run_compose rm -fsv frontend || true
+  run_compose up -d --build --no-deps frontend
 else
   echo "[5/5] Rebuilding full stack..."
+  run_compose down || true
   run_compose up -d --build --remove-orphans
 fi
 
