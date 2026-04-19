@@ -22,7 +22,10 @@ const cacheMiddleware = (ttl = 300) => {
 
     try {
       // Create a unique cache key based on route, queries, and user (if applicable)
-      const userIdentifier = req.user ? req.user.id : "guest";
+      const sessionUserId = req.session?.user?.id;
+      const passportUserId = req.user?.id;
+      // Prefer session user identity because this app authenticates via express-session.
+      const userIdentifier = sessionUserId || passportUserId || "guest";
       const cacheKey = `cache:${req.originalUrl || req.url}:${userIdentifier}`;
 
       // 1. Try fetching from Cache
