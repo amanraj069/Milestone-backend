@@ -50,10 +50,10 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:-dev_session_secret_change_me}
 
       # Backend app connection string used in database.js.
-      MONGO_URL: ${MONGO_URL:-mongodb://root:rootpass@mongo:27017/milestone?authSource=admin}
+      MONGO_URL: ${MONGO_URL}
 
       # Redis connection URL (Hardcoded for docker network)
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL}
 
       # Solr connection (Docker network hostname)
       SOLR_BASE_URL: http://solr:8983/solr
@@ -61,12 +61,12 @@ services:
       SOLR_CORE_BLOGS: blogs
 
       # External service credentials (optional in local setup).
-      EMAIL_SERVICE: ${EMAIL_SERVICE:-gmail}
-      EMAIL_USER: ${EMAIL_USER:-}
-      EMAIL_PASS: ${EMAIL_PASS:-}
-      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
-      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
-      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      EMAIL_SERVICE: ${EMAIL_SERVICE}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
     volumes:
