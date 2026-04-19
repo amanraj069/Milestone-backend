@@ -154,7 +154,8 @@ const swaggerOptions = {
                     query: {
                       type: "string",
                       description: "The GraphQL query or mutation string",
-                      example: "query { users { id name } }",
+                      example:
+                        'query { publicBlogDetail(blogId: "105770fc-00fe-4b76-b5e2-2644fa2deb6f") { blog { title tagline category author createdAt imageUrl } recentBlogs { title slug } } }',
                     },
                     variables: {
                       type: "object",

@@ -654,7 +654,7 @@ const adminResolvers = {
           },
           employerName: { $ifNull: ["$employerUser.name", "Unknown"] },
           companyName: { $ifNull: ["$employer.companyName", "Unknown"] },
-          freelancerName: { $ifNull: ["$freelancerUser.name", "Unknown"] },
+          freelancerName: { $ifNull: ["$freelancerUser.name", "Pending Assignment"] },
           dateValue: "$updatedAt",
         },
       },

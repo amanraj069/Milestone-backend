@@ -4,6 +4,12 @@ const JobApplication = require("../models/job_application");
 
 const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
 
+const toIsoString = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
 const requireEmployer = (context) => {
   const user = context.session?.user;
   if (!user || user.role !== "Employer" || !user.roleId) {
@@ -402,8 +408,8 @@ const employerResolvers = {
       freelancerPicture: user?.picture || "",
       freelancerEmail: user?.email || "",
       status: job.assignedFreelancer.status,
-      startDate: job.assignedFreelancer.startDate,
-      endDate: job.assignedFreelancer.endDate,
+      startDate: toIsoString(job.assignedFreelancer.startDate),
+      endDate: toIsoString(job.assignedFreelancer.endDate),
       totalBudget,
       paidAmount,
       paymentPercentage,
@@ -600,7 +606,12 @@ const employerResolvers = {
                 jobId: 1,
                 freelancerId: 1,
                 status: 1,
-                appliedDate: { $ifNull: ["$appliedDate", "$createdAt"] },
+                appliedDate: { 
+                  $dateToString: { 
+                    format: "%Y-%m-%dT%H:%M:%S.%LZ", 
+                    date: { $ifNull: ["$appliedDate", "$createdAt"] } 
+                  } 
+                },
                 coverMessage: 1,
                 resumeLink: 1,
                 freelancerUserId: 1,
@@ -948,7 +959,12 @@ const employerResolvers = {
                 jobDescription: {
                   $ifNull: ["$description.text", { $ifNull: ["$description", ""] }],
                 },
-                startDate: "$assignedFreelancer.startDate",
+                startDate: { 
+                  $dateToString: { 
+                    format: "%Y-%m-%dT%H:%M:%S.%LZ", 
+                    date: "$assignedFreelancer.startDate" 
+                  } 
+                },
                 daysSinceStart: { $ifNull: ["$daysSinceStart", 0] },
                 hasRated: { $ifNull: ["$assignedFreelancer.rated", false] },
                 employerRating: "$assignedFreelancer.employerRating",

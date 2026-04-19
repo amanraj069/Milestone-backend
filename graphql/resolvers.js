@@ -914,7 +914,12 @@ const resolvers = {
                   jobId: 1,
                   freelancerId: 1,
                   status: 1,
-                  appliedDate: { $ifNull: ["$appliedDate", "$createdAt"] },
+                  appliedDate: { 
+                    $dateToString: { 
+                      format: "%Y-%m-%dT%H:%M:%S.%LZ", 
+                      date: { $ifNull: ["$appliedDate", "$createdAt"] } 
+                    } 
+                  },
                   coverMessage: 1,
                   resumeLink: 1,
                   freelancerUserId: 1,

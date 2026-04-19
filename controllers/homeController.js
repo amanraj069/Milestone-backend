@@ -88,14 +88,31 @@ exports.getPublicJobs = async (req, res) => {
     );
     const skip = (page - 1) * limit;
 
-    const publicJobsMatch = {
-      status: "open",
-      $or: [
-        { applicationCap: null },
-        { applicationCap: { $exists: false } },
-        { $expr: { $lt: ["$applicants", "$applicationCap"] } },
-      ],
-    };
+    const { q } = req.query;
+
+    // Base match conditions (only open jobs and those not capped)
+    const matchConditions = [
+      { status: "open" },
+      {
+        $or: [
+          { applicationCap: null },
+          { applicationCap: { $exists: false } },
+          { $expr: { $lt: ["$applicants", "$applicationCap"] } },
+        ],
+      },
+    ];
+
+    // Add search query (title or skills)
+    if (q && q.trim()) {
+      matchConditions.push({
+        $or: [
+          { title: { $regex: q.trim(), $options: "i" } },
+          { "description.skills": { $regex: q.trim(), $options: "i" } },
+        ],
+      });
+    }
+
+    const publicJobsMatch = { $and: matchConditions };
 
     const [total, rawJobs] = await Promise.all([
       JobListing.countDocuments(publicJobsMatch),
