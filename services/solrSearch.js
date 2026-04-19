@@ -13,8 +13,8 @@ const solrClient = require("../config/solr");
 /* ------------------------------------------------------------------ */
 
 const FIELD_BOOSTS = {
-  jobs: "title^3 skills^2 description^1.5 location^1",
-  blogs: "title^3 tagline^1.5 description^1.2 author^1",
+  jobs: "title^3 skills^2 description^1.5 location^1 suggest_field^1.2",
+  blogs: "title^3 tagline^1.5 description^1.2 author^1 suggest_field^1.2",
 };
 
 const PHRASE_BOOSTS = {

@@ -34,7 +34,8 @@ const checkRedis = () => {
   });
 };
 
-console.log(`Starting Automated Benchmark for: ${URL}\n`);
+// console.log(`Starting Automated Benchmark for: ${URL}\n`);
+console.log(`Starting Automated Benchmark\n`);
 console.log(
   `Parameters: ${CONNECTIONS} connections for ${DURATION} seconds per test.\n`
 );
@@ -87,36 +88,25 @@ const startBenchmark = async () => {
     const avgLatencyWithout = resultWithoutCache.latency.average;
     const avgLatencyWith = resultWithCache.latency.average;
 
-    let improvementLatency = 0;
-    if (avgLatencyWithout > 0) {
-      improvementLatency = (
-        ((avgLatencyWithout - avgLatencyWith) / avgLatencyWithout) *
-        100
-      ).toFixed(2);
+    let improvementLatency = "0";
+    if (avgLatencyWith > 0) {
+      improvementLatency = (avgLatencyWithout / avgLatencyWith).toFixed(2);
     }
 
     const reqSecWithout = resultWithoutCache.requests.average;
     const reqSecWith = resultWithCache.requests.average;
 
-    let improvementThroughput = 0;
+    let improvementThroughput = "0";
     if (reqSecWithout > 0) {
-      improvementThroughput = (
-        ((reqSecWith - reqSecWithout) / reqSecWithout) *
-        100
-      ).toFixed(2);
+      improvementThroughput = (reqSecWith / reqSecWithout).toFixed(2);
     }
 
     // Display Results in a clear tabular format
     const tableData = {
-      Metric: {
-        "Without Redis": "",
-        "With Redis": "",
-        Improvement: "",
-      },
       "Avg Latency (ms)": {
         "Without Redis": avgLatencyWithout,
         "With Redis": avgLatencyWith,
-        Improvement: `${improvementLatency}% faster`,
+        Improvement: `${improvementLatency}x faster`,
       },
       "Max Latency (ms)": {
         "Without Redis": resultWithoutCache.latency.max,
@@ -126,7 +116,7 @@ const startBenchmark = async () => {
       "Requests/sec (avg)": {
         "Without Redis": reqSecWithout,
         "With Redis": reqSecWith,
-        Improvement: `${improvementThroughput}% more`,
+        Improvement: `${improvementThroughput}x more`,
       },
       "Total Requests": {
         "Without Redis": resultWithoutCache.requests.total,

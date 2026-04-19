@@ -117,7 +117,25 @@ const solrClient = {
     // Extract suggestions from the nested Solr response
     const suggesterResult =
       data?.suggest?.mileSuggester?.[query]?.suggestions || [];
-    return suggesterResult.map((s) => s.term);
+    
+    // Robust deduplication: strip <b> tags, trim, and lowercase for comparing uniqueness
+    const seen = new Set();
+    const uniqueTerms = [];
+    const queryLower = query.trim().toLowerCase();
+    
+    for (const s of suggesterResult) {
+      const rawText = (s.term || "").replace(/<\/?b>/g, "").trim().toLowerCase();
+      
+      // Do not suggest the exact word the user already typed
+      if (rawText === queryLower) continue;
+      
+      if (!seen.has(rawText)) {
+        seen.add(rawText);
+        // keep the original formatted string
+        uniqueTerms.push(s.term);
+      }
+    }
+    return uniqueTerms;
   },
 
   /**

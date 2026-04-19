@@ -34,7 +34,7 @@
       <str name="defType">edismax</str>
 
       <!-- Query fields with boosts: title most important, then skills, then description -->
-      <str name="qf">title^3 skills^2 description^1.5 location^1 author^1 tagline^1.2</str>
+      <str name="qf">title^3 skills^2 description^1.5 location^1 author^1 tagline^1.2 suggest_field^1.2</str>
 
       <!-- Phrase boosts: exact phrase matches rank even higher -->
       <str name="pf">title^5 description^2</str>

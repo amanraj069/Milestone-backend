@@ -176,10 +176,10 @@ async function run() {
     const allHealthy = rows.every((row) => row.usesIndex && row.docsExaminedPerRow <= 5);
     console.log(" ");
     console.log(`Overall status: ${allHealthy ? "PASS" : "NEEDS ATTENTION"}`);
-    console.log("Checklist:");
-    console.log("- Winning plan should be index-backed (IXSCAN/FETCH). ");
-    console.log("- totalDocsExamined should stay close to nReturned.");
-    console.log("- executionTimeMillis should be monitored before/after index changes.");
+    // console.log("Checklist:");
+    // console.log("- Winning plan should be index-backed (IXSCAN/FETCH). ");
+    // console.log("- totalDocsExamined should stay close to nReturned.");
+    // console.log("- executionTimeMillis should be monitored before/after index changes.");
   } finally {
     await mongoose.disconnect();
   }

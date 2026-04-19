@@ -6,8 +6,9 @@ const backendRoot = path.resolve(__dirname, "..");
 const outputPath = path.join(backendRoot, "test", "TEST_REPORT_BACKEND.md");
 
 function runTests() {
+  console.log("Running backend tests, please wait while the report is generated. This may take a moment...");
   const startedAt = Date.now();
-  const result = spawnSync("npm", ["test", "--", "--runInBand", "--silent"], {
+  const result = spawnSync("npm", ["test", "--", "--runInBand", "--silent", "--forceExit"], {
     cwd: backendRoot,
     shell: true,
     encoding: "utf8",
@@ -18,7 +19,7 @@ function runTests() {
     durationMs: Date.now() - startedAt,
     stdout: result.stdout || "",
     stderr: result.stderr || "",
-    command: "npm test -- --runInBand --silent",
+    command: "npm test -- --runInBand --silent --forceExit",
   };
 }
 
@@ -70,7 +71,20 @@ function main() {
   const report = buildReport(run);
   fs.writeFileSync(outputPath, report, "utf8");
 
-  console.log(`Backend report generated: ${outputPath}`);
+  console.log(`\nBackend report generated: ${outputPath}`);
+
+  // Also show the stats in the terminal
+  const merged = `${run.stdout}\n${run.stderr}`;
+  const summary = parseSummary(merged);
+  
+  console.log("\n--- Test Stats ---");
+  if (summary && summary.length > 0) {
+    summary.forEach(line => console.log(line));
+  } else {
+    console.log("No summary stats to display.");
+  }
+  console.log("------------------\n");
+
   process.exit(run.exitCode === null ? 1 : run.exitCode);
 }
 

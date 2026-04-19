@@ -98,7 +98,7 @@
   <field name="featured" type="boolean" indexed="true" stored="true" />
 
   <!-- ── Suggest field (used by autocomplete) ──────── -->
-  <field name="suggest_field" type="text_suggest" indexed="true" stored="false" multiValued="true" />
+  <field name="suggest_field" type="text_suggest" indexed="true" stored="true" multiValued="true" />
 
   <!-- ── Catch-all field for eDisMax fallback ───────── -->
   <field name="_text_" type="text_en" indexed="true" stored="false" multiValued="true" />
