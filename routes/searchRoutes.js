@@ -17,13 +17,13 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
 /**
  * @swagger
  * tags:
- *   - name: Search
+ *   - name: REST - Search
  *     description: Solr-powered full-text search endpoints
  *
  * /api/search:
  *   get:
  *     summary: Full-text search with facets and filters
- *     tags: [Search]
+ *     tags: [REST - Search]
  *     parameters:
  *       - in: query
  *         name: q
@@ -66,7 +66,7 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
  * /api/search/suggest:
  *   get:
  *     summary: Autocomplete suggestions
- *     tags: [Search]
+ *     tags: [REST - Search]
  *     parameters:
  *       - in: query
  *         name: q
@@ -86,7 +86,7 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
  * /api/admin/reindex:
  *   post:
  *     summary: Trigger a full Solr reindex from MongoDB
- *     tags: [Search]
+ *     tags: [REST - Search]
  *     responses:
  *       200:
  *         description: Reindex completed

@@ -12,13 +12,13 @@ router.use(invalidateCacheMiddleware("api/feedback"));
 /**
  * @swagger
  * tags:
- *   - name: Feedback
+ *   - name: REST - Feedback
  *     description: Feedback and ratings between users
  *
  * /api/feedback:
  *   post:
  *     summary: Create feedback for a job
- *     tags: [Feedback]
+ *     tags: [REST - Feedback]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -50,7 +50,7 @@ router.use(invalidateCacheMiddleware("api/feedback"));
  * /api/feedback/job/{jobId}:
  *   get:
  *     summary: Get feedbacks for a job
- *     tags: [Feedback]
+ *     tags: [REST - Feedback]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -66,7 +66,7 @@ router.use(invalidateCacheMiddleware("api/feedback"));
  * /api/feedback/user/{userId}:
  *   get:
  *     summary: Get feedbacks received by a user
- *     tags: [Feedback]
+ *     tags: [REST - Feedback]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -82,7 +82,7 @@ router.use(invalidateCacheMiddleware("api/feedback"));
  * /api/feedback/stats/{userId}:
  *   get:
  *     summary: Get feedback statistics for a user
- *     tags: [Feedback]
+ *     tags: [REST - Feedback]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -98,7 +98,7 @@ router.use(invalidateCacheMiddleware("api/feedback"));
  * /api/feedback/can-give/{jobId}:
  *   get:
  *     summary: Check if user can give feedback for a job
- *     tags: [Feedback]
+ *     tags: [REST - Feedback]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -114,7 +114,7 @@ router.use(invalidateCacheMiddleware("api/feedback"));
  * /api/feedback/public/user/{userId}:
  *   get:
  *     summary: Get public feedbacks for a user
- *     tags: [Feedback]
+ *     tags: [REST - Feedback]
  *     parameters:
  *       - in: path
  *         name: userId
@@ -128,7 +128,7 @@ router.use(invalidateCacheMiddleware("api/feedback"));
  * /api/feedback/public/stats/{userId}:
  *   get:
  *     summary: Get public feedback stats for a user
- *     tags: [Feedback]
+ *     tags: [REST - Feedback]
  *     parameters:
  *       - in: path
  *         name: userId

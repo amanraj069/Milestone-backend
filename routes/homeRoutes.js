@@ -6,13 +6,13 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
 /**
  * @swagger
  * tags:
- *   - name: Home
+ *   - name: REST - Home
  *     description: Public home and job browsing endpoints
  *
  * /api/home:
  *   get:
  *     summary: Get home page data
- *     tags: [Home]
+ *     tags: [REST - Home]
  *     responses:
  *       200:
  *         description: Home page data returned
@@ -22,7 +22,7 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
  * /api/jobs/api:
  *   get:
  *     summary: Get public job listings
- *     tags: [Home]
+ *     tags: [REST - Home]
  *     responses:
  *       200:
  *         description: List of public jobs
@@ -32,7 +32,7 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
  * /api/jobs/api/{jobId}:
  *   get:
  *     summary: Get public job details
- *     tags: [Home]
+ *     tags: [REST - Home]
  *     parameters:
  *       - in: path
  *         name: jobId
@@ -48,7 +48,7 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
  * /api/jobs/{jobId}/applicants:
  *   get:
  *     summary: Get applicants for a job
- *     tags: [Home]
+ *     tags: [REST - Home]
  *     parameters:
  *       - in: path
  *         name: jobId
@@ -64,7 +64,7 @@ const { cacheMiddleware } = require("../middleware/cacheMiddleware");
  * /api/freelancer/{freelancerId}:
  *   get:
  *     summary: Get freelancer public profile
- *     tags: [Home]
+ *     tags: [REST - Home]
  *     parameters:
  *       - in: path
  *         name: freelancerId

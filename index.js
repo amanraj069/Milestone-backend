@@ -43,11 +43,15 @@ const solrClient = require("./config/solr");
 const app = express();
 const server = http.createServer(app);
 
+const PORT = process.env.PORT || 9000;
+
 // Global allowed origins for CORS
 // Strip trailing slashes from configured origin so the comparison
 // matches the browser-sent Origin header (which never has a trailing slash).
 const allowedOrigins = [
   process.env.FRONTEND_ORIGIN,
+  process.env.BACKEND_URL,
+  `http://localhost:${PORT}`,
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:3002",
@@ -80,7 +84,7 @@ const io = new Server(server, {
   pingInterval: 25000,
 });
 
-const PORT = process.env.PORT || 9000;
+
 
 app.use(
   cors({
@@ -117,6 +121,77 @@ const swaggerOptions = {
         url: "/",
       },
     ],
+    tags: [
+      {
+        name: "GraphQL API",
+        description: "Unified endpoint for GraphQL queries and mutations",
+      },
+    ],
+    components: {
+      securitySchemes: {
+        cookieAuth: {
+          type: "apiKey",
+          in: "cookie",
+          name: "connect.sid",
+        },
+      },
+    },
+    paths: {
+      "/graphql": {
+        post: {
+          summary: "Execute GraphQL Query or Mutation",
+          tags: ["GraphQL API"],
+          description:
+            "The central endpoint for all GraphQL operations. Use this for complex data requirements, such as listing feedbacks or fetching nested relations that are more efficient than REST.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["query"],
+                  properties: {
+                    query: {
+                      type: "string",
+                      description: "The GraphQL query or mutation string",
+                      example: "query { users { id name } }",
+                    },
+                    variables: {
+                      type: "object",
+                      description:
+                        "Variables for the GraphQL query (optional)",
+                    },
+                    operationName: {
+                      type: "string",
+                      description: "The name of the operation (optional)",
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Successful operation",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      data: { type: "object" },
+                      errors: {
+                        type: "array",
+                        items: { type: "object" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   },
   apis: [
     path.join(__dirname, "routes", "*.js"),

@@ -17,13 +17,13 @@ const {
 /**
  * @swagger
  * tags:
- *   - name: Auth
+ *   - name: REST - Auth
  *     description: Authentication and account recovery
  *
  * /api/auth/send-otp:
  *   post:
  *     summary: Send signup OTP to email
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -53,7 +53,7 @@ const {
  * /api/auth/verify-otp:
  *   post:
  *     summary: Verify signup OTP
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -78,7 +78,7 @@ const {
  * /api/auth/signup:
  *   post:
  *     summary: Complete signup and create role profile
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -108,7 +108,7 @@ const {
  * /api/auth/login:
  *   post:
  *     summary: Login and create session
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -134,7 +134,7 @@ const {
  * /api/auth/logout:
  *   post:
  *     summary: Logout and destroy session
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -144,7 +144,7 @@ const {
  * /api/auth/me:
  *   get:
  *     summary: Get current session user
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -154,7 +154,7 @@ const {
  * /api/auth/forgot-password/send-otp:
  *   post:
  *     summary: Send OTP for password reset
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -175,7 +175,7 @@ const {
  * /api/auth/forgot-password/verify-otp:
  *   post:
  *     summary: Verify OTP for password reset
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     requestBody:
  *       required: true
  *       content:
@@ -198,7 +198,7 @@ const {
  * /api/auth/forgot-password/reset:
  *   post:
  *     summary: Reset password using OTP
- *     tags: [Auth]
+ *     tags: [REST - Auth]
  *     requestBody:
  *       required: true
  *       content:

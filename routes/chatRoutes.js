@@ -28,13 +28,13 @@ const requireAuth = (req, res, next) => {
 /**
  * @swagger
  * tags:
- *   - name: Chat
+ *   - name: REST - Chat
  *     description: Real-time chat and messaging (requires authentication)
  *
  * /api/chat/messages/{userId}:
  *   post:
  *     summary: Send a message to a user
- *     tags: [Chat]
+ *     tags: [REST - Chat]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -62,7 +62,7 @@ const requireAuth = (req, res, next) => {
  * /api/chat/messages/{messageId}:
  *   delete:
  *     summary: Delete a message
- *     tags: [Chat]
+ *     tags: [REST - Chat]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -80,7 +80,7 @@ const requireAuth = (req, res, next) => {
  * /api/chat/conversations/{conversationId}/read:
  *   put:
  *     summary: Mark a conversation as read
- *     tags: [Chat]
+ *     tags: [REST - Chat]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -96,7 +96,7 @@ const requireAuth = (req, res, next) => {
  * /api/chat/search-users:
  *   get:
  *     summary: Search users to start a chat
- *     tags: [Chat]
+ *     tags: [REST - Chat]
  *     security:
  *       - cookieAuth: []
  *     parameters:

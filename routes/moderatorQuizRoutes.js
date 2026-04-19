@@ -13,13 +13,13 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
 /**
  * @swagger
  * tags:
- *   - name: Moderator Quiz
+ *   - name: REST - Moderator Quiz
  *     description: Moderator quiz management (requires Moderator role)
  *
  * /api/moderator/quizzes:
  *   post:
  *     summary: Create a new quiz
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -52,7 +52,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  *         description: Validation error
  *   get:
  *     summary: List all quizzes (moderator)
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -62,7 +62,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/moderator/quizzes/{id}:
  *   get:
  *     summary: Get a quiz by ID (moderator, includes answers)
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -78,7 +78,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  *         description: Quiz not found
  *   put:
  *     summary: Update a quiz
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -109,7 +109,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  *         description: Quiz not found
  *   delete:
  *     summary: Delete a quiz
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -127,7 +127,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/moderator/quizzes/{id}/stats:
  *   get:
  *     summary: Get quiz statistics
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -143,7 +143,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/moderator/quizzes/{id}/attempts:
  *   get:
  *     summary: Get detailed quiz attempts
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -159,7 +159,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/moderator/quizzes/badges:
  *   post:
  *     summary: Create a new badge
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -183,7 +183,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/moderator/quizzes/badges/list:
  *   get:
  *     summary: List all badges
- *     tags: [Moderator Quiz]
+ *     tags: [REST - Moderator Quiz]
  *     security:
  *       - cookieAuth: []
  *     responses:

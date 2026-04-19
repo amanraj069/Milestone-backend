@@ -17,13 +17,13 @@ const {
 /**
  * @swagger
  * tags:
- *   - name: Questions
+ *   - name: REST - Questions
  *     description: Job Q&A - questions and answers
  *
  * /api/questions/job/{jobId}:
  *   get:
  *     summary: Get all questions for a job
- *     tags: [Questions]
+ *     tags: [REST - Questions]
  *     parameters:
  *       - in: path
  *         name: jobId
@@ -37,7 +37,7 @@ const {
  *         description: Job not found
  *   post:
  *     summary: Post a new question for a job
- *     tags: [Questions]
+ *     tags: [REST - Questions]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -65,7 +65,7 @@ const {
  * /api/questions/job/{jobId}/can-answer:
  *   get:
  *     summary: Check if user can answer questions for a job
- *     tags: [Questions]
+ *     tags: [REST - Questions]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -81,7 +81,7 @@ const {
  * /api/questions/{questionId}/answer:
  *   post:
  *     summary: Post an answer to a question
- *     tags: [Questions]
+ *     tags: [REST - Questions]
  *     security:
  *       - cookieAuth: []
  *     parameters:

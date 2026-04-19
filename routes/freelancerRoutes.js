@@ -17,7 +17,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
 /**
  * @swagger
  * tags:
- *   - name: Freelancer
+ *   - name: REST - Freelancer
  *     description: Freelancer operations
  *
  * components:
@@ -47,7 +47,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/active_job:
  *   get:
  *     summary: Render active jobs page
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -59,7 +59,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/active_job/api:
  *   get:
  *     summary: Get active jobs as JSON
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -73,7 +73,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/active_job/leave/{jobId}:
  *   delete:
  *     summary: Leave an active job
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -91,7 +91,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/job_history:
  *   get:
  *     summary: Render freelancer job history page
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -101,7 +101,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/job_history/api:
  *   get:
  *     summary: Get freelancer job history as JSON
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -113,7 +113,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/subscription:
  *   get:
  *     summary: Render subscription page
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -123,7 +123,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/upgrade_subscription:
  *   post:
  *     summary: Upgrade subscription to Premium
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -147,7 +147,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/downgrade_subscription:
  *   post:
  *     summary: Downgrade subscription to Basic
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -159,7 +159,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/profile:
  *   get:
  *     summary: Get freelancer profile
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -169,7 +169,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/profile/update:
  *   post:
  *     summary: Update freelancer profile
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -218,7 +218,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/profile/picture/upload:
  *   post:
  *     summary: Upload profile picture
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -241,7 +241,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/portfolio/image/upload:
  *   post:
  *     summary: Upload portfolio image
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -262,7 +262,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/resume/upload:
  *   post:
  *     summary: Upload resume PDF
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -285,7 +285,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/apply/{jobId}:
  *   post:
  *     summary: Apply for a job
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -324,7 +324,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/applications:
  *   get:
  *     summary: Get all freelancer applications
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -334,7 +334,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/cover-message/last:
  *   get:
  *     summary: Get last cover message used by freelancer
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -344,7 +344,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/complaints:
  *   post:
  *     summary: Create a complaint
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -373,7 +373,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  *         description: Validation error
  *   get:
  *     summary: Get freelancer complaints
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -383,7 +383,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/payments:
  *   get:
  *     summary: Get freelancer payments overview
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -395,7 +395,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/payments/{jobId}:
  *   get:
  *     summary: Get payment details for a job
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -413,7 +413,7 @@ router.use(invalidateCacheMiddleware("api/freelancer"));
  * /api/freelancer/payments/{jobId}/milestones/{milestoneId}/request:
  *   post:
  *     summary: Request payment for a milestone
- *     tags: [Freelancer]
+ *     tags: [REST - Freelancer]
  *     security:
  *       - cookieAuth: []
  *     parameters:

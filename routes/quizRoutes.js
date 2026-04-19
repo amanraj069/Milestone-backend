@@ -12,13 +12,13 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
 /**
  * @swagger
  * tags:
- *   - name: Quiz
+ *   - name: REST - Quiz
  *     description: Public quiz endpoints for users
  *
  * /api/quizzes:
  *   get:
  *     summary: List all published quizzes
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     responses:
  *       200:
  *         description: Quizzes listed
@@ -26,7 +26,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/quizzes/{id}:
  *   get:
  *     summary: Get a quiz for taking (no correct answers)
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     parameters:
  *       - in: path
  *         name: id
@@ -42,7 +42,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/quizzes/{id}/eligibility:
  *   get:
  *     summary: Check if user is eligible to attempt quiz
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -58,7 +58,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/quizzes/{id}/start:
  *   post:
  *     summary: Start a quiz attempt (server-side timer)
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -76,7 +76,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/quizzes/report-violation:
  *   post:
  *     summary: Report a violation during an active attempt
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -97,7 +97,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/quizzes/{id}/attempt:
  *   post:
  *     summary: Submit a quiz attempt
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -129,7 +129,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/quizzes/users/{userId}/attempts:
  *   get:
  *     summary: List user quiz attempts
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     parameters:
  *       - in: path
  *         name: userId
@@ -143,7 +143,7 @@ router.use(invalidateCacheMiddleware("api/quizzes"));
  * /api/quizzes/users/{userId}/badges:
  *   get:
  *     summary: List user quiz badges
- *     tags: [Quiz]
+ *     tags: [REST - Quiz]
  *     parameters:
  *       - in: path
  *         name: userId

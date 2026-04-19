@@ -14,13 +14,13 @@ router.use(invalidateCacheMiddleware("api/admin"));
 /**
  * @swagger
  * tags:
- *   - name: Admin
+ *   - name: REST - Admin
  *     description: Admin dashboard and management endpoints
  *
  * /api/admin/profile:
  *   get:
  *     summary: Get admin profile
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -32,7 +32,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/profile/update:
  *   post:
  *     summary: Update admin profile
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -62,7 +62,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/profile/picture/upload:
  *   post:
  *     summary: Upload admin profile picture
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -83,7 +83,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/dashboard/overview:
  *   get:
  *     summary: Get dashboard overview metrics
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -93,7 +93,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/dashboard/activities:
  *   get:
  *     summary: Get recent platform activities
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -103,7 +103,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/dashboard/revenue:
  *   get:
  *     summary: Get dashboard revenue analytics
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -113,7 +113,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/revenue:
  *   get:
  *     summary: Get revenue stats
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -123,7 +123,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/payments:
  *   get:
  *     summary: Get all payments
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -133,7 +133,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/moderators:
  *   get:
  *     summary: List moderators
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -143,7 +143,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/moderators/{moderatorId}/activity:
  *   get:
  *     summary: Get activity for one moderator
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -161,7 +161,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/moderators/{moderatorId}:
  *   delete:
  *     summary: Delete a moderator
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -179,7 +179,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/users:
  *   get:
  *     summary: List all users
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -189,7 +189,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/users/{userId}:
  *   delete:
  *     summary: Delete a user
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -207,7 +207,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/statistics:
  *   get:
  *     summary: Get platform statistics
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -217,7 +217,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/complaints:
  *   get:
  *     summary: Get all complaints
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -227,7 +227,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/users/{targetUserId}/rating:
  *   put:
  *     summary: Adjust user rating
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -264,7 +264,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/users/{userId}/rating-history:
  *   get:
  *     summary: Get rating adjustment history for user
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -280,7 +280,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/users/{userId}/revert-rating:
  *   post:
  *     summary: Revert user to calculated rating
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -311,7 +311,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/freelancers:
  *   get:
  *     summary: List freelancers
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -321,7 +321,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/freelancers/{freelancerId}:
  *   get:
  *     summary: Get freelancer detail
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -339,7 +339,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/employers:
  *   get:
  *     summary: List employers
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -349,7 +349,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/employers/{employerId}:
  *   get:
  *     summary: Get employer detail
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -367,7 +367,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/jobs:
  *   get:
  *     summary: List job listings
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -377,7 +377,7 @@ router.use(invalidateCacheMiddleware("api/admin"));
  * /api/admin/feedbacks:
  *   get:
  *     summary: List feedback entries
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -399,13 +399,13 @@ const requireAdmin = (req, res, next) => {
 /**
  * @swagger
  * tags:
- *   - name: Admin
+ *   - name: REST - Admin
  *     description: Admin operations (requires Admin role)
  *
  * /api/admin/profile:
  *   get:
  *     summary: Get admin profile
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -417,7 +417,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/profile/update:
  *   post:
  *     summary: Update admin profile
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -440,7 +440,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/profile/picture/upload:
  *   post:
  *     summary: Upload admin profile picture
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -463,7 +463,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/dashboard/overview:
  *   get:
  *     summary: Get admin dashboard overview
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -473,7 +473,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/dashboard/activities:
  *   get:
  *     summary: Get recent admin activities
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -483,7 +483,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/dashboard/revenue:
  *   get:
  *     summary: Get dashboard revenue data
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -493,7 +493,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/revenue:
  *   get:
  *     summary: Get revenue statistics
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -503,7 +503,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/payments:
  *   get:
  *     summary: Get all payments
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -513,7 +513,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/moderators:
  *   get:
  *     summary: Get all moderators
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -523,7 +523,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/moderators/{moderatorId}/activity:
  *   get:
  *     summary: Get moderator activity
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -539,7 +539,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/moderators/{moderatorId}:
  *   delete:
  *     summary: Delete a moderator
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -557,7 +557,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/users:
  *   get:
  *     summary: Get all users
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -567,7 +567,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/users/{userId}:
  *   delete:
  *     summary: Delete a user
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -585,7 +585,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/statistics:
  *   get:
  *     summary: Get platform statistics
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -595,7 +595,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/complaints:
  *   get:
  *     summary: Get all complaints
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -605,7 +605,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/users/{targetUserId}/rating:
  *   put:
  *     summary: Adjust a user's rating
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -634,7 +634,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/users/{userId}/rating-history:
  *   get:
  *     summary: Get rating audit history for a user
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -650,7 +650,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/users/{userId}/revert-rating:
  *   post:
  *     summary: Revert user to calculated rating
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -668,7 +668,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/freelancers:
  *   get:
  *     summary: Get all freelancers
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -678,7 +678,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/freelancers/{freelancerId}:
  *   get:
  *     summary: Get freelancer detail
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -696,7 +696,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/employers:
  *   get:
  *     summary: Get all employers
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -706,7 +706,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/employers/{employerId}:
  *   get:
  *     summary: Get employer detail
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -724,7 +724,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/jobs:
  *   get:
  *     summary: Get all job listings
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -734,7 +734,7 @@ const requireAdmin = (req, res, next) => {
  * /api/admin/feedbacks:
  *   get:
  *     summary: Get all feedbacks
- *     tags: [Admin]
+ *     tags: [REST - Admin]
  *     security:
  *       - cookieAuth: []
  *     responses:

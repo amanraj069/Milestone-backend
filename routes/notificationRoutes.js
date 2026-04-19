@@ -18,13 +18,13 @@ const {
 /**
  * @swagger
  * tags:
- *   - name: Notifications
+ *   - name: REST - Notifications
  *     description: User notification management
  *
  * /api/notifications:
  *   get:
  *     summary: Get all notifications for current user
- *     tags: [Notifications]
+ *     tags: [REST - Notifications]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -36,7 +36,7 @@ const {
  * /api/notifications/unread-count:
  *   get:
  *     summary: Get unread notification count
- *     tags: [Notifications]
+ *     tags: [REST - Notifications]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -46,7 +46,7 @@ const {
  * /api/notifications/mark-all-read:
  *   put:
  *     summary: Mark all notifications as read
- *     tags: [Notifications]
+ *     tags: [REST - Notifications]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -56,7 +56,7 @@ const {
  * /api/notifications/{notificationId}/read:
  *   put:
  *     summary: Mark a notification as read
- *     tags: [Notifications]
+ *     tags: [REST - Notifications]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -74,7 +74,7 @@ const {
  * /api/notifications/{notificationId}:
  *   delete:
  *     summary: Delete a notification
- *     tags: [Notifications]
+ *     tags: [REST - Notifications]
  *     security:
  *       - cookieAuth: []
  *     parameters:

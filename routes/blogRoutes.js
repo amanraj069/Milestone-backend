@@ -13,13 +13,13 @@ router.use(invalidateCacheMiddleware("api/blogs"));
 /**
  * @swagger
  * tags:
- *   - name: Blog
+ *   - name: REST - Blog
  *     description: Public blog access and moderator blog management
  *
  * /api/blogs:
  *   get:
  *     summary: Get all published blogs
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     responses:
  *       200:
  *         description: List of blogs
@@ -27,7 +27,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/blogs/latest:
  *   get:
  *     summary: Get latest blogs
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     responses:
  *       200:
  *         description: Latest blogs returned
@@ -35,7 +35,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/blogs/featured:
  *   get:
  *     summary: Get featured blog
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     responses:
  *       200:
  *         description: Featured blog returned
@@ -43,7 +43,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/blogs/{blogId}:
  *   get:
  *     summary: Get a blog by ID
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     parameters:
  *       - in: path
  *         name: blogId
@@ -59,7 +59,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/moderator/blogs:
  *   get:
  *     summary: Get all blogs (moderator view)
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -69,7 +69,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  *         description: Access denied
  *   post:
  *     summary: Create a new blog
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -104,7 +104,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/moderator/blogs/by-id/{blogId}:
  *   get:
  *     summary: Get blog by ID (moderator)
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -122,7 +122,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/moderator/blogs/by-slug/{slug}:
  *   get:
  *     summary: Get blog by slug (moderator)
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -140,7 +140,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/moderator/blogs/upload-image:
  *   post:
  *     summary: Upload blog image
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -163,7 +163,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  * /api/moderator/blogs/{blogId}:
  *   put:
  *     summary: Update a blog
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -200,7 +200,7 @@ router.use(invalidateCacheMiddleware("api/blogs"));
  *         description: Blog not found
  *   delete:
  *     summary: Delete a blog
- *     tags: [Blog]
+ *     tags: [REST - Blog]
  *     security:
  *       - cookieAuth: []
  *     parameters:

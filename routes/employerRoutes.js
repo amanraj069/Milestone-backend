@@ -34,13 +34,13 @@ const requireEmployer = (req, res, next) => {
 /**
  * @swagger
  * tags:
- *   - name: Employer
+ *   - name: REST - Employer
  *     description: Employer operations (requires Employer role)
  *
  * /api/employer/job-listings:
  *   get:
  *     summary: Get all job listings for the employer
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -50,7 +50,7 @@ const requireEmployer = (req, res, next) => {
  *         description: Access denied
  *   post:
  *     summary: Create a new job listing
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -86,7 +86,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/job-listings/fee-preview:
  *   get:
  *     summary: Preview fees for a job listing
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -96,7 +96,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/job-listings/{jobId}:
  *   get:
  *     summary: Get a specific job listing by ID
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -112,7 +112,7 @@ const requireEmployer = (req, res, next) => {
  *         description: Job not found
  *   put:
  *     summary: Update a job listing
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -145,7 +145,7 @@ const requireEmployer = (req, res, next) => {
  *         description: Job not found
  *   delete:
  *     summary: Delete a job listing
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -163,7 +163,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/job-listings/{jobId}/boost:
  *   post:
  *     summary: Boost a job listing
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -181,7 +181,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/job_applications:
  *   get:
  *     summary: Get all job applications
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -191,7 +191,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/job_applications/pending-count:
  *   get:
  *     summary: Get pending applications count
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -201,7 +201,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/job_applications/{applicationId}/accept:
  *   post:
  *     summary: Accept a job application
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -221,7 +221,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/job_applications/{applicationId}/reject:
  *   post:
  *     summary: Reject a job application
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -241,7 +241,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/subscription:
  *   get:
  *     summary: Get employer subscription details
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -251,7 +251,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/subscription/purchase:
  *   post:
  *     summary: Purchase a subscription
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -276,7 +276,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/upgrade_subscription:
  *   post:
  *     summary: Upgrade employer subscription
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -288,7 +288,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/downgrade_subscription:
  *   post:
  *     summary: Downgrade employer subscription
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -300,7 +300,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/current-freelancers:
  *   get:
  *     summary: Get currently hired freelancers
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -310,7 +310,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/work-history:
  *   get:
  *     summary: Get employer work history
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -320,7 +320,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/complaints:
  *   post:
  *     summary: Create employer complaint
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -347,7 +347,7 @@ const requireEmployer = (req, res, next) => {
  *         description: Validation error
  *   get:
  *     summary: Get employer complaints
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -357,7 +357,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/profile:
  *   get:
  *     summary: Get employer profile
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -365,7 +365,7 @@ const requireEmployer = (req, res, next) => {
  *         description: Profile returned
  *   put:
  *     summary: Update employer profile
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -390,7 +390,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/upload-image:
  *   post:
  *     summary: Upload employer profile image
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -415,7 +415,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/company-details:
  *   get:
  *     summary: Get employer company details
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -423,7 +423,7 @@ const requireEmployer = (req, res, next) => {
  *         description: Company details returned
  *   put:
  *     summary: Update employer company details
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -450,7 +450,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/company-details/logo/upload:
  *   post:
  *     summary: Upload company logo
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -473,7 +473,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/company-details/proof/upload:
  *   post:
  *     summary: Upload company proof document
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -496,7 +496,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/dashboard/stats:
  *   get:
  *     summary: Get employer dashboard statistics
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -506,7 +506,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/transactions:
  *   get:
  *     summary: Get employer transactions
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -516,7 +516,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/transactions/{jobId}:
  *   get:
  *     summary: Get transaction details for a job
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -534,7 +534,7 @@ const requireEmployer = (req, res, next) => {
  * /api/employer/transactions/{jobId}/milestones/{milestoneId}/pay:
  *   post:
  *     summary: Pay a milestone
- *     tags: [Employer]
+ *     tags: [REST - Employer]
  *     security:
  *       - cookieAuth: []
  *     parameters:

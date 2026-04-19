@@ -26,13 +26,13 @@ const requireModerator = (req, res, next) => {
 /**
  * @swagger
  * tags:
- *   - name: Moderator
+ *   - name: REST - Moderator
  *     description: Moderator operations (requires Moderator role)
  *
  * /api/moderator/complaints:
  *   get:
  *     summary: Get all complaints
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -44,7 +44,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/complaints/{complaintId}:
  *   get:
  *     summary: Get a complaint by ID
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -60,7 +60,7 @@ const requireModerator = (req, res, next) => {
  *         description: Complaint not found
  *   put:
  *     summary: Update complaint status
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -89,7 +89,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/profile:
  *   get:
  *     summary: Get moderator profile
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -99,7 +99,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/profile/update:
  *   post:
  *     summary: Update moderator profile
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -122,7 +122,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/profile/picture/upload:
  *   post:
  *     summary: Upload moderator profile picture
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     requestBody:
@@ -145,7 +145,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/dashboard/stats:
  *   get:
  *     summary: Get moderator dashboard statistics
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -155,7 +155,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/dashboard/activities:
  *   get:
  *     summary: Get recent moderator activities
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -165,7 +165,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/freelancers:
  *   get:
  *     summary: Get all freelancers
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -175,7 +175,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/freelancers/{freelancerId}/applications:
  *   get:
  *     summary: Get applications for a freelancer
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -191,7 +191,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/freelancers/{freelancerId}:
  *   delete:
  *     summary: Delete a freelancer
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -209,7 +209,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/employers:
  *   get:
  *     summary: Get all employers
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -219,7 +219,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/employers/{employerId}/job-listings:
  *   get:
  *     summary: Get job listings for an employer
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -235,7 +235,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/employers/{employerId}:
  *   delete:
  *     summary: Delete an employer
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -253,7 +253,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/jobs:
  *   get:
  *     summary: Get all job listings
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -263,7 +263,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/jobs/{jobId}/applicants:
  *   get:
  *     summary: Get applicants for a job
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -279,7 +279,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/jobs/{jobId}:
  *   delete:
  *     summary: Delete a job listing
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -297,7 +297,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/approvals/pending:
  *   get:
  *     summary: Get pending employer approvals
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     responses:
@@ -307,7 +307,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/approvals/{userId}/approve:
  *   post:
  *     summary: Approve an employer
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -325,7 +325,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/approvals/{userId}/reject:
  *   post:
  *     summary: Reject an employer
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -343,7 +343,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/users/{targetUserId}/rating:
  *   put:
  *     summary: Adjust a user's rating
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -372,7 +372,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/users/{userId}/rating-history:
  *   get:
  *     summary: Get rating audit history for a user
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
@@ -388,7 +388,7 @@ const requireModerator = (req, res, next) => {
  * /api/moderator/users/{userId}/revert-rating:
  *   post:
  *     summary: Revert user to calculated rating
- *     tags: [Moderator]
+ *     tags: [REST - Moderator]
  *     security:
  *       - cookieAuth: []
  *     parameters:
