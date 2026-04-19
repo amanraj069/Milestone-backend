@@ -15,6 +15,8 @@ const RatingAudit = require("../models/RatingAudit");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 const { v4: uuidv4 } = require("uuid");
 
+const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
+
 function getPaginationParams(query, defaultLimit = 25, maxLimit = 100) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(
@@ -1536,7 +1538,7 @@ exports.getFreelancerDetail = async (req, res) => {
         experience: freelancer.experience || [],
         education: freelancer.education || [],
         portfolio: freelancer.portfolio || [],
-        resume: freelancer.resume || "",
+        resume: SHARED_RESUME_URL,
         isCurrentlyWorking: !!activeJob,
         currentJobTitle: activeJob?.title || null,
         applicationsCount: applications.length,

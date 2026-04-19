@@ -8,11 +8,45 @@ const Feedback = require("../models/Feedback");
 const Payment = require("../models/Payment");
 const { uploadToCloudinary } = require("../middleware/imageUpload");
 
+const SHARED_RESUME_URL = "/uploads/resumes/resume_freelancer.pdf";
+
 const getPaginationParams = (query = {}) => {
   const page = Math.max(1, Number(query.page) || 1);
   const limit = Math.max(1, Math.min(Number(query.limit) || 25, 100));
   const skip = (page - 1) * limit;
   return { page, limit, skip };
+};
+
+const validateImageFile = (req, res) => {
+  if (!req.file) {
+    res.status(400).json({
+      success: false,
+      error: "No image file provided",
+    });
+    return null;
+  }
+
+  return req.file;
+};
+
+const uploadImageWithConfigCheck = async (buffer, folder) => {
+  const { CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET } =
+    process.env;
+
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    const configError = new Error(
+      "Image upload service is not configured on server",
+    );
+    configError.code = "CLOUDINARY_NOT_CONFIGURED";
+    throw configError;
+  }
+
+  const result = await uploadToCloudinary(buffer, {
+    folder,
+    resource_type: "image",
+  });
+
+  return result.secure_url;
 };
 
 exports.getFreelancerActiveJobs = async (req, res) => {
@@ -542,7 +576,7 @@ exports.getFreelancerProfile = async (req, res) => {
         location: user.location,
         role: user.role,
         aboutMe: user.aboutMe,
-        resume: freelancer.resume,
+        resume: SHARED_RESUME_URL,
         skills: freelancer.skills || [],
         experience: freelancer.experience || [],
         education: freelancer.education || [],
@@ -602,7 +636,8 @@ exports.updateFreelancerProfile = async (req, res) => {
 
     // Update Freelancer fields
     const freelancerUpdate = {};
-    if (resumeLink) freelancerUpdate.resume = resumeLink;
+    // Keep one shared resume file for all freelancers.
+    if (resumeLink) freelancerUpdate.resume = SHARED_RESUME_URL;
     if (skills) freelancerUpdate.skills = skills;
     if (experience) freelancerUpdate.experience = experience;
     if (education) freelancerUpdate.education = education;
@@ -658,20 +693,18 @@ exports.uploadProfilePicture = async (req, res) => {
   try {
     const userId = req.session.user.id;
 
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: "No image file provided",
-      });
-    }
+    const file = validateImageFile(req, res);
+    if (!file) return;
 
-    // Store image locally under /uploads/verification_doc
-    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
+    const imageUrl = await uploadImageWithConfigCheck(
+      file.buffer,
+      "milestone/profile-pictures",
+    );
 
-    // Update user profile picture
+    // Persist CDN URL so deployed instances can always resolve the image.
     const updatedUser = await User.findOneAndUpdate(
       { userId },
-      { picture: result.secure_url },
+      { picture: imageUrl },
       { new: true },
     ).lean();
 
@@ -693,6 +726,13 @@ exports.uploadProfilePicture = async (req, res) => {
       },
     });
   } catch (error) {
+    if (error.code === "CLOUDINARY_NOT_CONFIGURED") {
+      return res.status(500).json({
+        success: false,
+        error: "Image upload service is not configured on server",
+      });
+    }
+
     console.error("Error uploading profile picture:", error.message);
     res.status(500).json({
       success: false,
@@ -704,15 +744,13 @@ exports.uploadProfilePicture = async (req, res) => {
 // Upload portfolio image
 exports.uploadPortfolioImage = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        error: "No image file provided",
-      });
-    }
+    const file = validateImageFile(req, res);
+    if (!file) return;
 
-    // Store image locally under /uploads/verification_doc
-    const imageUrl = `/uploads/verification_doc/${req.file.filename}`;
+    const imageUrl = await uploadImageWithConfigCheck(
+      file.buffer,
+      "milestone/portfolio",
+    );
 
     res.json({
       success: true,
@@ -722,6 +760,13 @@ exports.uploadPortfolioImage = async (req, res) => {
       },
     });
   } catch (error) {
+    if (error.code === "CLOUDINARY_NOT_CONFIGURED") {
+      return res.status(500).json({
+        success: false,
+        error: "Image upload service is not configured on server",
+      });
+    }
+
     console.error("Error uploading portfolio image:", error.message);
     res.status(500).json({
       success: false,
@@ -742,15 +787,7 @@ exports.uploadResume = async (req, res) => {
       });
     }
 
-    if (!req.file.filename) {
-      return res.status(500).json({
-        success: false,
-        error: "Resume upload failed. File metadata missing.",
-      });
-    }
-
-    // Multer stores the PDF in /uploads/resumes; keep URL local so it can be served directly.
-    const resumeUrl = `/uploads/resumes/${req.file.filename}`;
+    const resumeUrl = SHARED_RESUME_URL;
 
     // Update freelancer resume link
     const updatedFreelancer = await Freelancer.findOneAndUpdate(
@@ -847,7 +884,7 @@ exports.applyForJob = async (req, res) => {
       freelancerId,
       jobId,
       coverMessage,
-      resumeLink: freelancer.resume,
+      resumeLink: freelancer.resume || SHARED_RESUME_URL,
       appliedDate: new Date(),
       status: "Pending",
       contactEmail: contactEmail || defaultEmail,
@@ -955,7 +992,7 @@ exports.getFreelancerApplications = async (req, res) => {
         appliedDate: app.appliedDate,
         status: app.status,
         coverMessage: app.coverMessage,
-        resumeLink: app.resumeLink,
+        resumeLink: SHARED_RESUME_URL,
         budget: job.budget || 0,
         location: job.location || "N/A",
         jobType: job.jobType || "N/A",
